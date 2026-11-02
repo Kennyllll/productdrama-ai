@@ -4,7 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { getDb, UPLOAD_DIR } from "@/lib/db";
 import { DEMO_PROJECT_ID, demoProject, emptyBible, localStepStatus } from "@/lib/mock/demo";
-import type { AssetKind, AssetRecord, LocalProduct, ProductBibleField, Project } from "@/lib/types";
+import { emptyCreative, sanitizeCreative, sanitizeScript } from "@/lib/creative";
+import type { AssetKind, AssetRecord, LocalCreative, LocalProduct, LocalScript, ProductBibleField, Project } from "@/lib/types";
 
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 export const MAX_PHOTOS = 20;
@@ -197,4 +198,36 @@ export function detectImageType(buf: Buffer): { mime: string; ext: string } | nu
     return { mime: "image/svg+xml", ext: "svg" };
   }
   return null;
+}
+
+type JsonTable = "creatives" | "scripts";
+
+function getJson(table: JsonTable, projectId: string): unknown {
+  const row = getDb().prepare(`SELECT data FROM ${table} WHERE project_id = ?`).get(projectId) as { data: string } | undefined;
+  return row ? JSON.parse(row.data) : null;
+}
+
+function putJson(table: JsonTable, projectId: string, data: unknown) {
+  getDb()
+    .prepare(`INSERT INTO ${table} (project_id, data) VALUES (?, ?) ON CONFLICT(project_id) DO UPDATE SET data = excluded.data`)
+    .run(projectId, JSON.stringify(data));
+  touch(projectId);
+}
+
+export function getCreative(projectId: string): LocalCreative {
+  const data = getJson("creatives", projectId);
+  return data ? sanitizeCreative(data) : emptyCreative;
+}
+
+export function saveCreative(projectId: string, creative: LocalCreative) {
+  putJson("creatives", projectId, creative);
+}
+
+export function getScript(projectId: string): LocalScript | null {
+  const data = getJson("scripts", projectId);
+  return data ? sanitizeScript(data) : null;
+}
+
+export function saveScript(projectId: string, script: LocalScript) {
+  putJson("scripts", projectId, script);
 }

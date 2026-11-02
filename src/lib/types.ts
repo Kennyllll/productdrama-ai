@@ -70,6 +70,51 @@ export interface FormState {
   error?: string;
 }
 
+/** 本地项目的提案草稿（模板生成后由用户改写，非 AI） */
+export interface LocalProposal {
+  id: string;
+  direction: string;
+  title: string;
+  logline: string;
+  episodeArcs: [string, string, string, string];
+}
+
+export interface LocalCreative {
+  themeIds: string[];
+  freeText: string;
+  styleId: string;
+  roleId: string;
+  proposals: LocalProposal[];
+  selectedProposalId: string | null;
+}
+
+export interface LocalScriptLine {
+  id: string;
+  /** 空字符串 = 旁白 / 字幕 */
+  speaker: string;
+  text: string;
+}
+
+export interface LocalScene {
+  id: string;
+  heading: string;
+  summary: string;
+  lines: LocalScriptLine[];
+}
+
+export interface ScriptEpisode {
+  number: EpisodeNumber;
+  title: string;
+  synopsis: string;
+  beats: Beat[];
+  scenes: LocalScene[];
+}
+
+export interface LocalScript {
+  proposalId: string;
+  episodes: ScriptEpisode[];
+}
+
 export interface OptionItem {
   id: string;
   label: string;

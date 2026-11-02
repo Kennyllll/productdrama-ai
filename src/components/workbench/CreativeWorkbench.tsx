@@ -168,7 +168,7 @@ export function CreativeWorkbench() {
   );
 }
 
-function OptionGrid({
+export function OptionGrid({
   options,
   value,
   onChange,
