@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, useTransition } from "react";
-import { aiProposalsAction } from "@/app/ai-actions";
+import { aiProposalsAction, aiStoryCoreAction } from "@/app/ai-actions";
 import { saveCreativeAction } from "@/app/creative-actions";
 import { Card, LaterButton, MockBadge, Tag } from "@/components/ui";
 import { OptionGrid } from "@/components/workbench/CreativeWorkbench";
@@ -10,7 +10,7 @@ import { AiButton, UsageNote } from "@/components/workbench/AiButton";
 import { FilmStylePicker } from "@/components/workbench/FilmStylePicker";
 import { SaveBar } from "@/components/workbench/SaveBar";
 import type { AiUsage } from "@/lib/ai/models";
-import { buildProposals } from "@/lib/creative";
+import { buildProposals, STORY_CORE_FIELDS } from "@/lib/creative";
 import { filmStyles, productRoles, themeLibrary } from "@/lib/mock/demo";
 import type { FormState, LocalCreative, LocalProposal } from "@/lib/types";
 
@@ -36,6 +36,9 @@ export function LocalCreativeWorkbench({
   const [ai, setAi] = useState<{ proposals: LocalProposal[]; usage: AiUsage } | null>(null);
   const [aiError, setAiError] = useState("");
   const [aiPending, startAi] = useTransition();
+  const [coreError, setCoreError] = useState("");
+  const [coreUsage, setCoreUsage] = useState<AiUsage | null>(null);
+  const [corePending, startCore] = useTransition();
 
   const change = (fn: (prev: LocalCreative) => LocalCreative) => {
     setC(fn);
@@ -57,9 +60,20 @@ export function LocalCreativeWorkbench({
     setAiError("");
     setAi(null);
     startAi(async () => {
-      const res = await aiProposalsAction(projectId, { themeIds: c.themeIds, freeText: c.freeText, styleId: c.styleId, roleId: c.roleId });
+      const res = await aiProposalsAction(projectId, { themeIds: c.themeIds, freeText: c.freeText, styleId: c.styleId, roleId: c.roleId, storyCore: c.storyCore });
       if (res.error || !res.result) setAiError(res.error ?? "AI 没有返回提案");
       else setAi({ proposals: res.result, usage: res.usage ?? { promptTokens: 0, completionTokens: 0 } });
+    });
+  };
+
+  const runCore = () => {
+    if (STORY_CORE_FIELDS.some((f) => c.storyCore[f.key].trim()) && !window.confirm("AI 提炼会覆盖现有故事内核（包括你的修改），继续吗？")) return;
+    setCoreError("");
+    startCore(async () => {
+      const res = await aiStoryCoreAction(projectId, { themeIds: c.themeIds, freeText: c.freeText, styleId: c.styleId, roleId: c.roleId });
+      if (res.error || !res.result) setCoreError(res.error ?? "AI 没有返回故事内核");
+      else update({ storyCore: res.result });
+      setCoreUsage(res.usage ?? null);
     });
   };
 
@@ -119,7 +133,46 @@ export function LocalCreativeWorkbench({
       </Card>
 
       <Card
-        title="4 · 三个故事提案"
+        title="4 · 故事内核（共情的来源）"
+        aside={
+          <AiButton ready={aiReady} pending={corePending} onClick={runCore}>
+            AI 提炼故事内核
+          </AiButton>
+        }
+      >
+        <p className="mb-3 text-xs text-neutral-400">
+          观众共情的是人，不是产品。先想清楚主角是谁、想要什么、会失去什么；提案、剧本和分镜都会围绕它来写。可以让 AI 先提炼，再改成你的版本。
+        </p>
+        {corePending ? <p className="mb-3 text-sm text-amber-200">DeepSeek 正在提炼故事内核，通常需要 30–120 秒…</p> : null}
+        {coreError ? <p className="mb-3 text-sm text-rose-300">{coreError}</p> : null}
+        <div className="grid gap-3 md:grid-cols-2">
+          {STORY_CORE_FIELDS.map((f) => (
+            <label key={f.key} className="block text-sm">
+              <span className="text-neutral-300">{f.label}</span>
+              <textarea
+                rows={2}
+                maxLength={500}
+                value={c.storyCore[f.key]}
+                placeholder={f.placeholder}
+                aria-label={f.label}
+                onChange={(e) => update({ storyCore: { ...c.storyCore, [f.key]: e.target.value } })}
+                className={`${field} mt-1`}
+              />
+            </label>
+          ))}
+        </div>
+        {c.storyCore.styleNote ? (
+          <p className="mt-3 rounded-lg border border-sky-400/30 bg-sky-400/5 p-3 text-xs text-sky-100">参考作品建议（AI）：{c.storyCore.styleNote}</p>
+        ) : null}
+        {coreUsage ? (
+          <div className="mt-2">
+            <UsageNote usage={coreUsage} />
+          </div>
+        ) : null}
+      </Card>
+
+      <Card
+        title="5 · 三个故事提案"
         aside={
           <div className="flex flex-wrap justify-end gap-2">
             <AiButton ready={aiReady} pending={aiPending} onClick={runAi}>

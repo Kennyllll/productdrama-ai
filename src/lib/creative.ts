@@ -1,12 +1,24 @@
 // 创意与剧本的本地规则（TASK-003）：模板生成、剧本骨架、校验与检查。纯函数，服务端和客户端共用，不调用 AI。
 import { beatTypeLabel, filmStyles, productRoles, themeLibrary } from "@/lib/mock/demo";
-import type { Beat, EpisodeNumber, LocalCreative, LocalProposal, LocalScene, LocalScript, ScriptEpisode } from "@/lib/types";
+import type { Beat, EpisodeNumber, LocalCreative, LocalProposal, LocalScene, LocalScript, ScriptEpisode, StoryCore } from "@/lib/types";
 
 export const EPISODE_SECONDS = 45;
 /** 中文口播约 4 字 / 秒 */
 export const CHARS_PER_SECOND = 4;
 
 export const newId = () => Math.random().toString(36).slice(2, 10);
+
+export const emptyStoryCore: StoryCore = { audience: "", protagonist: "", want: "", need: "", stakes: "", truth: "", productBridge: "", styleNote: "" };
+
+export const STORY_CORE_FIELDS: { key: Exclude<keyof StoryCore, "styleNote">; label: string; placeholder: string }[] = [
+  { key: "audience", label: "观众与情感痛点", placeholder: "谁会看、他们心里真正在意什么。例：第一次放手让孩子独立的父母，骄傲又舍不得" },
+  { key: "protagonist", label: "主角（具体的人）", placeholder: "名字、年龄、一个只属于他的细节或心结。例：Leo，7 岁，口袋里总装着妈妈留下的旧手电筒" },
+  { key: "want", label: "主角想要什么（外在目标）", placeholder: "看得见的目标。例：一个人滑到街角的面包店" },
+  { key: "need", label: "主角真正需要什么（内在成长）", placeholder: "他自己没意识到的成长。例：相信没有爸爸牵着，自己也可以" },
+  { key: "stakes", label: "失败会失去什么", placeholder: "真实的代价。例：错过和爸爸约好的最后一个夏天" },
+  { key: "truth", label: "想让观众记住的一句话", placeholder: "例：放手，是另一种陪伴" },
+  { key: "productBridge", label: "产品如何成为情感桥梁", placeholder: "产品在哪个关键时刻帮人物跨过情感难关，而不是展示功能" },
+];
 
 export const emptyCreative: LocalCreative = {
   themeIds: [],
@@ -15,6 +27,7 @@ export const emptyCreative: LocalCreative = {
   roleId: productRoles[0].id,
   proposals: [],
   selectedProposalId: null,
+  storyCore: emptyStoryCore,
 };
 
 const labelOf = (list: { id: string; label: string }[], id: string) => list.find((x) => x.id === id)?.label ?? id;
@@ -152,6 +165,19 @@ export function sanitizeCreative(input: unknown): LocalCreative {
     roleId: productRoles.some((r) => r.id === roleId) ? roleId : emptyCreative.roleId,
     proposals,
     selectedProposalId: proposals.some((p) => p.id === selected) ? selected : null,
+    storyCore: (() => {
+      const sc = obj(o.storyCore);
+      return {
+        audience: str(sc.audience, 500),
+        protagonist: str(sc.protagonist, 500),
+        want: str(sc.want, 500),
+        need: str(sc.need, 500),
+        stakes: str(sc.stakes, 500),
+        truth: str(sc.truth, 500),
+        productBridge: str(sc.productBridge, 500),
+        styleNote: str(sc.styleNote, 800),
+      };
+    })(),
   };
 }
 

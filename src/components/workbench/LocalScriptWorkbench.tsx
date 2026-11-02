@@ -7,7 +7,7 @@ import { saveScriptAction } from "@/app/creative-actions";
 import { Card, Tag } from "@/components/ui";
 import { AiButton, UsageNote } from "@/components/workbench/AiButton";
 import { SaveBar } from "@/components/workbench/SaveBar";
-import type { AiUsage } from "@/lib/ai/models";
+import type { AiUsage, ScriptReview } from "@/lib/ai/models";
 import { buildSkeleton, checkEpisode, dialogueSeconds, emptyScene, EPISODE_SECONDS, newId } from "@/lib/creative";
 import { beatTypeLabel } from "@/lib/mock/demo";
 import type { Beat, EpisodeNumber, FormState, LocalProposal, LocalScene, LocalScript, ScriptEpisode } from "@/lib/types";
@@ -31,7 +31,8 @@ export function LocalScriptWorkbench({
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState<FormState>({});
   const [pending, startTransition] = useTransition();
-  const [ai, setAi] = useState<{ script: LocalScript; usage: AiUsage } | null>(null);
+  const [ai, setAi] = useState<{ script: LocalScript; review?: ScriptReview; usage: AiUsage } | null>(null);
+  const [critique, setCritique] = useState(true);
   const [aiError, setAiError] = useState("");
   const [aiPending, startAi] = useTransition();
 
@@ -55,9 +56,9 @@ export function LocalScriptWorkbench({
     setAiError("");
     setAi(null);
     startAi(async () => {
-      const res = await aiScriptAction(projectId);
+      const res = await aiScriptAction(projectId, critique);
       if (res.error || !res.result) setAiError(res.error ?? "AI 没有返回剧本");
-      else setAi({ script: res.result, usage: res.usage ?? { promptTokens: 0, completionTokens: 0 } });
+      else setAi({ script: res.result.script, review: res.result.review, usage: res.usage ?? { promptTokens: 0, completionTokens: 0 } });
     });
   };
 
@@ -72,14 +73,31 @@ export function LocalScriptWorkbench({
 
   const aiPanel = (
     <div className="space-y-2">
+      <label className="flex items-center gap-2 text-xs text-neutral-300">
+        <input type="checkbox" checked={critique} onChange={(e) => setCritique(e.target.checked)} disabled={aiPending} />
+        监制审稿：按共情标准打分并改写（多一次调用，约多 1–3 分钟）
+      </label>
       <AiButton ready={aiReady} pending={aiPending} onClick={runAi}>
         AI 写四集剧本（英文台词 + 中文翻译）
       </AiButton>
-      {aiPending ? <p className="text-xs text-amber-200">DeepSeek 正在写四集剧本，通常需要 1–3 分钟…</p> : null}
+      {aiPending ? <p className="text-xs text-amber-200">DeepSeek 正在写四集剧本{critique ? "并由监制审稿改写" : ""}，通常需要 1–6 分钟…</p> : null}
       {aiError ? <p className="text-xs text-rose-300">{aiError}</p> : null}
       {ai ? (
         <div className="rounded-xl border border-emerald-400/40 bg-emerald-400/5 p-3 text-sm">
           <p className="text-emerald-200">AI 剧本预览（尚未采用）</p>
+          {ai.review ? (
+            <div className="mt-2 rounded-lg border border-white/10 p-2 text-xs">
+              <p className="text-neutral-300">监制给初稿的评分：{ai.review.scores.map((s) => `${s.label} ${s.score}`).join(" · ")}</p>
+              {ai.review.problems.length ? (
+                <ul className="mt-1 list-inside list-disc space-y-0.5 text-neutral-400">
+                  {ai.review.problems.map((p, i) => (
+                    <li key={i}>{p}</li>
+                  ))}
+                </ul>
+              ) : null}
+              <p className="mt-1 text-neutral-500">下面是监制改写后的版本。</p>
+            </div>
+          ) : null}
           <ul className="mt-2 space-y-2">
             {ai.script.episodes.map((ep) => (
               <li key={ep.number}>

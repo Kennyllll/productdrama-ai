@@ -81,6 +81,19 @@ export interface LocalProposal {
   source?: "template" | "ai";
 }
 
+/** 故事内核（TASK-009）：共情的来源，提案 / 剧本 / 分镜都围绕它 */
+export interface StoryCore {
+  audience: string;
+  protagonist: string;
+  want: string;
+  need: string;
+  stakes: string;
+  truth: string;
+  productBridge: string;
+  /** AI 对参考作品是否匹配的建议 */
+  styleNote: string;
+}
+
 export interface LocalCreative {
   themeIds: string[];
   freeText: string;
@@ -88,6 +101,7 @@ export interface LocalCreative {
   roleId: string;
   proposals: LocalProposal[];
   selectedProposalId: string | null;
+  storyCore: StoryCore;
 }
 
 export interface LocalScriptLine {

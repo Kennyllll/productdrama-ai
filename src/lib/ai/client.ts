@@ -1,5 +1,5 @@
 // OpenAI 兼容的 Chat Completions 适配器（当前接 DeepSeek）。仅服务端调用，错误转为中文提示，不记录 Key。
-import type { AiUsage } from "@/lib/ai/models";
+import type { AiModel, AiUsage } from "@/lib/ai/models";
 import { getAiSettings } from "@/lib/ai/settings";
 
 export class AiError extends Error {}
@@ -14,15 +14,24 @@ const STATUS_MESSAGES: Record<number, string> = {
   503: "DeepSeek 服务繁忙，请稍后再试",
 };
 
+export const addUsage = (a: AiUsage, b: AiUsage): AiUsage => ({
+  promptTokens: a.promptTokens + b.promptTokens,
+  completionTokens: a.completionTokens + b.completionTokens,
+});
+
 export async function chatJson(opts: {
   system: string;
   user: string;
   maxTokens: number;
+  /** 默认用设置里的分镜模型；故事类调用传 story */
+  purpose?: "default" | "story";
+  model?: AiModel;
   thinking?: boolean;
   timeoutMs?: number;
 }): Promise<{ data: unknown; usage: AiUsage }> {
   const s = getAiSettings();
   if (!s.apiKey) throw new AiError("尚未配置 API Key，请先到「模型设置」填写");
+  const model = opts.model ?? (opts.purpose === "story" ? s.storyModel : s.model);
 
   let res: Response;
   try {
@@ -30,7 +39,7 @@ export async function chatJson(opts: {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${s.apiKey}` },
       body: JSON.stringify({
-        model: s.model,
+        model,
         messages: [
           { role: "system", content: opts.system },
           { role: "user", content: opts.user },
@@ -40,7 +49,7 @@ export async function chatJson(opts: {
         max_tokens: opts.maxTokens,
         stream: false,
       }),
-      signal: AbortSignal.timeout(opts.timeoutMs ?? 300_000),
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 480_000),
     });
   } catch (e) {
     const timedOut = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");

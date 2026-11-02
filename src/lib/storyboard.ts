@@ -45,7 +45,7 @@ const PATTERNS: Record<BeatType, Pattern[]> = {
   ],
   turn: [
     ["特写", "低机位", "环绕", "主体", "硬切"],
-    ["全景", "高机位", "拉远", "主体", "叠化"],
+    ["全景", "高机位", "拉远", "背景", "叠化"],
   ],
   cliffhanger: [["近景", "主观视角", "推近", "背景", "淡出"]],
   resolution: [["全景", "平视", "拉远", "主体", "淡出"]],
@@ -149,6 +149,10 @@ export function checkStoryboardEpisode(shots: LocalShot[], hasEgg: boolean): Cin
   if (shots.length === 0) return [{ shotIndex: null, message: "本集还没有镜头" }];
   const warnings = checkEpisodeShots(shots, EPISODE_SECONDS);
   if (!shots.some((s) => s.product === "主体")) warnings.push({ shotIndex: null, message: "本集没有产品主体镜头" });
+  const productShots = shots.filter((s) => s.product === "主体").length;
+  if (productShots > 2) warnings.push({ shotIndex: null, message: `产品主体镜头有 ${productShots} 个，偏多；观众共情来自人物，建议每集 1–2 个` });
+  const faces = shots.filter((s) => s.characterIds.length > 0 && s.product !== "主体" && (s.size === "近景" || s.size === "特写" || s.size === "大特写")).length;
+  if (faces < 2) warnings.push({ shotIndex: null, message: "人物反应近景 / 特写少于 2 个，观众难以看清人物情绪" });
   shots
     .filter((s) => s.product === "主体" && !s.productNote.trim())
     .forEach((s) => warnings.push({ shotIndex: s.index, message: `镜头 ${s.index} 产品为主体，请写明产品出现方式` }));
