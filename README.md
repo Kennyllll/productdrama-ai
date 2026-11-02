@@ -100,3 +100,9 @@ PROJECT_BRIEF.md / AGENTS.md / docs/ / tasks/   交接文档
 
 - 分镜页「AI 设计分镜」：DeepSeek 按四集剧本、参考作品和产品资料设计每集 6–8 个镜头（景别、焦距、机位、运镜、光线、构图、产品出现方式、台词、彩蛋、声音、连续性）。
 - 枚举字段校验、角色名匹配、每集时长自动校正为 45 秒、彩蛋每集最多 1 个；先预览，确认后覆盖并保存。
+
+## TASK-008 视频页本地化
+
+- 依赖 ffmpeg-static（FFmpeg 6.0，安装在 node_modules，不改系统）。
+- 视频页按分镜列出四集镜头，每镜可上传视频或图片，未上传的用占位画面；FFmpeg 按视觉规范画幅 / 帧率合成每集 45 秒成片和四集总片，可选烧录英文字幕，可播放和下载。
+- 素材在 uploads/<projectId>/shots/，成片在 uploads/<projectId>/renders/。
