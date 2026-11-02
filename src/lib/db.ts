@@ -41,6 +41,41 @@ CREATE TABLE IF NOT EXISTS scripts (
   project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
   data TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS characters (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  sort INTEGER NOT NULL DEFAULT 0,
+  data TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS easter_eggs (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  species TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS character_photos (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+  file_name TEXT NOT NULL,
+  original_name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS egg_photos (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES easter_eggs(id) ON DELETE CASCADE,
+  file_name TEXT NOT NULL,
+  original_name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS project_eggs (
+  project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  egg_id TEXT REFERENCES easter_eggs(id) ON DELETE SET NULL
+);
 `;
 
 const globalForDb = globalThis as unknown as { __productDramaDb?: Database.Database };

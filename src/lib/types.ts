@@ -251,3 +251,43 @@ export interface Episode {
   scenes: Scene[];
   shots: Shot[];
 }
+
+// ---- TASK-004：选角与彩蛋角色库 ----
+
+export type PhotoOwner = "character" | "egg";
+
+export interface PhotoView {
+  id: string;
+  originalName: string;
+  size: number;
+}
+
+export interface PhotoRecord extends PhotoView {
+  ownerType: PhotoOwner;
+  ownerId: string;
+  fileName: string;
+  mime: string;
+}
+
+export interface LocalCharacter {
+  id: string;
+  name: string;
+  kind: CharacterKind;
+  role: CharacterRole;
+  description: string;
+  episodes: EpisodeNumber[];
+  /** 真人（儿童 / 成人）肖像已获授权 */
+  consentConfirmed: boolean;
+  photos: PhotoView[];
+}
+
+export type LocalCharacterInput = Omit<LocalCharacter, "photos">;
+
+/** 工具级彩蛋角色（不限于猫），可在任意项目中选用 */
+export interface EasterEgg {
+  id: string;
+  name: string;
+  species: string;
+  notes: string;
+  photos: PhotoView[];
+}

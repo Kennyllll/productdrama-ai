@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { Card, LaterButton, MockBadge, PlaceholderFrame, Tag } from "@/components/ui";
 import { characterKindLabel, characterRoleLabel, demoCast, petEasterEgg } from "@/lib/mock/demo";
@@ -47,7 +48,7 @@ export function CastingStudio() {
   return (
     <div className="grid gap-6 xl:grid-cols-3">
       <div className="space-y-6 xl:col-span-2">
-        <Card title={`角色阵容（${cast.length} 位，不设上限）`} aside={<LaterButton task="TASK-004">AI 推荐阵容</LaterButton>}>
+        <Card title={`角色阵容（${cast.length} 位，不设上限）`} aside={<LaterButton>AI 推荐阵容</LaterButton>}>
           <div className="grid gap-3 sm:grid-cols-2">
             {cast.map((c) => (
               <article key={c.id} className="flex gap-3 rounded-lg border border-white/10 p-3">
@@ -155,8 +156,8 @@ export function CastingStudio() {
         </Card>
       </div>
 
-      <Card title="猫咪彩蛋（可选）" aside={<MockBadge>固定隐藏彩蛋</MockBadge>}>
-        <PlaceholderFrame label="猫咪多角度参考照（待上传）" />
+      <Card title="彩蛋角色（示例：猫）" aside={<MockBadge>示例</MockBadge>}>
+        <PlaceholderFrame label="彩蛋角色参考照（示例）" />
         <p className="mt-3 text-sm text-white">{petEasterEgg.name}</p>
         <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-neutral-300">
           {petEasterEgg.rules.map((r) => (
@@ -172,7 +173,7 @@ export function CastingStudio() {
           ))}
         </ul>
         <div className="mt-4">
-          <LaterButton task="TASK-004">上传猫咪参考照</LaterButton>
+          <Link href="/easter-eggs" className="text-sm text-amber-200 underline">去彩蛋角色库添加 / 更换 →</Link>
         </div>
       </Card>
     </div>

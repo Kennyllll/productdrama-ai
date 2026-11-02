@@ -93,7 +93,7 @@ export function StoryboardWorkbench() {
                   <p className="mt-1 line-clamp-2 text-xs text-neutral-400">{s.description}</p>
                   <div className="mt-1 flex flex-wrap gap-1">
                     {s.product !== "无" ? <Tag tone="amber">产品：{s.product}</Tag> : null}
-                    {s.hasPetEasterEgg ? <Tag tone="emerald">猫咪彩蛋</Tag> : null}
+                    {s.hasPetEasterEgg ? <Tag tone="emerald">彩蛋</Tag> : null}
                     {s.characterIds.length >= 3 ? <Tag tone="rose">多人 · 高复杂度</Tag> : null}
                     {warnings.some((w) => w.shotIndex === s.index) ? <Tag tone="rose">电影感提示</Tag> : null}
                   </div>
