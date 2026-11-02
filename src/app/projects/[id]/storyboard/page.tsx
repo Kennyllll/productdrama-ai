@@ -1,3 +1,4 @@
+import { aiPublicInfo } from "@/lib/ai/settings";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { LocalStoryboardWorkbench } from "@/components/workbench/LocalStoryboardWorkbench";
@@ -56,6 +57,7 @@ export default async function StoryboardPage({ params }: { params: Promise<{ id:
         cast={listCharacters(id)}
         egg={egg ? { id: egg.id, name: egg.name } : null}
         initial={getStoryboard(id)}
+        aiReady={aiPublicInfo().configured}
       />
     </>
   );

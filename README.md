@@ -95,3 +95,8 @@ PROJECT_BRIEF.md / AGENTS.md / docs/ / tasks/   交接文档
 - 侧边栏「模型设置」填写 DeepSeek API Key（只存本机 data/productdrama.db），可选 deepseek-flash / deepseek-v4-pro，可测试连接。
 - 创意页「AI 生成 3 个提案」、剧本页「AI 写四集剧本」：结果先预览，确认后替换；台词为英文并附中文翻译；显示 token 用量。
 - 只发送文字资料，不发送照片。适配器为 OpenAI 兼容接口（src/lib/ai/），以后可换其他模型。
+
+## TASK-007 AI 分镜
+
+- 分镜页「AI 设计分镜」：DeepSeek 按四集剧本、参考作品和产品资料设计每集 6–8 个镜头（景别、焦距、机位、运镜、光线、构图、产品出现方式、台词、彩蛋、声音、连续性）。
+- 枚举字段校验、角色名匹配、每集时长自动校正为 45 秒、彩蛋每集最多 1 个；先预览，确认后覆盖并保存。

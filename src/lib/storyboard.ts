@@ -210,3 +210,58 @@ export function sanitizeStoryboard(input: unknown): LocalStoryboard | null {
     }),
   };
 }
+
+const rec = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
+const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+
+/** 把每集镜头时长校正为 target 秒（单镜 1–10 秒），从后往前逐秒调整 */
+function fitSeconds(shots: LocalShot[], target: number): LocalShot[] {
+  const out = shots.map((s) => ({ ...s, seconds: Math.max(1, Math.min(10, s.seconds)) }));
+  let diff = target - out.reduce((t, s) => t + s.seconds, 0);
+  for (let guard = 0; diff !== 0 && guard < 200; guard++) {
+    let moved = false;
+    for (let i = out.length - 1; i >= 0 && diff !== 0; i--) {
+      const step = diff > 0 ? 1 : -1;
+      const v = out[i].seconds + step;
+      if (v >= 1 && v <= 10) {
+        out[i].seconds = v;
+        diff -= step;
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  return out;
+}
+
+/** 把 AI 返回的分镜 JSON 转为本地分镜：枚举校验、角色名匹配、时长校正、彩蛋每集最多 1 个 */
+export function aiToStoryboard(
+  data: unknown,
+  ctx: { proposalId: string; style: FilmStyle; cast: { id: string; name: string }[]; hasEgg: boolean },
+): LocalStoryboard {
+  const eps = list(rec(data).episodes);
+  return {
+    sourceProposalId: ctx.proposalId,
+    visualSpec: defaultVisualSpec(ctx.style),
+    episodes: ([1, 2, 3, 4] as EpisodeNumber[]).map((n, i) => {
+      const e = eps.find((x) => rec(x).number === n) ?? eps[i];
+      let eggUsed = false;
+      const shots = list(rec(e).shots)
+        .slice(0, 12)
+        .map((raw, j) => {
+          const r = rec(raw);
+          const size = pick(r.size, shotSizes, "中景");
+          const lens = lenses.includes(Number(r.lens) as LensMm) ? (Number(r.lens) as LensMm) : LENS_BY_SIZE[size];
+          const names = list(r.characters).filter((x): x is string => typeof x === "string").map((x) => x.trim().toLowerCase());
+          const egg = ctx.hasEgg && r.easterEgg === true && !eggUsed;
+          if (egg) eggUsed = true;
+          return {
+            ...sanitizeShot({ ...r, id: undefined, size, lens, review: "pending" }, j),
+            characterIds: ctx.cast.filter((c) => c.name.trim() && names.includes(c.name.trim().toLowerCase())).map((c) => c.id),
+            hasPetEasterEgg: egg,
+          };
+        });
+      return { number: n, shots: reindex(fitSeconds(shots, EPISODE_SECONDS)) };
+    }),
+  };
+}

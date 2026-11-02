@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { aiStoryboardAction } from "@/app/ai-actions";
 import { saveStoryboardAction } from "@/app/storyboard-actions";
 import { Card, LaterButton, PlaceholderFrame, Tag } from "@/components/ui";
+import { AiButton, UsageNote } from "@/components/workbench/AiButton";
 import { SaveBar } from "@/components/workbench/SaveBar";
+import type { AiUsage } from "@/lib/ai/models";
 import { VisualSpecCard } from "@/components/workbench/VisualSpecCard";
 import {
   angles,
@@ -51,6 +54,7 @@ export function LocalStoryboardWorkbench({
   cast,
   egg,
   initial,
+  aiReady,
 }: {
   projectId: string;
   script: LocalScript;
@@ -58,6 +62,7 @@ export function LocalStoryboardWorkbench({
   cast: LocalCharacter[];
   egg: { id: string; name: string } | null;
   initial: LocalStoryboard | null;
+  aiReady: boolean;
 }) {
   const [board, setBoard] = useState(initial);
   const [epNo, setEpNo] = useState<EpisodeNumber>(1);
@@ -65,6 +70,9 @@ export function LocalStoryboardWorkbench({
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState<FormState>({});
   const [pending, startTransition] = useTransition();
+  const [ai, setAi] = useState<{ board: LocalStoryboard; usage: AiUsage } | null>(null);
+  const [aiError, setAiError] = useState("");
+  const [aiPending, startAi] = useTransition();
 
   const generate = () => {
     if (board && !window.confirm("按当前剧本重新生成分镜？会覆盖现有全部镜头和视觉规范的修改。")) return;
@@ -76,6 +84,77 @@ export function LocalStoryboardWorkbench({
     setStatus({});
   };
 
+  const runAi = () => {
+    setAiError("");
+    setAi(null);
+    startAi(async () => {
+      const res = await aiStoryboardAction(projectId);
+      if (res.error || !res.result) setAiError(res.error ?? "AI 没有返回分镜");
+      else setAi({ board: res.result, usage: res.usage ?? { promptTokens: 0, completionTokens: 0 } });
+    });
+  };
+
+  const acceptAi = () => {
+    if (!ai) return;
+    if (board && !window.confirm("用 AI 分镜覆盖现有全部镜头和视觉规范，继续吗？")) return;
+    const b = ai.board;
+    setBoard(b);
+    setEpNo(1);
+    setSelectedId(b.episodes[0]?.shots[0]?.id ?? "");
+    setAi(null);
+    startTransition(async () => {
+      const res = await saveStoryboardAction(projectId, b);
+      setStatus(res);
+      setDirty(!res.ok);
+    });
+  };
+
+  const aiPanel = (
+    <div className="space-y-2">
+      <AiButton ready={aiReady} pending={aiPending} onClick={runAi}>
+        AI 设计分镜（按剧情和《{style.film}》）
+      </AiButton>
+      {aiPending ? <p className="text-xs text-amber-200">DeepSeek 正在设计四集分镜，通常需要 1–4 分钟…</p> : null}
+      {aiError ? <p className="text-xs text-rose-300">{aiError}</p> : null}
+      {ai ? (
+        <div className="rounded-xl border border-emerald-400/40 bg-emerald-400/5 p-3 text-sm">
+          <p className="text-emerald-200">AI 分镜预览（尚未采用）</p>
+          <div className="mt-2 grid gap-3 lg:grid-cols-2">
+            {ai.board.episodes.map((ep) => (
+              <div key={ep.number} className="rounded-lg border border-white/10 p-2">
+                <p className="text-xs text-amber-300">
+                  第 {ep.number} 集 · {ep.shots.length} 个镜头 · {sum(ep.shots)} 秒
+                </p>
+                <ol className="mt-1 space-y-1 text-xs text-neutral-300">
+                  {ep.shots.map((s) => (
+                    <li key={s.id}>
+                      <span className="text-neutral-500">
+                        #{s.index} {s.size} · {s.angle} · {s.camera} · {s.lens}mm · {s.seconds}s{s.product === "主体" ? " · 产品主体" : ""}
+                        {s.hasPetEasterEgg ? " · 彩蛋" : ""}
+                      </span>{" "}
+                      {s.description}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button type="button" onClick={acceptAi} className="rounded-md bg-emerald-400 px-3 py-1 text-sm font-medium text-black hover:bg-emerald-300">
+              采用 AI 分镜
+            </button>
+            <button type="button" onClick={() => setAi(null)} className="rounded-md border border-white/15 px-3 py-1 text-sm text-neutral-300 hover:bg-white/10">
+              放弃
+            </button>
+          </div>
+          <div className="mt-2">
+            <UsageNote usage={ai.usage} />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+
   if (!board) {
     return (
       <Card title="生成分镜">
@@ -86,6 +165,7 @@ export function LocalStoryboardWorkbench({
         <button type="button" onClick={generate} className="mt-4 rounded-lg bg-amber-400 px-4 py-2 text-sm font-medium text-black hover:bg-amber-300">
           按剧本生成分镜
         </button>
+        <div className="mt-4 border-t border-white/10 pt-4">{aiPanel}</div>
       </Card>
     );
   }
@@ -158,6 +238,9 @@ export function LocalStoryboardWorkbench({
           剧本已改为按另一个提案生成，当前分镜不会自动更新。需要时点「按剧本重新生成」。
         </p>
       ) : null}
+      <Card title="AI 分镜" className="mb-4">
+        {aiPanel}
+      </Card>
       <VisualSpecCard value={board.visualSpec} onChange={setSpec} referenceNote="（默认取自创意页选定的参考作品，可修改）" />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">

@@ -3,12 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { AiError, chatJson } from "@/lib/ai/client";
 import { AI_MODELS, type AiModel, type AiPublicInfo, type AiUsage } from "@/lib/ai/models";
-import { proposalPrompt, scriptPrompt } from "@/lib/ai/prompts";
+import { proposalPrompt, scriptPrompt, storyboardPrompt } from "@/lib/ai/prompts";
 import { aiPublicInfo, getAiSettings, saveAiSettings } from "@/lib/ai/settings";
 import { getEgg, getProjectEggId, listCharacters } from "@/lib/cast-repo";
 import { sanitizeCreative, sanitizeScript } from "@/lib/creative";
-import { findLocalProject, getCreative, getProduct } from "@/lib/repo";
-import type { FormState, LocalCreative, LocalProposal, LocalScript } from "@/lib/types";
+import { filmStyles } from "@/lib/mock/demo";
+import { findLocalProject, getCreative, getProduct, getScript } from "@/lib/repo";
+import { aiToStoryboard } from "@/lib/storyboard";
+import type { FormState, LocalCreative, LocalProposal, LocalScript, LocalStoryboard } from "@/lib/types";
 
 export interface AiResult<T> {
   error?: string;
@@ -84,6 +86,26 @@ export async function aiScriptAction(projectId: string): Promise<AiResult<LocalS
       return { error: "AI 返回的剧本不完整（缺少节拍或场景），请重试", usage };
     }
     return { result: script, usage };
+  } catch (e) {
+    return failure(e);
+  }
+}
+
+export async function aiStoryboardAction(projectId: string): Promise<AiResult<LocalStoryboard>> {
+  if (!findLocalProject(projectId)) return { error: "项目不存在或为示例项目" };
+  const script = getScript(projectId);
+  if (!script) return { error: "请先在剧本工作台生成剧本" };
+  const creative = getCreative(projectId);
+  const style = filmStyles.find((f) => f.id === creative.styleId) ?? filmStyles[0];
+  const characters = listCharacters(projectId);
+  const eggId = getProjectEggId(projectId);
+  const egg = eggId ? getEgg(eggId) : null;
+  try {
+    const { system, user } = storyboardPrompt({ product: getProduct(projectId), creative, script, characters, egg });
+    const { data, usage } = await chatJson({ system, user, maxTokens: 48_000, timeoutMs: 480_000 });
+    const board = aiToStoryboard(data, { proposalId: script.proposalId, style, cast: characters, hasEgg: !!egg });
+    if (board.episodes.some((ep) => ep.shots.length === 0)) return { error: "AI 返回的分镜不完整，请重试", usage };
+    return { result: board, usage };
   } catch (e) {
     return failure(e);
   }

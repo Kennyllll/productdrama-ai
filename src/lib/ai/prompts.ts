@@ -1,6 +1,7 @@
 // AI 提案与剧本的提示词（TASK-006）。只发送文字资料，不发送照片。
 import { filmStyles, productRoles, themeLibrary } from "@/lib/mock/demo";
-import type { CharacterKind, CharacterRole, EasterEgg, LocalCharacter, LocalCreative, LocalProduct, LocalProposal } from "@/lib/types";
+import type { CharacterKind, CharacterRole, EasterEgg, LocalCharacter, LocalCreative, LocalProduct, LocalProposal, LocalScript } from "@/lib/types";
+import { angles, cameraMoves, lenses, presences, shotSizes, transitions } from "@/lib/storyboard";
 
 const KIND_LABELS: Record<CharacterKind, string> = { child: "儿童", adult: "成人", animal: "动物", fantasy: "幻想角色" };
 const ROLE_LABELS: Record<CharacterRole, string> = { lead: "主角", supporting: "配角", cameo: "客串", extra: "群演" };
@@ -114,5 +115,69 @@ ${eggRule}
 
 按以下 json 结构输出（episodes 必须正好 4 个）：
 {"episodes":[{"title":"集名","synopsis":"1–2 句梗概","beats":[{"type":"hook","startSec":0,"endSec":10,"description":"这一段发生什么、产品如何出现","intensity":3}],"scenes":[{"heading":"外景 · 城市街道 · 夜","summary":"画面描述","lines":[{"speaker":"角色名","text":"English line","translation":"中文翻译"}]}]}]}`;
+  return { system: SYSTEM, user };
+}
+
+export function storyboardPrompt(input: {
+  product: LocalProduct | null;
+  creative: LocalCreative;
+  script: LocalScript;
+  characters: LocalCharacter[];
+  egg: EasterEgg | null;
+}) {
+  const { product, creative, script, characters, egg } = input;
+  const cast = characters.length
+    ? characters.map((ch) => `- ${ch.name || "未命名"}：${KIND_LABELS[ch.kind]} · ${ROLE_LABELS[ch.role]} · 出场第 ${ch.episodes.join("、") || "?"} 集`).join("\n")
+    : "（尚未选角）";
+  const eggRule = egg
+    ? `彩蛋角色：${egg.name}（${egg.species}）。每集恰好 1 个镜头 easterEgg 为 true：它在画面中出现约 1–3 秒，不说话、不抢主角，动作低风险。`
+    : "本项目不使用彩蛋角色，所有镜头 easterEgg 为 false。";
+  const scriptText = script.episodes
+    .map((ep) =>
+      [
+        `第 ${ep.number} 集《${ep.title}》：${ep.synopsis}`,
+        ...ep.beats.map((b) => `  [${b.type} ${b.startSec}–${b.endSec}s] ${b.description}`),
+        ...ep.scenes.flatMap((s) => [
+          `  场景：${s.heading} — ${s.summary}`,
+          ...s.lines.filter((l) => l.text.trim()).map((l) => `    ${l.speaker || "旁白"}: ${l.text}`),
+        ]),
+      ].join("\n"),
+    )
+    .join("\n\n");
+
+  const user = `【产品资料】
+${productBlock(product)}
+
+【创意选择】
+${creativeBlock(creative)}
+
+【选角】
+${cast}
+
+【彩蛋】
+${eggRule}
+
+【四集剧本】
+${scriptText}
+
+【任务】
+你是这部短剧的导演和摄影指导。按剧本为四集分别设计分镜。
+- 每集 6–8 个镜头，按顺序覆盖全部节拍；seconds 为 1–10 的整数，每集合计正好 45 秒。
+- 以下字段只能从给定选项中选：
+  size：${shotSizes.join(" / ")}
+  angle：${angles.join(" / ")}
+  camera：${cameraMoves.join(" / ")}
+  transition：${transitions.join(" / ")}
+  product：${presences.join(" / ")}
+  lens（毫米，数字）：${lenses.join(" / ")}
+- 电影语言：景别有远近节奏，相邻镜头避免同景别同机位跳切；每集至少 1 个特写或大特写；焦距与景别匹配，产品为主体时用 50mm 以上，避免广角变形；单镜头不超过 10 秒。
+- 每集至少 1 个 product 为「主体」的产品英雄镜头，并在 productNote 写清产品如何出现（角度、光线、动作、对焦），产品几何、颜色和 Logo 保持不变。
+- composition、lighting 按参考作品写具体做法，不要泛泛而谈。
+- dialogue：把剧本台词按顺序放进对应镜头，格式「角色名: English line」；不新增、不改写台词；大多数镜头没有台词。
+- characters：本镜头出场的角色名，只能用选角里的名字。
+- sound 写声音设计，continuity 写轴线与动作连续性备注；description、composition、lighting、productNote、sound、continuity 用简体中文。
+
+按以下 json 结构输出（episodes 必须正好 4 个）：
+{"episodes":[{"number":1,"shots":[{"seconds":6,"description":"画面描述","size":"远景","lens":24,"angle":"低机位","camera":"推近","composition":"构图","lighting":"光线","transition":"硬切","product":"背景","productNote":"","characters":["角色名"],"dialogue":"","easterEgg":false,"sound":"声音设计","continuity":"连续性备注"}]}]}`;
   return { system: SYSTEM, user };
 }
