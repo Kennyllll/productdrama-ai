@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { Card, LaterButton, MockBadge, Tag } from "@/components/ui";
-import { productRoles, storyProposals, themeLibrary, visualStyles } from "@/lib/mock/demo";
+import { FilmStylePicker } from "@/components/workbench/FilmStylePicker";
+import { filmStyles, productRoles, storyProposals, themeLibrary } from "@/lib/mock/demo";
 
 type EntryMode = "ai" | "library" | "free";
 
@@ -24,7 +25,7 @@ export function CreativeWorkbench() {
   const [mode, setMode] = useState<EntryMode>("ai");
   const [themes, setThemes] = useState<string[]>(["adventure", "friendship", "fantasy"]);
   const [freeText, setFreeText] = useState("");
-  const [styleId, setStyleId] = useState("warm-film");
+  const [styleId, setStyleId] = useState("et");
   const [roleId, setRoleId] = useState("companion");
   const [selectedId, setSelectedId] = useState(storyProposals[0].id);
   const [loglines, setLoglines] = useState<Record<string, string>>(
@@ -103,14 +104,12 @@ export function CreativeWorkbench() {
         </p>
       </Card>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card title="2 · 电影视觉风格">
-          <OptionGrid options={visualStyles} value={styleId} onChange={setStyleId} name="visual-style" />
-        </Card>
-        <Card title="3 · 产品在剧情中的角色">
-          <OptionGrid options={productRoles} value={roleId} onChange={setRoleId} name="product-role" />
-        </Card>
-      </div>
+      <Card title="2 · 电影视觉风格（参考作品：电影 / 赛车电影 / 游戏 CG）">
+        <FilmStylePicker value={styleId} onChange={setStyleId} />
+      </Card>
+      <Card title="3 · 产品在剧情中的角色">
+        <OptionGrid options={productRoles} value={roleId} onChange={setRoleId} name="product-role" />
+      </Card>
 
       <Card title="4 · 三个故事提案" aside={<LaterButton task="TASK-003">重新推荐</LaterButton>}>
         <p className="mb-3 text-xs text-neutral-400">以下为预置示例提案，并非 AI 实时生成。选择一个提案后可修改故事梗概。</p>
@@ -136,7 +135,7 @@ export function CreativeWorkbench() {
                   {p.themeIds.map((id) => (
                     <Tag key={id}>{labelOf(themeLibrary, id)}</Tag>
                   ))}
-                  <Tag tone="emerald">{labelOf(visualStyles, p.visualStyleId)}</Tag>
+                  <Tag tone="emerald">《{filmStyles.find((f) => f.id === p.visualStyleId)?.film}》风格</Tag>
                   <Tag tone="rose">产品：{labelOf(productRoles, p.productRoleId)}</Tag>
                 </div>
               </button>
@@ -181,7 +180,7 @@ function OptionGrid({
   name: string;
 }) {
   return (
-    <div role="radiogroup" className="grid gap-2">
+    <div role="radiogroup" className="grid gap-2 md:grid-cols-2">
       {options.map((o) => (
         <label
           key={o.id}

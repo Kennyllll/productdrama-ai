@@ -101,6 +101,10 @@ export interface Scene {
 }
 
 export type CameraMove = "固定" | "推近" | "拉远" | "横摇" | "跟拍" | "环绕" | "俯拍" | "手持";
+export type ShotSize = "大远景" | "远景" | "全景" | "中景" | "近景" | "特写" | "大特写";
+export type LensMm = 18 | 24 | 35 | 50 | 85 | 100 | 135;
+export type CameraAngle = "平视" | "低机位" | "高机位" | "俯视" | "过肩" | "主观视角";
+export type Transition = "硬切" | "匹配剪辑" | "叠化" | "J-Cut" | "L-Cut" | "甩镜" | "淡出";
 export type ProductPresence = "主体" | "背景" | "无";
 export type ReviewStatus = "pending" | "approved" | "needs_changes";
 
@@ -114,6 +118,58 @@ export interface Shot {
   dialogue: string;
   product: ProductPresence;
   hasPetEasterEgg: boolean;
+  // 电影语言
+  size: ShotSize;
+  lens: LensMm;
+  angle: CameraAngle;
+  composition: string;
+  lighting: string;
+  /** 切到下一个镜头的方式 */
+  transition: Transition;
+  sound: string;
+  continuity: string;
+}
+
+export type BeatType = "hook" | "conflict" | "turn" | "cliffhanger" | "resolution";
+
+export interface Beat {
+  type: BeatType;
+  startSec: number;
+  endSec: number;
+  description: string;
+  /** 情绪强度 1–5 */
+  intensity: 1 | 2 | 3 | 4 | 5;
+}
+
+export type ReferenceKind = "film" | "racing" | "game-cg";
+
+export interface FilmStyle {
+  id: string;
+  kind: ReferenceKind;
+  film: string;
+  /** 导演；游戏 CG 填制作公司 */
+  director: string;
+  year: number;
+  keywords: string[];
+  palette: { hex: string; name: string }[];
+  lighting: string;
+  camera: string;
+  composition: string;
+  suggestedAspect: string;
+  /** 该风格下产品如何呈现（产品本身的几何、颜色、Logo 不变） */
+  productTreatment: string;
+  heroShots: string[];
+  caution: string;
+}
+
+export interface VisualSpec {
+  filmReference: string;
+  aspectRatio: "2.39:1" | "1.85:1" | "16:9" | "9:16";
+  fps: 24 | 25 | 30;
+  colorGrade: string;
+  grain: string;
+  lensPackage: string;
+  depthOfField: string;
 }
 
 export interface Episode {
@@ -121,6 +177,7 @@ export interface Episode {
   title: string;
   targetSeconds: number;
   synopsis: string;
+  beats: Beat[];
   scenes: Scene[];
   shots: Shot[];
 }

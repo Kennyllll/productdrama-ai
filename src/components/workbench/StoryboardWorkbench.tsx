@@ -3,10 +3,16 @@
 import { useState } from "react";
 import { Card, LaterButton, PlaceholderFrame, Tag } from "@/components/ui";
 import { EpisodeTabs } from "@/components/workbench/EpisodeTabs";
+import { checkEpisodeShots } from "@/lib/cinematic";
 import { demoCast, demoEpisodes } from "@/lib/mock/demo";
-import type { CameraMove, EpisodeNumber, ProductPresence, ReviewStatus, Shot } from "@/lib/types";
+import type { CameraAngle, CameraMove, EpisodeNumber, LensMm, ProductPresence, ReviewStatus, Shot, ShotSize, Transition } from "@/lib/types";
 
 const cameraMoves: CameraMove[] = ["固定", "推近", "拉远", "横摇", "跟拍", "环绕", "俯拍", "手持"];
+const shotSizes: ShotSize[] = ["大远景", "远景", "全景", "中景", "近景", "特写", "大特写"];
+const lenses: LensMm[] = [18, 24, 35, 50, 85, 100, 135];
+const angles: CameraAngle[] = ["平视", "低机位", "高机位", "俯视", "过肩", "主观视角"];
+const transitions: Transition[] = ["硬切", "匹配剪辑", "叠化", "J-Cut", "L-Cut", "甩镜", "淡出"];
+const fieldClass = "mt-1 w-full rounded-md border border-white/10 bg-black/40 px-3 py-2 text-sm text-white focus:border-amber-400 focus:outline-none";
 const presences: ProductPresence[] = ["主体", "背景", "无"];
 const reviewLabel: Record<ReviewStatus, { text: string; tone: "neutral" | "emerald" | "rose" }> = {
   pending: { text: "待审核", tone: "neutral" },
@@ -29,6 +35,7 @@ export function StoryboardWorkbench() {
   const total = shots.reduce((sum, s) => sum + s.seconds, 0);
   const allShots = Object.values(shotsByEp).flat();
   const approvedCount = allShots.filter((s) => review[s.id] === "approved").length;
+  const warnings = checkEpisodeShots(shots, episode.targetSeconds);
 
   const changeEpisode = (n: EpisodeNumber) => {
     setEpNo(n);
@@ -48,6 +55,21 @@ export function StoryboardWorkbench() {
         <span className={total === episode.targetSeconds ? "text-emerald-300" : "text-amber-300"}>{total}</span> / {episode.targetSeconds} 秒 ·
         全部 {allShots.length} 个镜头 · 关键帧已通过 {approvedCount}
       </p>
+      <div
+        role="status"
+        className={`mb-5 rounded-lg border p-3 text-sm ${
+          warnings.length ? "border-rose-400/40 bg-rose-400/5 text-rose-100" : "border-emerald-400/40 bg-emerald-400/5 text-emerald-100"
+        }`}
+      >
+        <p className="font-medium">电影语言检查（本地规则，非 AI）：{warnings.length ? `${warnings.length} 条提示` : "本集未发现问题"}</p>
+        {warnings.length ? (
+          <ul className="mt-1 list-inside list-disc text-xs">
+            {warnings.map((w) => (
+              <li key={w.message}>{w.message}</li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
       <div className="grid gap-6 lg:grid-cols-5">
         <ol className="space-y-2 lg:col-span-2" aria-label="镜头列表">
           {shots.map((s) => {
@@ -64,7 +86,7 @@ export function StoryboardWorkbench() {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-white">
-                      镜头 {s.index} · {s.seconds}s · {s.camera}
+                      镜头 {s.index} · {s.seconds}s · {s.size} · {s.lens}mm · {s.camera}
                     </span>
                     <Tag tone={reviewLabel[r].tone}>{reviewLabel[r].text}</Tag>
                   </div>
@@ -73,7 +95,9 @@ export function StoryboardWorkbench() {
                     {s.product !== "无" ? <Tag tone="amber">产品：{s.product}</Tag> : null}
                     {s.hasPetEasterEgg ? <Tag tone="emerald">猫咪彩蛋</Tag> : null}
                     {s.characterIds.length >= 3 ? <Tag tone="rose">多人 · 高复杂度</Tag> : null}
+                    {warnings.some((w) => w.shotIndex === s.index) ? <Tag tone="rose">电影感提示</Tag> : null}
                   </div>
+                  <p className="mt-1 text-[11px] text-neutral-500">→ {s.transition}</p>
                 </button>
               </li>
             );
@@ -147,13 +171,66 @@ export function StoryboardWorkbench() {
                 ))}
               </select>
             </label>
-            <div className="text-sm text-neutral-400">
+            <div className="text-sm text-neutral-400 sm:col-span-2">
               出场角色
               <div className="mt-2 flex flex-wrap gap-1">
                 {selected.characterIds.length ? selected.characterIds.map((id) => <Tag key={id}>{nameOf(id)}</Tag>) : <span className="text-neutral-500">无</span>}
                 {selected.hasPetEasterEgg ? <Tag tone="emerald">猫咪彩蛋</Tag> : null}
               </div>
             </div>
+          </div>
+          <h3 className="mt-6 border-t border-white/10 pt-4 text-sm font-semibold text-amber-300/90">电影语言</h3>
+          <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <label className="text-sm text-neutral-400">
+              景别
+              <select value={selected.size} onChange={(e) => updateShot({ size: e.target.value as ShotSize })} className={fieldClass}>
+                {shotSizes.map((v) => (
+                  <option key={v}>{v}</option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm text-neutral-400">
+              焦距
+              <select value={selected.lens} onChange={(e) => updateShot({ lens: Number(e.target.value) as LensMm })} className={fieldClass}>
+                {lenses.map((v) => (
+                  <option key={v} value={v}>
+                    {v}mm
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm text-neutral-400">
+              机位
+              <select value={selected.angle} onChange={(e) => updateShot({ angle: e.target.value as CameraAngle })} className={fieldClass}>
+                {angles.map((v) => (
+                  <option key={v}>{v}</option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm text-neutral-400">
+              转场（切到下一镜）
+              <select value={selected.transition} onChange={(e) => updateShot({ transition: e.target.value as Transition })} className={fieldClass}>
+                {transitions.map((v) => (
+                  <option key={v}>{v}</option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm text-neutral-400 sm:col-span-2">
+              构图
+              <input value={selected.composition} onChange={(e) => updateShot({ composition: e.target.value })} className={fieldClass} />
+            </label>
+            <label className="text-sm text-neutral-400 sm:col-span-2">
+              光线（时段 / 主光方向 / 色温）
+              <input value={selected.lighting} onChange={(e) => updateShot({ lighting: e.target.value })} className={fieldClass} />
+            </label>
+            <label className="text-sm text-neutral-400 sm:col-span-2">
+              声音设计
+              <input value={selected.sound} onChange={(e) => updateShot({ sound: e.target.value })} className={fieldClass} />
+            </label>
+            <label className="text-sm text-neutral-400 sm:col-span-2">
+              连续性 / 轴线备注
+              <input value={selected.continuity} onChange={(e) => updateShot({ continuity: e.target.value })} placeholder="例如：运动方向左 → 右" className={fieldClass} />
+            </label>
           </div>
           {selected.product === "主体" ? (
             <p className="mt-4 rounded-md bg-amber-400/10 p-2 text-xs text-amber-200">

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Card, LaterButton, Tag } from "@/components/ui";
 import { EpisodeTabs } from "@/components/workbench/EpisodeTabs";
-import { demoCast, demoEpisodes, totalSeconds } from "@/lib/mock/demo";
+import { beatTypeLabel, demoCast, demoEpisodes, totalSeconds } from "@/lib/mock/demo";
 import type { EpisodeNumber } from "@/lib/types";
 
 const nameOf = (id: string | null) => (id ? demoCast.find((c) => c.id === id)?.name ?? id : "旁白 / 字幕");
@@ -12,6 +12,7 @@ export function ScriptWorkbench() {
   const [epNo, setEpNo] = useState<EpisodeNumber>(1);
   const [edits, setEdits] = useState<Record<string, string>>({});
   const episode = demoEpisodes.find((e) => e.number === epNo)!;
+  const silentShots = episode.shots.filter((s) => !s.dialogue.trim()).length;
 
   const changed = useMemo(() => {
     const lines = demoEpisodes.flatMap((ep) => ep.scenes.flatMap((s) => s.lines.map((l) => ({ ...l, ep: ep.number }))));
@@ -33,6 +34,33 @@ export function ScriptWorkbench() {
           </button>
         </div>
       )}
+      <Card title={`第 ${episode.number} 集节拍 · ${episode.targetSeconds} 秒`} className="mb-6">
+        <div className="flex h-24 items-end gap-1" aria-label="情绪曲线">
+          {episode.beats.map((b) => (
+            <div key={b.type} style={{ flexGrow: b.endSec - b.startSec }} className="flex h-full basis-0 flex-col justify-end">
+              <div
+                style={{ height: `${b.intensity * 20}%` }}
+                className="rounded-t bg-gradient-to-t from-amber-500/40 to-amber-300/80"
+                title={`情绪强度 ${b.intensity}/5`}
+              />
+            </div>
+          ))}
+        </div>
+        <ol className="mt-2 flex gap-1">
+          {episode.beats.map((b) => (
+            <li key={b.type} style={{ flexGrow: b.endSec - b.startSec }} className="basis-0 rounded-md bg-white/5 p-2 text-xs">
+              <span className="text-amber-300">
+                {beatTypeLabel[b.type]} · {b.startSec}–{b.endSec}s
+              </span>
+              <p className="mt-1 text-neutral-300">{b.description}</p>
+            </li>
+          ))}
+        </ol>
+        <p className="mt-3 text-xs text-neutral-400">
+          画面叙事：本集 {episode.shots.length} 个镜头中 {silentShots} 个无台词
+          {silentShots / episode.shots.length < 0.4 ? "，台词偏多，建议更多用画面表达" : "，以画面为主"}。
+        </p>
+      </Card>
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           {episode.scenes.map((scene, i) => (
