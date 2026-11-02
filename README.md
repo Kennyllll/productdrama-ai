@@ -89,3 +89,9 @@ PROJECT_BRIEF.md / AGENTS.md / docs/ / tasks/   交接文档
 - AI 识别产品、AI 推荐主题与提案、AI 生成剧本 —— TASK-003
 - 关键帧生成、视频生成、配音、合成、质检、导出 —— TASK-006 / 007
 - 所有图片均为本地占位框，不是生成结果
+
+## TASK-006 文字模型（DeepSeek）
+
+- 侧边栏「模型设置」填写 DeepSeek API Key（只存本机 data/productdrama.db），可选 deepseek-flash / deepseek-v4-pro，可测试连接。
+- 创意页「AI 生成 3 个提案」、剧本页「AI 写四集剧本」：结果先预览，确认后替换；台词为英文并附中文翻译；显示 token 用量。
+- 只发送文字资料，不发送照片。适配器为 OpenAI 兼容接口（src/lib/ai/），以后可换其他模型。

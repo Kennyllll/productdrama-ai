@@ -77,6 +77,8 @@ export interface LocalProposal {
   title: string;
   logline: string;
   episodeArcs: [string, string, string, string];
+  /** 来源：本地模板或 AI（TASK-006） */
+  source?: "template" | "ai";
 }
 
 export interface LocalCreative {
@@ -93,6 +95,8 @@ export interface LocalScriptLine {
   /** 空字符串 = 旁白 / 字幕 */
   speaker: string;
   text: string;
+  /** 中文翻译（台词为英文时供审阅） */
+  translation?: string;
 }
 
 export interface LocalScene {

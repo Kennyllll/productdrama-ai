@@ -1,3 +1,4 @@
+import { aiPublicInfo } from "@/lib/ai/settings";
 import { notFound } from "next/navigation";
 import { CreativeWorkbench } from "@/components/workbench/CreativeWorkbench";
 import { LocalCreativeWorkbench } from "@/components/workbench/LocalCreativeWorkbench";
@@ -27,6 +28,7 @@ export default async function CreativePage({ params }: { params: Promise<{ id: s
         productName={getProduct(id)?.name ?? ""}
         initial={getCreative(id)}
         scriptProposalId={getScript(id)?.proposalId ?? null}
+        aiReady={aiPublicInfo().configured}
       />
     </>
   );

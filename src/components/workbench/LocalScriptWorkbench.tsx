@@ -2,9 +2,12 @@
 
 import Link from "next/link";
 import { useState, useTransition } from "react";
+import { aiScriptAction } from "@/app/ai-actions";
 import { saveScriptAction } from "@/app/creative-actions";
-import { Card, LaterButton, Tag } from "@/components/ui";
+import { Card, Tag } from "@/components/ui";
+import { AiButton, UsageNote } from "@/components/workbench/AiButton";
 import { SaveBar } from "@/components/workbench/SaveBar";
+import type { AiUsage } from "@/lib/ai/models";
 import { buildSkeleton, checkEpisode, dialogueSeconds, emptyScene, EPISODE_SECONDS, newId } from "@/lib/creative";
 import { beatTypeLabel } from "@/lib/mock/demo";
 import type { Beat, EpisodeNumber, FormState, LocalProposal, LocalScene, LocalScript, ScriptEpisode } from "@/lib/types";
@@ -16,16 +19,21 @@ export function LocalScriptWorkbench({
   projectId,
   initial,
   proposal,
+  aiReady,
 }: {
   projectId: string;
   initial: LocalScript | null;
   proposal: LocalProposal | null;
+  aiReady: boolean;
 }) {
   const [script, setScript] = useState(initial);
   const [epNo, setEpNo] = useState<EpisodeNumber>(1);
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState<FormState>({});
   const [pending, startTransition] = useTransition();
+  const [ai, setAi] = useState<{ script: LocalScript; usage: AiUsage } | null>(null);
+  const [aiError, setAiError] = useState("");
+  const [aiPending, startAi] = useTransition();
 
   const persist = (s: LocalScript) =>
     startTransition(async () => {
@@ -42,6 +50,64 @@ export function LocalScriptWorkbench({
     setEpNo(1);
     persist(s);
   };
+
+  const runAi = () => {
+    setAiError("");
+    setAi(null);
+    startAi(async () => {
+      const res = await aiScriptAction(projectId);
+      if (res.error || !res.result) setAiError(res.error ?? "AI 没有返回剧本");
+      else setAi({ script: res.result, usage: res.usage ?? { promptTokens: 0, completionTokens: 0 } });
+    });
+  };
+
+  const acceptAi = () => {
+    if (!ai) return;
+    if (script && !window.confirm("用 AI 剧本覆盖当前四集剧本（包括所有修改），继续吗？")) return;
+    setScript(ai.script);
+    setEpNo(1);
+    persist(ai.script);
+    setAi(null);
+  };
+
+  const aiPanel = (
+    <div className="space-y-2">
+      <AiButton ready={aiReady} pending={aiPending} onClick={runAi}>
+        AI 写四集剧本（英文台词 + 中文翻译）
+      </AiButton>
+      {aiPending ? <p className="text-xs text-amber-200">DeepSeek 正在写四集剧本，通常需要 1–3 分钟…</p> : null}
+      {aiError ? <p className="text-xs text-rose-300">{aiError}</p> : null}
+      {ai ? (
+        <div className="rounded-xl border border-emerald-400/40 bg-emerald-400/5 p-3 text-sm">
+          <p className="text-emerald-200">AI 剧本预览（尚未采用）</p>
+          <ul className="mt-2 space-y-2">
+            {ai.script.episodes.map((ep) => (
+              <li key={ep.number}>
+                <span className="text-xs text-amber-300">
+                  第 {ep.number} 集 · {ep.title || "未命名"}
+                </span>
+                <p className="text-neutral-300">{ep.synopsis}</p>
+                <p className="text-xs text-neutral-500">
+                  {ep.beats.length} 个节拍 · {ep.scenes.length} 个场景 · 台词约 {dialogueSeconds(ep)} 秒
+                </p>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3 flex gap-2">
+            <button type="button" onClick={acceptAi} className="rounded-md bg-emerald-400 px-3 py-1 text-sm font-medium text-black hover:bg-emerald-300">
+              采用 AI 剧本
+            </button>
+            <button type="button" onClick={() => setAi(null)} className="rounded-md border border-white/15 px-3 py-1 text-sm text-neutral-300 hover:bg-white/10">
+              放弃
+            </button>
+          </div>
+          <div className="mt-2">
+            <UsageNote usage={ai.usage} />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 
   if (!script) {
     return proposal ? (
@@ -66,6 +132,7 @@ export function LocalScriptWorkbench({
         >
           生成四集剧本骨架
         </button>
+        <div className="mt-4 border-t border-white/10 pt-4">{aiPanel}</div>
         {status.error ? <p className="mt-2 text-sm text-rose-300">{status.error}</p> : null}
       </Card>
     ) : (
@@ -257,17 +324,29 @@ export function LocalScriptWorkbench({
                       }
                       className={`${field} text-amber-200`}
                     />
+                    <div className="space-y-1">
                     <textarea
                       rows={1}
                       maxLength={500}
                       value={l.text}
-                      placeholder="台词 / 字幕"
+                      placeholder="台词（英文）/ 字幕"
                       aria-label="台词"
                       onChange={(e) =>
                         updateScene(scene.id, (s) => ({ ...s, lines: s.lines.map((x) => (x.id === l.id ? { ...x, text: e.target.value } : x)) }))
                       }
                       className={field}
                     />
+                    <input
+                      value={l.translation ?? ""}
+                      maxLength={500}
+                      placeholder="中文翻译（可选）"
+                      aria-label="中文翻译"
+                      onChange={(e) =>
+                        updateScene(scene.id, (s) => ({ ...s, lines: s.lines.map((x) => (x.id === l.id ? { ...x, translation: e.target.value } : x)) }))
+                      }
+                      className={`${field} text-xs text-neutral-400`}
+                    />
+                    </div>
                     <button
                       type="button"
                       className={smallBtn}
@@ -299,7 +378,7 @@ export function LocalScriptWorkbench({
         <div className="space-y-4">
           <Card title="本地规则检查（非 AI）">
             <p className="text-sm text-neutral-300">
-              台词约 <span className="text-amber-300">{dialogueSeconds(episode)} 秒</span> / {EPISODE_SECONDS} 秒（按 4 字 / 秒估算）
+              台词约 <span className="text-amber-300">{dialogueSeconds(episode)} 秒</span> / {EPISODE_SECONDS} 秒（英文按 2.5 词 / 秒、中文按 4 字 / 秒估算）
             </p>
             {warnings.length === 0 ? (
               <p className="mt-2 text-sm text-emerald-300">本集没有问题</p>
@@ -325,7 +404,7 @@ export function LocalScriptWorkbench({
               </p>
             ) : null}
           </Card>
-          <LaterButton>AI 生成 / 改写剧本</LaterButton>
+          {proposal ? <Card title="AI 剧本">{aiPanel}</Card> : null}
         </div>
       </div>
 

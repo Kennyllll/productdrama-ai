@@ -54,6 +54,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           <NavLink href="/easter-eggs" active={pathname.startsWith("/easter-eggs")}>
             彩蛋角色库
           </NavLink>
+          <NavLink href="/settings" active={pathname.startsWith("/settings")}>
+            模型设置
+          </NavLink>
           <p className="hidden px-3 pb-1 pt-4 text-[11px] uppercase tracking-wider text-neutral-500 lg:block">
             当前项目 · {project.name}
           </p>

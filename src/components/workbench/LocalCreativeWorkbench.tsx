@@ -2,11 +2,14 @@
 
 import Link from "next/link";
 import { useState, useTransition } from "react";
+import { aiProposalsAction } from "@/app/ai-actions";
 import { saveCreativeAction } from "@/app/creative-actions";
 import { Card, LaterButton, MockBadge, Tag } from "@/components/ui";
 import { OptionGrid } from "@/components/workbench/CreativeWorkbench";
+import { AiButton, UsageNote } from "@/components/workbench/AiButton";
 import { FilmStylePicker } from "@/components/workbench/FilmStylePicker";
 import { SaveBar } from "@/components/workbench/SaveBar";
+import type { AiUsage } from "@/lib/ai/models";
 import { buildProposals } from "@/lib/creative";
 import { filmStyles, productRoles, themeLibrary } from "@/lib/mock/demo";
 import type { FormState, LocalCreative, LocalProposal } from "@/lib/types";
@@ -18,16 +21,21 @@ export function LocalCreativeWorkbench({
   productName,
   initial,
   scriptProposalId,
+  aiReady,
 }: {
   projectId: string;
   productName: string;
   initial: LocalCreative;
   scriptProposalId: string | null;
+  aiReady: boolean;
 }) {
   const [c, setC] = useState(initial);
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState<FormState>({});
   const [pending, startTransition] = useTransition();
+  const [ai, setAi] = useState<{ proposals: LocalProposal[]; usage: AiUsage } | null>(null);
+  const [aiError, setAiError] = useState("");
+  const [aiPending, startAi] = useTransition();
 
   const change = (fn: (prev: LocalCreative) => LocalCreative) => {
     setC(fn);
@@ -43,6 +51,23 @@ export function LocalCreativeWorkbench({
   const generate = () => {
     if (c.proposals.length && !window.confirm("重新生成会覆盖现有 3 个提案草稿（包括你的修改），继续吗？")) return;
     update({ proposals: buildProposals(c, productName), selectedProposalId: null });
+  };
+
+  const runAi = () => {
+    setAiError("");
+    setAi(null);
+    startAi(async () => {
+      const res = await aiProposalsAction(projectId, { themeIds: c.themeIds, freeText: c.freeText, styleId: c.styleId, roleId: c.roleId });
+      if (res.error || !res.result) setAiError(res.error ?? "AI 没有返回提案");
+      else setAi({ proposals: res.result, usage: res.usage ?? { promptTokens: 0, completionTokens: 0 } });
+    });
+  };
+
+  const acceptAi = () => {
+    if (!ai) return;
+    if (c.proposals.length && !window.confirm("用 AI 提案替换现有提案（包括你的修改），继续吗？")) return;
+    update({ proposals: ai.proposals, selectedProposalId: null });
+    setAi(null);
   };
 
   const save = () =>
@@ -96,14 +121,53 @@ export function LocalCreativeWorkbench({
       <Card
         title="4 · 三个故事提案"
         aside={
-          <button type="button" onClick={generate} className="rounded-lg border border-amber-400/60 px-3 py-1.5 text-sm text-amber-200 hover:bg-amber-400/10">
-            {c.proposals.length ? "按当前选择重新生成" : "生成 3 个提案草稿"}
-          </button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <AiButton ready={aiReady} pending={aiPending} onClick={runAi}>
+              AI 生成 3 个提案
+            </AiButton>
+            <button type="button" onClick={generate} className="rounded-lg border border-amber-400/60 px-3 py-1.5 text-sm text-amber-200 hover:bg-amber-400/10">
+              {c.proposals.length ? "按模板重新生成" : "生成 3 个模板草稿"}
+            </button>
+          </div>
         }
       >
         <p className="mb-3 text-xs text-neutral-400">
-          提案由本地模板根据上面的主题、参考作品、产品角色和产品名拼出，是写作起点，不是 AI 生成。请选定一个并改写成你的故事。
+          「模板草稿」由本地规则拼出；「AI 生成」由 DeepSeek 根据产品资料、主题、参考作品和产品角色撰写，先预览，确认后才替换。请选定一个并改写成你的故事。
         </p>
+        {aiPending ? <p className="mb-3 text-sm text-amber-200">DeepSeek 正在写提案，通常需要 30–90 秒…</p> : null}
+        {aiError ? <p className="mb-3 text-sm text-rose-300">{aiError}</p> : null}
+        {ai ? (
+          <div className="mb-4 rounded-xl border border-emerald-400/40 bg-emerald-400/5 p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-sm text-emerald-200">AI 提案预览（尚未替换）</span>
+              <div className="flex gap-2">
+                <button type="button" onClick={acceptAi} className="rounded-md bg-emerald-400 px-3 py-1 text-sm font-medium text-black hover:bg-emerald-300">
+                  用这些提案替换
+                </button>
+                <button type="button" onClick={() => setAi(null)} className="rounded-md border border-white/15 px-3 py-1 text-sm text-neutral-300 hover:bg-white/10">
+                  放弃
+                </button>
+              </div>
+            </div>
+            <div className="grid gap-3 lg:grid-cols-3">
+              {ai.proposals.map((p) => (
+                <div key={p.id} className="rounded-lg border border-white/10 p-3 text-sm">
+                  <Tag>{p.direction}</Tag>
+                  <p className="mt-2 font-medium text-white">{p.title}</p>
+                  <p className="mt-1 text-neutral-300">{p.logline}</p>
+                  <ol className="mt-2 list-inside list-decimal space-y-0.5 text-xs text-neutral-400">
+                    {p.episodeArcs.map((a, i) => (
+                      <li key={i}>{a}</li>
+                    ))}
+                  </ol>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2">
+              <UsageNote usage={ai.usage} />
+            </div>
+          </div>
+        ) : null}
         {!productName.trim() && (
           <p className="mb-3 text-xs text-amber-200">
             产品名称为空，提案会用「产品」代替。可先到<Link href={`/projects/${projectId}/product`} className="underline">产品工作台</Link>填写。
@@ -126,7 +190,7 @@ export function LocalCreativeWorkbench({
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <Tag>{p.direction}</Tag>
-                    <MockBadge>模板草稿</MockBadge>
+                    {p.source === "ai" ? <Tag tone="emerald">AI 草稿</Tag> : <MockBadge>模板草稿</MockBadge>}
                     {active ? <Tag tone="amber">已选定</Tag> : null}
                   </div>
                   <p className="mt-2 font-medium text-white">{p.title || "（未命名）"}</p>
@@ -166,7 +230,7 @@ export function LocalCreativeWorkbench({
                   第 {i + 1} 集 · 45 秒
                   <input
                     value={arc}
-                    maxLength={60}
+                    maxLength={120}
                     onChange={(e) => {
                       const arcs = [...selected.episodeArcs] as LocalProposal["episodeArcs"];
                       arcs[i] = e.target.value;

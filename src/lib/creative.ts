@@ -78,9 +78,19 @@ export function buildSkeleton(p: LocalProposal): LocalScript {
   };
 }
 
+/** 英文台词约 2.5 词 / 秒 */
+export const WORDS_PER_SECOND = 2.5;
+
 export function dialogueSeconds(ep: ScriptEpisode): number {
-  const chars = ep.scenes.flatMap((s) => s.lines).reduce((n, l) => n + l.text.replace(/\s/g, "").length, 0);
-  return Math.round(chars / CHARS_PER_SECOND);
+  const seconds = ep.scenes
+    .flatMap((s) => s.lines)
+    .reduce((n, l) => {
+      const t = l.text.trim();
+      if (!t) return n;
+      if (/[\u4e00-\u9fff]/.test(t)) return n + t.replace(/\s/g, "").length / CHARS_PER_SECOND;
+      return n + t.split(/\s+/).length / WORDS_PER_SECOND;
+    }, 0);
+  return Math.round(seconds);
 }
 
 export function checkEpisode(ep: ScriptEpisode): string[] {
@@ -128,7 +138,8 @@ export function sanitizeCreative(input: unknown): LocalCreative {
         direction: str(q.direction, 20),
         title: str(q.title, 100),
         logline: str(q.logline, 1000),
-        episodeArcs: [str(arcs[0], 60), str(arcs[1], 60), str(arcs[2], 60), str(arcs[3], 60)],
+        episodeArcs: [str(arcs[0], 120), str(arcs[1], 120), str(arcs[2], 120), str(arcs[3], 120)],
+        source: (q.source === "ai" ? "ai" : "template") as LocalProposal["source"],
       };
     });
   const selected = str(o.selectedProposalId, 40);
@@ -181,7 +192,7 @@ export function sanitizeScript(input: unknown): LocalScript {
                 .slice(0, 50)
                 .map((l) => {
                   const y = obj(l);
-                  return { id: str(y.id, 40) || newId(), speaker: str(y.speaker, 40), text: str(y.text, 500) };
+                  return { id: str(y.id, 40) || newId(), speaker: str(y.speaker, 40), text: str(y.text, 500), translation: str(y.translation, 500) };
                 }),
             };
           }),

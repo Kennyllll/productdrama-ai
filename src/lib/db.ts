@@ -80,6 +80,10 @@ CREATE TABLE IF NOT EXISTS storyboards (
   project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
   data TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `;
 
 const globalForDb = globalThis as unknown as { __productDramaDb?: Database.Database };
