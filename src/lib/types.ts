@@ -293,3 +293,23 @@ export interface EasterEgg {
   notes: string;
   photos: PhotoView[];
 }
+
+// ---- TASK-005：分镜 ----
+
+export interface LocalShot extends Shot {
+  /** 产品在本镜如何出现（角度、动作、与角色的互动） */
+  productNote: string;
+  review: ReviewStatus;
+}
+
+export interface StoryboardEpisode {
+  number: EpisodeNumber;
+  shots: LocalShot[];
+}
+
+export interface LocalStoryboard {
+  /** 生成分镜时剧本对应的提案，用于提示分镜是否过期 */
+  sourceProposalId: string;
+  visualSpec: VisualSpec;
+  episodes: StoryboardEpisode[];
+}

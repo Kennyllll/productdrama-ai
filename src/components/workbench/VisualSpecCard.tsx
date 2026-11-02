@@ -14,14 +14,25 @@ const textFields: { key: "colorGrade" | "grain" | "lensPackage" | "depthOfField"
   { key: "depthOfField", label: "景深" },
 ];
 
-export function VisualSpecCard() {
-  const [spec, setSpec] = useState<VisualSpec>(demoVisualSpec);
+/** 不传 value 时为示例项目的本地状态；传入 value / onChange 时由父组件保存 */
+export function VisualSpecCard({
+  value,
+  onChange,
+  referenceNote = "（在创意工作台选择；当前为示例项目的选择）",
+}: {
+  value?: VisualSpec;
+  onChange?: (spec: VisualSpec) => void;
+  referenceNote?: string;
+}) {
+  const [local, setLocal] = useState<VisualSpec>(demoVisualSpec);
+  const spec = value ?? local;
+  const setSpec = onChange ?? setLocal;
   const input = "mt-1 w-full rounded-md border border-white/10 bg-black/40 px-2 py-1 text-sm text-white";
   return (
     <Card title="全片视觉规范" aside={<MockBadge>所有镜头统一遵守</MockBadge>} className="mb-6">
       <p className="mb-3 text-sm text-neutral-300">
         风格参考：<span className="text-amber-200">{spec.filmReference}</span>
-        <span className="ml-2 text-xs text-neutral-500">（在创意工作台选择；当前为示例项目的选择）</span>
+        <span className="ml-2 text-xs text-neutral-500">{referenceNote}</span>
       </p>
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <label className="text-xs text-neutral-400">

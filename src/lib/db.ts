@@ -76,6 +76,10 @@ CREATE TABLE IF NOT EXISTS project_eggs (
   project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
   egg_id TEXT REFERENCES easter_eggs(id) ON DELETE SET NULL
 );
+CREATE TABLE IF NOT EXISTS storyboards (
+  project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  data TEXT NOT NULL
+);
 `;
 
 const globalForDb = globalThis as unknown as { __productDramaDb?: Database.Database };
