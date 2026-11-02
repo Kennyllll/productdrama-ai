@@ -6,8 +6,8 @@ import { filmStyles, referenceKindLabels } from "@/lib/mock/demo";
 import type { FilmStyle, ReferenceKind } from "@/lib/types";
 
 const kinds: { kind: ReferenceKind; hint: string }[] = [
-  { kind: "film", hint: "经典电影的光影、色彩与构图" },
-  { kind: "racing", hint: "面向成人买家：速度、机械质感与夜景霓虹" },
+  { kind: "live-action", hint: "真人实拍电影：经典光影、色彩与构图，含成人向赛车片" },
+  { kind: "animation", hint: "动画电影：风格化色彩、形状语言与夸张运镜" },
   { kind: "game-cg", hint: "暴雪游戏 CG：史诗感、材质与戏剧光" },
 ];
 
@@ -22,7 +22,7 @@ export function FilmStylePicker({ value, onChange }: { value: string; onChange: 
     <div>
       <p className="mb-3 text-sm text-neutral-300">
         当前选用：<span className="text-amber-200">《{selected.film}》</span>
-        <span className="text-neutral-500">（{referenceKindLabels[selected.kind]} · {selected.director}）</span>
+        <span className="text-neutral-500">（{referenceKindLabels[selected.kind]} · {selected.genre} · {selected.director}）</span>
       </p>
 
       <p className="mb-2 text-xs text-neutral-500">第一步 · 选择类别</p>
@@ -73,6 +73,7 @@ export function FilmStylePicker({ value, onChange }: { value: string; onChange: 
                     {f.director} · {f.year}
                   </span>
                 </span>
+                <Tag>{f.genre}</Tag>
                 {chosen ? <Tag tone="amber">已选用</Tag> : null}
               </button>
               {open && <StyleDetail film={f} chosen={chosen} onChoose={() => onChange(f.id)} />}

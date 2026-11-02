@@ -211,11 +211,13 @@ export interface Beat {
   intensity: 1 | 2 | 3 | 4 | 5;
 }
 
-export type ReferenceKind = "film" | "racing" | "game-cg";
+export type ReferenceKind = "live-action" | "animation" | "game-cg";
 
 export interface FilmStyle {
   id: string;
   kind: ReferenceKind;
+  /** 题材标签，如「赛车 · 成人向」 */
+  genre: string;
   film: string;
   /** 导演；游戏 CG 填制作公司 */
   director: string;
