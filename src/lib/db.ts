@@ -96,6 +96,22 @@ CREATE TABLE IF NOT EXISTS shot_media (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS shot_media_project ON shot_media(project_id);
+CREATE TABLE IF NOT EXISTS sound_plans (
+  project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  data TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sound_stems (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  episode INTEGER NOT NULL,
+  layer TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  original_name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  volume_db REAL NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
 `;
 
 const globalForDb = globalThis as unknown as { __productDramaDb?: Database.Database };

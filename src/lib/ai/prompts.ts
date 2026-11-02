@@ -2,7 +2,7 @@
 import { STORY_CORE_FIELDS } from "@/lib/creative";
 import { filmStyles, productRoles, themeLibrary } from "@/lib/mock/demo";
 import { angles, cameraMoves, lenses, presences, shotSizes, transitions } from "@/lib/storyboard";
-import type { CharacterKind, CharacterRole, EasterEgg, LocalCharacter, LocalCreative, LocalProduct, LocalProposal, LocalScript, StoryCore } from "@/lib/types";
+import type { CharacterKind, CharacterRole, EasterEgg, LocalCharacter, LocalCreative, LocalProduct, LocalProposal, LocalScript, LocalStoryboard, StoryCore } from "@/lib/types";
 
 const KIND_LABELS: Record<CharacterKind, string> = { child: "儿童", adult: "成人", animal: "动物", fantasy: "幻想角色" };
 const ROLE_LABELS: Record<CharacterRole, string> = { lead: "主角", supporting: "配角", cameo: "客串", extra: "群演" };
@@ -262,4 +262,52 @@ ${scriptText}
 按以下 json 结构输出（episodes 必须正好 4 个）：
 {"episodes":[{"number":1,"shots":[{"seconds":6,"description":"画面描述","size":"远景","lens":24,"angle":"低机位","camera":"推近","composition":"构图","lighting":"光线","transition":"硬切","product":"背景","productNote":"","characters":["角色名"],"dialogue":"","easterEgg":false,"sound":"声音设计","continuity":"连续性备注"}]}]}`;
   return { system: SYSTEM, user };
+}
+
+const SOUND_SYSTEM = `你是一位顶级电影声音导演兼作曲指导，为电影级产品短剧设计声音。你只输出 json，不输出任何解释。
+
+原则：
+- 声音跟着情绪曲线推进，不从头到尾铺一首歌；音乐要有进、有退、有空。
+- 钩子用环境声和一个能引起好奇的细节音；冲突收紧节奏和低频；转折或最低谷让音乐抽空，留白或只剩呼吸；悬念停在未解决的和声或单音上，引向下一集。
+- 设计一个属于主角的旋律母题，四集逐渐展开、变化，第 4 集完整奏出，作为情感回收。
+- 产品有一个克制的声音标志（来自产品真实的物理声音，例如结构锁紧、轮子滚动），只在关键转折出现，不做广告音效。
+- 音效对齐镜头里的具体动作；用 J-Cut / L-Cut 让声音先进或延后，衔接情绪。
+- 对白出现时音乐退后；台词少，声音替画面说话。
+- 不使用或模仿受版权保护的旋律；儿童相关画面不用惊吓式音效。`;
+
+export function soundPlanPrompt(input: { creative: LocalCreative; script: LocalScript; board: LocalStoryboard }) {
+  const { creative, script, board } = input;
+  const episodes = board.episodes
+    .map((ep) => {
+      const sep = script.episodes.find((e) => e.number === ep.number);
+      let t = 0;
+      const shots = ep.shots.map((s) => {
+        const start = t;
+        t += s.seconds;
+        return `  镜头 ${s.index}（${start}–${t}s，${s.size}，${s.camera}，转场 ${s.transition}）：${s.description}${s.dialogue.trim() ? ` 台词「${s.dialogue.replace(/\n/g, " / ")}」` : ""}${s.sound.trim() ? ` 分镜声音备注：${s.sound}` : ""}`;
+      });
+      return [
+        `第 ${ep.number} 集《${sep?.title ?? ""}》（${t} 秒）：${sep?.synopsis ?? ""}`,
+        ...(sep?.beats ?? []).map((b) => `  节拍 [${b.type} ${b.startSec}–${b.endSec}s 强度 ${b.intensity}] ${b.description}`),
+        ...shots,
+      ].join("\n");
+    })
+    .join("\n\n");
+
+  const user = `【故事】
+${storyCoreBlock(creative.storyCore) || "（未填写故事内核）"}
+
+【四集节拍与镜头时间线】
+${episodes}
+
+【任务】
+为四集设计声音。每集 6–14 条声音提示，layer 只能是 music / ambience / sfx / silence；startSec、endSec 为本集内的秒数（可用 0.5），不得超出本集时长。
+- 每集至少 1 条 silence（留白或音乐抽空），放在转折或最低谷；音乐不要铺满全集。
+- 转折节拍内必须有声音变化。
+- description 用简体中文写清：情绪、乐器或声音来源、速度（BPM，音乐时）、强度变化、对齐哪个镜头的哪个动作；母题出现时注明「母题」。
+- motif 写主角旋律母题（乐器、音型、四集如何变化）；productSignature 写产品声音标志；mixNote 写混音要点（对白优先、响度、动态）。
+
+按以下 json 结构输出（episodes 必须正好 4 个）：
+{"motif":"","productSignature":"","mixNote":"","episodes":[{"number":1,"direction":"本集声音方向","cues":[{"startSec":0,"endSec":6,"layer":"ambience","description":""}]}]}`;
+  return { system: SOUND_SYSTEM, user };
 }

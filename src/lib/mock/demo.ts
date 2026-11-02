@@ -39,6 +39,7 @@ export const demoProject: Project = {
     casting: "in_progress",
     script: "todo",
     storyboard: "todo",
+    sound: "todo",
     video: "todo",
   },
 };
@@ -79,6 +80,7 @@ export const localStepStatus: Project["stepStatus"] = {
   casting: "todo",
   script: "todo",
   storyboard: "todo",
+  sound: "todo",
   video: "todo",
 };
 

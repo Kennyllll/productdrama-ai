@@ -12,6 +12,7 @@ export const workflowSteps: WorkflowStep[] = [
   { key: "casting", label: "选角工作台", description: "演员阵容、角色档案与猫咪彩蛋" },
   { key: "script", label: "剧本工作台", description: "四集剧本、场景与台词" },
   { key: "storyboard", label: "分镜工作台", description: "逐镜头关键帧、时长与运镜" },
+  { key: "sound", label: "声音工作台", description: "音乐、环境声、音效、留白与混音" },
   { key: "video", label: "视频制作", description: "生成、配音、合成与质检" },
 ];
 

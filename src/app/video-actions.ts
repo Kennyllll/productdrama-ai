@@ -1,6 +1,7 @@
 "use server";
 
 import { listShotMedia } from "@/lib/media-repo";
+import { listStems } from "@/lib/sound-repo";
 import { listRenders, renderEpisode, RenderError, renderFull, type RenderInfo } from "@/lib/render";
 import { findLocalProject } from "@/lib/repo";
 import { getStoryboard } from "@/lib/storyboard-repo";
@@ -16,7 +17,7 @@ export async function renderEpisodeAction(projectId: string, ep: number, subtitl
   const board = getStoryboard(projectId);
   if (!board) return { error: "请先在分镜工作台生成分镜" };
   try {
-    await renderEpisode(projectId, board, ep as EpisodeNumber, listShotMedia(projectId), subtitles === true);
+    await renderEpisode(projectId, board, ep as EpisodeNumber, listShotMedia(projectId), listStems(projectId), subtitles === true);
     return { ok: `第 ${ep} 集已合成`, renders: listRenders(projectId) };
   } catch (e) {
     return failure(e);

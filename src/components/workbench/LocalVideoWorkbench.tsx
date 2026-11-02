@@ -200,7 +200,7 @@ export function LocalVideoWorkbench({
             <input type="checkbox" checked={subtitles} onChange={(e) => setSubtitles(e.target.checked)} />
             烧录英文台词字幕
           </label>
-          <span className="text-xs text-neutral-500">画幅和帧率取自分镜页的视觉规范；转场「淡出」做淡出，其余暂按硬切。</span>
+          <span className="text-xs text-neutral-500">画幅和帧率取自分镜页的视觉规范；转场「淡出」做淡出，其余暂按硬切。声音页上传的分轨会自动混音（对白出现时压低音乐，响度 -14 LUFS）。</span>
         </div>
         <p className="mt-2 text-xs text-neutral-500">
           每个镜头可上传 1 个视频（MP4 / MOV / WebM）或图片（PNG / JPG / WebP），最大 300 MB；未上传的镜头用占位画面。素材和成片只保存在本机 uploads/。

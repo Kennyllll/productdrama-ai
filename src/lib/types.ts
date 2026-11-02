@@ -8,6 +8,7 @@ export type WorkflowStepKey =
   | "casting"
   | "script"
   | "storyboard"
+  | "sound"
   | "video";
 
 export type StepStatus = "done" | "in_progress" | "todo";
@@ -330,4 +331,45 @@ export interface LocalStoryboard {
   sourceProposalId: string;
   visualSpec: VisualSpec;
   episodes: StoryboardEpisode[];
+}
+
+// ---- 声音设计（TASK-010a） ----
+export type SoundLayer = "music" | "ambience" | "sfx" | "silence";
+
+export interface SoundCue {
+  id: string;
+  startSec: number;
+  endSec: number;
+  layer: SoundLayer;
+  /** 情绪、乐器、速度、强度、对齐的动作 */
+  description: string;
+}
+
+export interface SoundEpisode {
+  number: EpisodeNumber;
+  direction: string;
+  cues: SoundCue[];
+}
+
+export interface SoundPlan {
+  sourceProposalId: string;
+  motif: string;
+  productSignature: string;
+  mixNote: string;
+  episodes: SoundEpisode[];
+}
+
+export type StemLayer = "dialogue" | "music" | "ambience" | "sfx";
+
+export interface SoundStem {
+  id: string;
+  projectId: string;
+  episode: EpisodeNumber;
+  layer: StemLayer;
+  fileName: string;
+  originalName: string;
+  mime: string;
+  size: number;
+  volumeDb: number;
+  createdAt: string;
 }

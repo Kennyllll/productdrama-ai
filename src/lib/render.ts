@@ -6,7 +6,8 @@ import { promisify } from "node:util";
 import ffmpegPath from "ffmpeg-static";
 import { UPLOAD_DIR } from "@/lib/db";
 import { mediaPath, type ShotMedia } from "@/lib/media-repo";
-import type { EpisodeNumber, LocalShot, LocalStoryboard, VisualSpec } from "@/lib/types";
+import { stemPath } from "@/lib/sound-repo";
+import type { EpisodeNumber, LocalShot, LocalStoryboard, SoundStem, VisualSpec } from "@/lib/types";
 
 const run = promisify(execFile);
 
@@ -141,6 +142,35 @@ async function concat(parts: string[], dir: string, target: string) {
   fs.renameSync(tmp, target);
 }
 
+/** 混音：有分轨时对白压低音乐（sidechain）+ 响度 -14 LUFS；无分轨时写静音音轨，保证总片可直接拼接 */
+async function mixAudio(video: string, stems: SoundStem[], dur: number, target: string) {
+  const usable = stems.filter((s) => fs.existsSync(stemPath(s)));
+  const tmp = `${target}.part.mp4`;
+  const out = ["-map", "0:v", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-t", String(dur), "-movflags", "+faststart", tmp];
+  if (usable.length === 0) {
+    await ff(["-i", video, "-f", "lavfi", "-t", String(dur), "-i", "anullsrc=r=48000:cl=stereo", "-filter_complex", "[1:a]anull[aout]", ...out]);
+  } else {
+    const f = usable.map(
+      (s, i) => `[${i + 1}:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=${s.volumeDb}dB,apad,atrim=0:${dur}[${s.layer}]`,
+    );
+    const has = (l: SoundStem["layer"]) => usable.some((s) => s.layer === l);
+    const mix: string[] = [];
+    if (has("dialogue") && has("music")) {
+      f.push("[dialogue]asplit=2[dlg][key]", "[music][key]sidechaincompress=threshold=0.03:ratio=6:attack=15:release=350[mduck]");
+      mix.push("[dlg]", "[mduck]");
+    } else {
+      if (has("dialogue")) mix.push("[dialogue]");
+      if (has("music")) mix.push("[music]");
+    }
+    if (has("ambience")) mix.push("[ambience]");
+    if (has("sfx")) mix.push("[sfx]");
+    const merged = mix.length > 1 ? `${mix.join("")}amix=inputs=${mix.length}:duration=longest:normalize=0` : `${mix[0]}anull`;
+    f.push(`${merged},loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000,atrim=0:${dur}[aout]`);
+    await ff(["-i", video, ...usable.flatMap((s) => ["-i", stemPath(s)]), "-filter_complex", f.join(";"), ...out]);
+  }
+  fs.renameSync(tmp, target);
+}
+
 const busy = new Set<string>();
 
 async function exclusive<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
@@ -153,7 +183,7 @@ async function exclusive<T>(projectId: string, fn: () => Promise<T>): Promise<T>
   }
 }
 
-export function renderEpisode(projectId: string, board: LocalStoryboard, ep: EpisodeNumber, media: ShotMedia[], subtitles: boolean) {
+export function renderEpisode(projectId: string, board: LocalStoryboard, ep: EpisodeNumber, media: ShotMedia[], stems: SoundStem[], subtitles: boolean) {
   return exclusive(projectId, async () => {
     const shots = board.episodes.find((e) => e.number === ep)?.shots ?? [];
     if (shots.length === 0) throw new RenderError("本集还没有镜头");
@@ -167,7 +197,9 @@ export function renderEpisode(projectId: string, board: LocalStoryboard, ep: Epi
       for (const shot of shots) {
         parts.push(await renderShot(shot, media.find((m) => m.shotId === shot.id), { W, H, fps, ep, count: shots.length, subtitles, dir: tmp }));
       }
-      await concat(parts, tmp, path.join(dir, `ep${ep}.mp4`));
+      const silent = path.join(tmp, "video.mp4");
+      await concat(parts, tmp, silent);
+      await mixAudio(silent, stems.filter((s) => s.episode === ep), shots.reduce((t, s) => t + s.seconds, 0), path.join(dir, `ep${ep}.mp4`));
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
