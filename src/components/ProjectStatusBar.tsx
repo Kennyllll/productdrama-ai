@@ -21,7 +21,7 @@ export function ProjectStatusBar({ project }: { project: Project }) {
         <span className="text-neutral-400">
           进度 {done}/{workflowSteps.length}
         </span>
-        <MockBadge>演示数据 · 未接入 AI</MockBadge>
+        <MockBadge>{project.source === "demo" ? "演示数据 · 未接入 AI" : "本地项目 · 未接入 AI"}</MockBadge>
       </div>
     </header>
   );

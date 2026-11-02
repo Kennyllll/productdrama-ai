@@ -1,15 +1,42 @@
+import { notFound } from "next/navigation";
 import { ProductBibleEditor } from "@/components/workbench/ProductBibleEditor";
+import { LocalProductWorkbench } from "@/components/workbench/LocalProductWorkbench";
 import { Card, DemoNotice, LaterButton, MockBadge, PageHeader, PlaceholderFrame, Tag } from "@/components/ui";
-import { demoProduct } from "@/lib/mock/demo";
+import { DEMO_PROJECT_ID, demoProduct, productAngles } from "@/lib/mock/demo";
+import { findLocalProject, getProduct, listAssets } from "@/lib/repo";
+import type { AssetRecord } from "@/lib/types";
 
-export default function ProductPage() {
+const toView = (a: AssetRecord) => ({ id: a.id, angle: a.angle, originalName: a.originalName, size: a.size });
+
+function LocalProductPage({ id }: { id: string }) {
+  const product = findLocalProject(id) ? getProduct(id) : null;
+  if (!product) notFound();
+  const assets = listAssets(id);
+  const logo = assets.find((a) => a.kind === "logo");
+  return (
+    <>
+      <PageHeader title="产品工作台" description="上传真实产品多角度照片与 Logo，建立 Product Bible。文件只保存在本机。" />
+      <LocalProductWorkbench
+        projectId={id}
+        product={product}
+        photos={assets.filter((a) => a.kind === "product_photo").map(toView)}
+        logo={logo ? toView(logo) : null}
+        angles={productAngles}
+      />
+    </>
+  );
+}
+
+export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  if (id !== DEMO_PROJECT_ID) return <LocalProductPage id={id} />;
   const p = demoProduct;
   return (
     <>
       <PageHeader
         title="产品工作台"
         description="上传真实产品多角度照片与 Logo，建立 Product Bible。产品几何、颜色与 Logo 必须保真。"
-        actions={<LaterButton task="TASK-002">上传产品图</LaterButton>}
+        actions={<span className="text-xs text-neutral-500">示例项目不支持上传 · 请在项目中心新建项目</span>}
       />
       <DemoNotice />
       <div className="grid gap-6 lg:grid-cols-5">

@@ -12,8 +12,12 @@ export type WorkflowStepKey =
 
 export type StepStatus = "done" | "in_progress" | "todo";
 
+export type ProjectSource = "demo" | "local";
+
 export interface Project {
   id: string;
+  /** demo：只读示例；local：保存在本机 SQLite */
+  source: ProjectSource;
   name: string;
   brand: string;
   updatedAt: string;
@@ -43,6 +47,27 @@ export interface Product {
   sellingPoints: string[];
   imageSlots: ProductImageSlot[];
   bible: ProductBibleField[];
+}
+
+export type LocalProduct = Pick<Product, "name" | "category" | "sellingPoints" | "bible">;
+
+export type AssetKind = "product_photo" | "logo";
+
+export interface AssetRecord {
+  id: string;
+  projectId: string;
+  kind: AssetKind;
+  angle: string;
+  originalName: string;
+  fileName: string;
+  mime: string;
+  size: number;
+  createdAt: string;
+}
+
+export interface FormState {
+  ok?: string;
+  error?: string;
 }
 
 export interface OptionItem {

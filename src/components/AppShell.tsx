@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { demoProject } from "@/lib/mock/demo";
+import { DEMO_PROJECT_ID, demoProject, localStepStatus } from "@/lib/mock/demo";
 import { stepHref, workflowSteps } from "@/lib/navigation";
 
 const statusDot = {
@@ -28,7 +28,13 @@ function NavLink({ href, active, children }: { href: string; active: boolean; ch
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const project = demoProject;
+  const projectId = pathname.match(/^\/projects\/([^/]+)/)?.[1] ?? DEMO_PROJECT_ID;
+  const isDemo = projectId === DEMO_PROJECT_ID;
+  const project = {
+    id: projectId,
+    name: isDemo ? demoProject.name : "本地项目",
+    stepStatus: isDemo ? demoProject.stepStatus : localStepStatus,
+  };
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-200 lg:flex">

@@ -14,6 +14,7 @@ import type {
   OptionItem,
   PetEasterEgg,
   Product,
+  ProductBibleField,
   ProductPresence,
   Project,
   Scene,
@@ -25,6 +26,7 @@ export const DEMO_PROJECT_ID = "demo";
 
 export const demoProject: Project = {
   id: DEMO_PROJECT_ID,
+  source: "demo",
   name: "小小探险家（示例项目）",
   brand: "KRIDDO（示例品牌信息）",
   updatedAt: "示例数据",
@@ -64,6 +66,20 @@ export const demoProduct: Product = {
     { key: "size", label: "尺寸", value: "需用户提供（照片无法准确推断）", needsConfirmation: true },
     { key: "age", label: "适用年龄", value: "需用户提供", needsConfirmation: true },
   ],
+};
+
+/** 新建本地项目时的 Product Bible 模板（字段与示例一致，值为空） */
+export const emptyBible: ProductBibleField[] = demoProduct.bible.map((f) => ({ ...f, value: "", needsConfirmation: true }));
+
+export const productAngles: string[] = demoProduct.imageSlots.map((s) => s.angle);
+
+export const localStepStatus: Project["stepStatus"] = {
+  product: "in_progress",
+  creative: "todo",
+  casting: "todo",
+  script: "todo",
+  storyboard: "todo",
+  video: "todo",
 };
 
 export const themeLibrary: OptionItem[] = [
