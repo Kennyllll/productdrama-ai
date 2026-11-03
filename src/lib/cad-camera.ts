@@ -21,7 +21,7 @@ export interface CadParams {
   interaction: boolean; // 产品与人物 / 场景有接触：AI 出完整画面 → 绿色遮罩定位 → CAD 对齐替换；否则空场景 + 合成
   reusePlate: boolean; // 复用该镜头上次生成的空场景（只调产品时省一次 Flare）
   harmonize: boolean; // 是否让 AI 做一次融合（之后用遮罩贴回产品像素）
-  protect: "pixel" | "tone"; // pixel：连光线也用渲染；tone：形状 / Logo 用渲染，光线 / 色温取 AI 融合
+  protect: "grade" | "pixel" | "tone"; // grade：CAD 像素 + 整车统一曝光 / 色温；pixel：CAD 原样；tone：低频取 AI（会把背景颜色混进产品，不推荐）
 }
 
 const ELEV: Record<LocalShot["angle"], number> = { 平视: 6, 低机位: -4, 高机位: 28, 俯视: 55, 过肩: 14, 主观视角: 20 };
@@ -47,7 +47,7 @@ export function defaultCadParams(shot: LocalShot): CadParams {
     interaction: shot.characterIds.length > 0 || /靠|扶|推|骑|跨|挂|抱/.test(`${shot.productNote} ${shot.description}`),
     reusePlate: false,
     harmonize: true,
-    protect: "tone",
+    protect: "grade",
   };
 }
 
@@ -71,7 +71,7 @@ export function clampCadParams(p: CadParams): CadParams {
     interaction: Boolean(p.interaction),
     reusePlate: Boolean(p.reusePlate),
     harmonize: Boolean(p.harmonize),
-    protect: p.protect === "pixel" ? "pixel" : "tone",
+    protect: p.protect === "pixel" || p.protect === "tone" ? p.protect : "grade",
   };
 }
 

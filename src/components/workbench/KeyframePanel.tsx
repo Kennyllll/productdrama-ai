@@ -230,8 +230,9 @@ export function KeyframePanel({
                 <label className="text-xs text-neutral-400">
                   贴回方式
                   <select value={params.protect} onChange={(e) => setParams((p) => ({ ...p, protect: e.target.value as CadParams["protect"] }))} aria-label="产品贴回方式" className={field}>
-                    <option value="tone">形状 / 细节 / Logo 用渲染，光线 / 色温取 AI 融合（推荐）</option>
-                    <option value="pixel">逐像素用渲染覆盖，光线也不变</option>
+                    <option value="grade">CAD 像素原样 + 整车统一曝光 / 色温（推荐）</option>
+                    <option value="pixel">CAD 像素原样，不调光线</option>
+                    <option value="tone">明暗取 AI 画面（会把背景颜色混进产品，不推荐）</option>
                   </select>
                 </label>
               ) : null}

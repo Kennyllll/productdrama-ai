@@ -187,22 +187,36 @@ export async function replaceProduct(ai: Buffer, productPng: string, cadMaskPng:
   const flat = Buffer.from(a);
   for (let i = 0; i < W * H; i++) { const al = prodRaw[i * 4 + 3] / 255; for (let c = 0; c < 3; c++) flat[i * 3 + c] = Math.round(a[i * 3 + c] * (1 - al) + prodRaw[i * 4 + c] * al); }
   const flatLow = await sharp(flat, { raw: { width: W, height: H, channels: 3 } }).blur(6).raw().toBuffer();
+  // grade：整辆车用同一组通道增益（曝光 + 色温），由 AI 画的车和 CAD 车在重叠区域的平均亮度之比得出；CAD 像素的相对明暗和颜色不变
+  const gain = [1, 1, 1];
+  if (mode === "grade") {
+    const sa = [0, 0, 0], sb = [0, 0, 0];
+    for (let i = 0; i < W * H; i++) {
+      if (maskRaw[i * 4 + 3] <= 128 || green[i] <= 128) continue;
+      for (let c = 0; c < 3; c++) { sa[c] += a[i * 3 + c]; sb[c] += prodRaw[i * 4 + c]; }
+    }
+    const lum = (v: number[]) => 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+    const exposure = Math.min(1.15, Math.max(0.55, lum(sa) / Math.max(1, lum(sb))));
+    for (let c = 0; c < 3; c++) {
+      const tint = sb[c] > 0 && sa[c] > 0 ? (sa[c] / lum(sa)) / (sb[c] / lum(sb)) : 1;
+      gain[c] = exposure * Math.min(1.12, Math.max(0.88, tint));
+    }
+  }
   const out = Buffer.from(a);
   let replaced = 0;
   for (let i = 0; i < W * H; i++) {
-    const inCad = maskRaw[i * 4 + 3] > 128;
-    if (!inCad || green[i] <= 128) continue;
     const al = prodRaw[i * 4 + 3] / 255;
+    if (al <= 0 || green[i] <= 128) continue;
     for (let c = 0; c < 3; c++) {
       const j = i * 3 + c;
       const cad = prodRaw[i * 4 + c];
-      const v = mode === "pixel" ? cad : Math.max(0, Math.min(255, aLow[j] + (cad - flatLow[j])));
+      const v = mode === "tone" ? Math.max(0, Math.min(255, aLow[j] + (cad - flatLow[j]))) : Math.min(255, cad * gain[c]);
       out[j] = Math.round(a[j] * (1 - al) + v * al);
     }
     replaced++;
   }
   const final = await sharp(out, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer();
-  return { final, replacedPixels: replaced };
+  return { final, replacedPixels: replaced, gain };
 }
 
 /** 对齐后的 CAD 产品遮罩铺到场景画布（单通道 raw，0/255） */
@@ -250,7 +264,7 @@ export async function ghostRegion(ai: Buffer, green: Buffer, cadPlaced: Buffer, 
   return { mask: grown, painted, pixels: n };
 }
 
-export type ProtectMode = "pixel" | "tone";
+export type ProtectMode = "pixel" | "tone" | "grade";
 
 /**
  * 把产品贴回 AI 融合结果，返回最终图与 AI 在产品区域试图改动的平均差异（0–255）。
@@ -277,7 +291,7 @@ export async function protectProduct(harmonized: Buffer, composite: Buffer, mask
     if (w <= 0) continue;
     for (let c = 0; c < 3; c++) {
       const j = i * 3 + c;
-      const product = mode === "pixel" ? b[j] : Math.max(0, Math.min(255, aLow[j] + (b[j] - bLow[j])));
+      const product = mode === "tone" ? Math.max(0, Math.min(255, aLow[j] + (b[j] - bLow[j]))) : b[j];
       out[j] = Math.round(a[j] * (1 - w) + product * w);
     }
     if (m[i] > 128) {
