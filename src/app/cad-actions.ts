@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { BlenderError, findBlender, renderProduct, renderSilhouettes, type SilhouetteView } from "@/lib/blender";
 import { CAD_KEYFRAME_MODEL, buildInteractionPrompt, clampCadParams, buildPlatePrompt, greenMaskPrompt, harmonizePrompt, removeProductPrompt, type CadParams } from "@/lib/cad-camera";
-import { composeProduct, fitMask, greenMask, occluderMask, productHoleImage, protectProduct, replaceProduct } from "@/lib/cad-composite";
+import { composeProduct, estimateSun, fitMask, greenMask, occluderMask, productHoleImage, protectProduct, replaceProduct } from "@/lib/cad-composite";
 import sharp from "sharp";
 import { deleteRequest, estimate, HiggsfieldError, submit, uploadFile, waitFor } from "@/lib/higgsfield";
 import { addKeyframe, toKeyframeView, type KeyframeView } from "@/lib/keyframe-repo";
@@ -164,7 +164,11 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
   const searchSeconds = Math.round((Date.now() - t1) / 1000);
 
   // 按匹配到的视角正式渲染并对齐替换
-  const backlit = /逆光|背光|黄昏|夕阳|backlit|backlight|sunset|golden hour/i.test(basePrompt);
+  // 从去车后的背景里找太阳：画面内的太阳在产品后方 → 主光放在相机对面，按太阳在画面里的左右 / 高低偏移
+  const sun = await estimateSun(clean, p.lensMm, view.elevation_deg);
+  const backlit = sun.found || /逆光|背光|黄昏|夕阳|backlit|backlight|sunset|golden hour/i.test(basePrompt);
+  const sunDir = view.azimuth_deg + 180 - (sun.found ? sun.dxDeg : 0);
+  const sunElev = sun.found ? Math.min(40, Math.max(3, sun.elevDeg)) : 12;
   const t2 = Date.now();
   render = await renderProduct({
     glb,
@@ -178,11 +182,12 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
     // 用去车后的背景当环境光；主光放在相机对面低角度，模拟逆光太阳，轮廓光由 Blender 真实计算
     env_image: path.join(dir, "clean.png"),
     env_strength: p.envStrength,
-    key_dir_deg: backlit ? view.azimuth_deg + 180 : p.keyDirDeg,
-    key_elev_deg: backlit ? 12 : p.keyElevDeg,
-    key_kelvin: p.keyKelvin,
-    key_strength: backlit ? 6 : 3,
-    key_mix: backlit ? 0.9 : 0.4,
+    key_dir_deg: backlit ? sunDir : p.keyDirDeg,
+    key_elev_deg: backlit ? sunElev : p.keyElevDeg,
+    key_kelvin: backlit ? Math.min(p.keyKelvin, 3200) : p.keyKelvin,
+    key_strength: backlit ? 9 : 3,
+    rim_strength: backlit ? 160 : 80,
+    key_mix: backlit ? 1 : 0.4,
     exposure: p.exposure,
     samples: 128,
   });
@@ -194,7 +199,7 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
   fs.writeFileSync(path.join(dir, "final.png"), rep.final);
   let occPx = 0;
   for (const v of occ) if (v > 128) occPx++;
-  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, view, aiFacing: gm.facing, coarseIou: b1.iou, fineIou: b2.iou, occluderPixels: occPx, gain: rep.gain, searchSeconds }));
+  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, view, aiFacing: gm.facing, coarseIou: b1.iou, fineIou: b2.iou, occluderPixels: occPx, gain: rep.gain, sun, sunDir, sunElev, searchSeconds }));
   const f = (name: string) => `/api/cad/${projectId}?f=${shotId.toLowerCase()}/${name}`;
   const files: [string, string][] = [["AI 完整画面", f("ai.png")], ["标注（绿=车 红=座椅 蓝=遮挡）", f("green.png")], ["去车后的背景", f("clean.png")]];
   return {

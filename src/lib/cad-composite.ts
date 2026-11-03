@@ -299,6 +299,31 @@ export async function ghostRegion(ai: Buffer, green: Buffer, cadPlaced: Buffer, 
   return { mask: grown, painted, pixels: n };
 }
 
+/**
+ * 从背景图估计太阳 / 主光方向：取模糊后亮度最高的区域，按镜头视场换算成相对相机的水平角（右为正）和仰角。
+ * 只在画面里确实有明显高光（> 0.85 且比中位亮度高很多）时返回 found=true。
+ */
+export async function estimateSun(img: Buffer, lensMm: number, cameraElevDeg: number) {
+  const SW = 320;
+  const { data, info } = await sharp(img).resize(SW).removeAlpha().blur(4).raw().toBuffer({ resolveWithObject: true });
+  const w = info.width, h = info.height;
+  const lum = new Float32Array(w * h);
+  for (let i = 0; i < lum.length; i++) lum[i] = (0.2126 * data[i * 3] + 0.7152 * data[i * 3 + 1] + 0.0722 * data[i * 3 + 2]) / 255;
+  let best = 0, bi = 0;
+  for (let i = 0; i < lum.length; i++) if (lum[i] > best) { best = lum[i]; bi = i; }
+  const sorted = Array.from(lum).sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  // 高光区域质心（亮度 > best - 0.04）
+  let sx = 0, sy = 0, n = 0;
+  for (let i = 0; i < lum.length; i++) if (lum[i] > best - 0.04) { sx += i % w; sy += Math.floor(i / w); n++; }
+  const cx = n ? sx / n : bi % w, cy = n ? sy / n : Math.floor(bi / w);
+  const hfov = 2 * Math.atan(36 / (2 * lensMm));
+  const vfov = 2 * Math.atan((36 * h) / w / (2 * lensMm));
+  const dxDeg = (Math.atan(((cx - w / 2) / (w / 2)) * Math.tan(hfov / 2)) * 180) / Math.PI;
+  const elevDeg = cameraElevDeg + (Math.atan(((h / 2 - cy) / (h / 2)) * Math.tan(vfov / 2)) * 180) / Math.PI;
+  return { found: best > 0.85 && best - median > 0.35, dxDeg, elevDeg, brightness: best, median, x: cx / w, y: cy / h };
+}
+
 export type ProtectMode = "pixel" | "tone" | "grade";
 
 /**
