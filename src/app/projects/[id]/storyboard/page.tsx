@@ -66,6 +66,9 @@ export default async function StoryboardPage({ params }: { params: Promise<{ id:
         hfReady={hfPublicInfo().configured}
         initialKeyframes={listKeyframes(id).map(toKeyframeView)}
         productName={getProduct(id)?.name ?? ""}
+        productRules={getProduct(id)?.bible.find((f) => f.key === "physics")?.value ?? ""}
+        worldRules={creative.storyCore.styleNote}
+        productBible={(getProduct(id)?.bible ?? []).map((f) => ({ key: f.key, value: f.value }))}
         cad={{ blender: Boolean(findBlender()), model: Boolean(getProductModel(id)) }}
       />
     </>

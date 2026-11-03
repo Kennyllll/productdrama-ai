@@ -66,6 +66,12 @@ export const demoProduct: Product = {
     { key: "logo", label: "Logo 位置", value: "示例：踏板前端", needsConfirmation: true },
     { key: "size", label: "尺寸", value: "需用户提供（照片无法准确推断）", needsConfirmation: true },
     { key: "age", label: "适用年龄", value: "需用户提供", needsConfirmation: true },
+    {
+      key: "physics",
+      label: "物理规则",
+      value: "示例：两轮无支架，不能自己立着；只能被骑、被推、被手扶、靠在物体上或倒在地上",
+      needsConfirmation: true,
+    },
   ],
 };
 

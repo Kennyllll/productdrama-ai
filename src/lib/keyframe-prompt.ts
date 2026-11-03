@@ -30,6 +30,7 @@ export function buildKeyframePrompt(
   spec: VisualSpec,
   productName: string,
   eggName: string | null,
+  worldRules = "",
 ): string {
   const people = cast.filter((c) => shot.characterIds.includes(c.id));
   const lines = [
@@ -49,5 +50,6 @@ export function buildKeyframePrompt(
   }
   if (shot.hasPetEasterEgg && eggName) lines.push(`Easter egg: ${eggName} appears subtly in the frame (match its reference photos), not the focus.`);
   if (shot.dialogue.trim()) lines.push("Characters are mid-conversation; natural expressions, no speech bubbles or subtitles.");
+  if (worldRules.trim()) lines.push(`World rules (location, era, realism — must be obeyed, no scenic or fantastical substitutions): ${worldRules.trim()}`);
   return lines.join("\n");
 }

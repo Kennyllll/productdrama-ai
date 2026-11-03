@@ -7,6 +7,7 @@ export interface CadParams {
   azimuthDeg: number; // 相机绕产品的方位角：0 = 正前，负 = 左前，±180 = 正后
   elevationDeg: number; // 相机仰角：负 = 仰拍
   lensMm: number;
+  rollDeg: number; // 产品侧倾角：0 直立（被骑 / 被扶），10–18 靠在物体上，80–85 倒在地上；负值向另一侧
   keyDirDeg: number; // 主光方位角（相对产品）
   keyElevDeg: number;
   keyKelvin: number;
@@ -17,6 +18,7 @@ export interface CadParams {
   exposure: number; // 产品曝光补偿 EV
   reflection: number; // 地面倒影强度 0–1（0 = 干燥地面）
   floorRoughness: number; // 倒影模糊程度 0.02–0.5
+  interaction: boolean; // 产品与人物 / 场景有接触：AI 出完整画面 → 绿色遮罩定位 → CAD 对齐替换；否则空场景 + 合成
   reusePlate: boolean; // 复用该镜头上次生成的空场景（只调产品时省一次 Flare）
   harmonize: boolean; // 是否让 AI 做一次融合（之后用遮罩贴回产品像素）
   protect: "pixel" | "tone"; // pixel：连光线也用渲染；tone：形状 / Logo 用渲染，光线 / 色温取 AI 融合
@@ -31,6 +33,7 @@ export function defaultCadParams(shot: LocalShot): CadParams {
     azimuthDeg: -38,
     elevationDeg: ELEV[shot.angle] ?? 6,
     lensMm: shot.lens,
+    rollDeg: /靠在|靠着|并排靠/.test(`${shot.productNote} ${shot.description}`) ? 14 : /倒在|躺在|倒地|摔倒|倒向/.test(`${shot.productNote} ${shot.description}`) ? 82 : 0,
     keyDirDeg: -60,
     keyElevDeg: 35,
     keyKelvin: /夜|暖|钨|窗|黄昏|golden|warm|night/i.test(shot.lighting) ? 3400 : 5400,
@@ -41,6 +44,7 @@ export function defaultCadParams(shot: LocalShot): CadParams {
     exposure: 0,
     reflection: /雨|湿|水|wet|rain|镜面|石材|marble|polished/i.test(`${shot.description} ${shot.lighting}`) ? 0.7 : 0.2,
     floorRoughness: 0.12,
+    interaction: shot.characterIds.length > 0 || /靠|扶|推|骑|跨|挂|抱/.test(`${shot.productNote} ${shot.description}`),
     reusePlate: false,
     harmonize: true,
     protect: "tone",
@@ -53,6 +57,7 @@ export function clampCadParams(p: CadParams): CadParams {
     azimuthDeg: c(p.azimuthDeg, -180, 180, -38),
     elevationDeg: c(p.elevationDeg, -15, 80, 6),
     lensMm: c(p.lensMm, 14, 200, 50),
+    rollDeg: c(p.rollDeg, -90, 90, 0),
     keyDirDeg: c(p.keyDirDeg, -180, 180, -60),
     keyElevDeg: c(p.keyElevDeg, 5, 85, 35),
     keyKelvin: c(p.keyKelvin, 2000, 10000, 5400),
@@ -63,6 +68,7 @@ export function clampCadParams(p: CadParams): CadParams {
     exposure: c(p.exposure, -4, 4, 0),
     reflection: c(p.reflection, 0, 1, 0.3),
     floorRoughness: c(p.floorRoughness, 0.02, 0.5, 0.12),
+    interaction: Boolean(p.interaction),
     reusePlate: Boolean(p.reusePlate),
     harmonize: Boolean(p.harmonize),
     protect: p.protect === "pixel" ? "pixel" : "tone",
@@ -78,6 +84,19 @@ export function buildPlatePrompt(base: string, p: CadParams, productName: string
     `Camera height matches a lens of ${p.lensMm}mm at ${p.elevationDeg < 0 ? "low ground-level" : p.elevationDeg > 25 ? "high" : "slightly above knee"} height. Key light comes from the ${p.keyDirDeg < 0 ? "left" : "right"} at about ${p.keyKelvin}K.`,
   ].join("\n");
 }
+
+/** 接触镜头：让 AI 按 CAD 渲染图把产品画进完整画面（形状会有偏差，之后用 CAD 替换） */
+export function buildInteractionPrompt(base: string, productName: string, bible: { key: string; value: string }[], productNote: string): string {
+  const v = (k: string) => bible.find((f) => f.key === k)?.value?.trim() ?? "";
+  const facts = [v("color-main") && `main color: ${v("color-main")}`, v("color-sub") && `other parts: ${v("color-sub")}`, v("geometry") && `geometry: ${v("geometry")}`, v("logo") && `logo: ${v("logo")}`, v("physics") && `physics: ${v("physics")}`].filter(Boolean).join("; ");
+  return [
+    base.replace(/^Product:.*$/m, "").replace(/\n{2,}/g, "\n").trim(),
+    `Product: the FIRST attached image is a studio render of the real ${productName || "product"} (${facts}). Reproduce this exact product in the scene — same model, same parts, same colors and decal — and show it from the SAME viewing angle and lean as in the render, scaled correctly for the people in the scene. How it appears: ${productNote || "as described"}. It must obey its physics (${v("physics") || "no kickstand, cannot stand by itself"}): someone holds, rides or pushes it, or it leans on something, with visible contact.`,
+  ].join("\n");
+}
+
+export const greenMaskPrompt = (productName: string) =>
+  `Image editing task, not a redesign. Repaint ONLY the ${productName || "product"} (the white balance bike) as a flat, solid, pure green (#00FF00) silhouette that exactly covers its visible pixels — frame, wheels, handlebar, number plate — except the saddle/seat, which must be painted flat pure red (#FF0000). Where a person's hand, leg or body is in front of the bike, keep the person unchanged (do not paint over them). Change nothing else in the image: no other colors, no lighting changes, no new objects.`;
 
 export const harmonizePrompt = (productName: string) =>
   `Photo compositing cleanup, not a redesign. A real ${productName || "product"} (rendered from its CAD model) has been placed into this film still. Make it belong to the scene: match the scene's exposure, color temperature and light direction on the product; add realistic contact shadows and ambient occlusion where its wheels/feet meet the ground; if the ground is wet, glossy or reflective, paint the product's reflection on the ground consistent with the other reflections in the scene; add the scene's light reflections on glossy surfaces of the product; match film grain and softness. STRICT: do not change the product's shape, proportions, parts, text or logo in any way; do not move or resize it; keep everything else in the scene unchanged.`;

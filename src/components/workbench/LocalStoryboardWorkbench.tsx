@@ -61,6 +61,9 @@ export function LocalStoryboardWorkbench({
   hfReady,
   initialKeyframes,
   productName,
+  productRules,
+  worldRules,
+  productBible,
   cad,
 }: {
   projectId: string;
@@ -73,6 +76,9 @@ export function LocalStoryboardWorkbench({
   hfReady: boolean;
   initialKeyframes: KeyframeView[];
   productName: string;
+  productRules: string;
+  worldRules: string;
+  productBible: { key: string; value: string }[];
   cad: { blender: boolean; model: boolean };
 }) {
   const [keyframes, setKeyframes] = useState(initialKeyframes);
@@ -185,7 +191,7 @@ export function LocalStoryboardWorkbench({
   const shots = board.episodes.find((e) => e.number === epNo)?.shots ?? [];
   const selected = shots.find((s) => s.id === selectedId) ?? shots[0];
   const total = sum(shots);
-  const warnings = checkStoryboardEpisode(shots, !!egg);
+  const warnings = checkStoryboardEpisode(shots, !!egg, productRules);
   const scriptEp = script.episodes.find((e) => e.number === epNo);
   const outdated = board.sourceProposalId !== script.proposalId;
   const nameOf = (id: string) => cast.find((c) => c.id === id)?.name ?? "已删除角色";
@@ -358,13 +364,14 @@ export function LocalStoryboardWorkbench({
               projectId={projectId}
               shotId={selected.id}
               shotIndex={selected.index}
-              defaultPrompt={buildKeyframePrompt(selected, style, cast, board.visualSpec, productName, egg?.name ?? null)}
+              defaultPrompt={buildKeyframePrompt(selected, style, cast, board.visualSpec, productName, egg?.name ?? null, worldRules)}
               keyframes={keyframes}
               onChange={setKeyframes}
               ready={hfReady}
               dirty={dirty}
               shot={selected}
               productName={productName}
+              productBible={productBible}
               cad={cad}
             />
             <div className="mt-3 flex flex-wrap gap-2">

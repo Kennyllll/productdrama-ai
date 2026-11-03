@@ -12,6 +12,8 @@ export interface RenderSpec {
   azimuth_deg: number;
   elevation_deg: number;
   yaw_deg?: number;
+  roll_deg?: number; // 侧倾（靠物 / 倒地）
+  pitch_deg?: number;
   lens_mm: number;
   distance_m?: number | null;
   target_height_frac?: number;

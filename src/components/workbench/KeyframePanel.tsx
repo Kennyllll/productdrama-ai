@@ -16,10 +16,11 @@ const numField = "mt-1 w-full rounded-md border border-white/10 bg-black/40 px-2
 
 type Mode = "ai" | "cad";
 
-const CAD_FIELDS: { key: keyof Omit<CadParams, "harmonize" | "protect" | "reusePlate">; label: string; step: number }[] = [
+const CAD_FIELDS: { key: keyof Omit<CadParams, "harmonize" | "protect" | "reusePlate" | "interaction">; label: string; step: number }[] = [
   { key: "azimuthDeg", label: "相机方位角°（0 正前，负 左前）", step: 5 },
   { key: "elevationDeg", label: "相机仰角°（负 = 仰拍）", step: 2 },
   { key: "lensMm", label: "焦距 mm", step: 5 },
+  { key: "rollDeg", label: "产品侧倾°（0 被扶 / 骑，14 靠物，82 倒地）", step: 2 },
   { key: "keyDirDeg", label: "主光方位角°", step: 10 },
   { key: "keyElevDeg", label: "主光高度°", step: 5 },
   { key: "keyKelvin", label: "主光色温 K", step: 200 },
@@ -43,6 +44,7 @@ export function KeyframePanel({
   dirty,
   shot,
   productName,
+  productBible,
   cad,
 }: {
   projectId: string;
@@ -55,8 +57,10 @@ export function KeyframePanel({
   dirty: boolean;
   shot: LocalShot;
   productName: string;
+  productBible: { key: string; value: string }[];
   cad: { blender: boolean; model: boolean };
 }) {
+  const physicsRule = productBible.find((f) => f.key === "physics")?.value ?? "";
   const cadAvailable = cad.blender && cad.model && shot.product !== "无";
   const [mode, setMode] = useState<Mode>(cadAvailable ? "cad" : "ai");
   const [model, setModel] = useState<KeyframeModel>(KEYFRAME_MODELS[0].id);
@@ -103,8 +107,11 @@ export function KeyframePanel({
       if (res.error || !res.result) return setMsg({ error: res.error ?? "生成失败" });
       onChange([...keyframes, res.result.keyframe]);
       setLast(res.result);
+      const r = res.result;
       setMsg({
-        ok: `已生成：产品渲染 ${res.result.renderSeconds} 秒${res.result.aiDrift !== null ? `，AI 融合试图改动产品像素平均 ${res.result.aiDrift}/255（已全部贴回，产品零变形）` : "，未做 AI 融合"}`,
+        ok: r.fit
+          ? `已生成（接触镜头）：产品渲染 ${r.renderSeconds} 秒；CAD 与 AI 画的产品对齐 IoU ${r.fit.iou}，覆盖 ${Math.round(r.fit.coverage * 100)}%。IoU 低于 0.6 说明 AI 画的角度和渲染不一致，请改相机方位 / 仰角重试`
+          : `已生成：产品渲染 ${r.renderSeconds} 秒${r.aiDrift !== null ? `，AI 融合试图改动产品像素平均 ${r.aiDrift}/255（已全部贴回，产品零变形）` : "，未做 AI 融合"}`,
       });
     });
 
@@ -207,7 +214,12 @@ export function KeyframePanel({
                 ))}
               </div>
               <label className="flex items-center gap-2 text-xs text-neutral-300">
-                <input type="checkbox" checked={params.reusePlate} onChange={(e) => setParams((p) => ({ ...p, reusePlate: e.target.checked }))} aria-label="复用上次空场景" />
+                <input type="checkbox" checked={params.interaction} onChange={(e) => setParams((p) => ({ ...p, interaction: e.target.checked }))} aria-label="产品与人物或场景有接触" />
+                产品与人物 / 场景有接触（骑、推、扶、靠）：AI 出完整画面 → 绿色遮罩定位 → CAD 对齐替换
+              </label>
+              {physicsRule ? <p className="text-[11px] text-amber-200/80">物理规则：{physicsRule}</p> : null}
+              <label className={`flex items-center gap-2 text-xs text-neutral-300 ${params.interaction ? "opacity-40" : ""}`}>
+                <input type="checkbox" disabled={params.interaction} checked={params.reusePlate} onChange={(e) => setParams((p) => ({ ...p, reusePlate: e.target.checked }))} aria-label="复用上次空场景" />
                 复用该镜头上次的空场景（只调产品光线 / 位置时省一次 Flare）
               </label>
               <label className="flex items-center gap-2 text-xs text-neutral-300">
@@ -247,14 +259,7 @@ export function KeyframePanel({
       )}
       {last ? (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="CAD 合成中间结果">
-          {[
-            ["产品渲染", last.files.product],
-            ["空场景", last.files.plate],
-            ["直接合成", last.files.composite],
-            ["AI 融合（贴回前）", last.files.harmonized],
-          ]
-            .filter((x): x is [string, string] => Boolean(x[1]))
-            .map(([label, url]) => (
+          {last.files.map(([label, url]) => (
               <figure key={label} className="text-[10px] text-neutral-400">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={url} alt={label} className="aspect-video w-full rounded border border-white/10 bg-black object-contain" />

@@ -145,9 +145,19 @@ export function buildStoryboard(
   };
 }
 
-export function checkStoryboardEpisode(shots: LocalShot[], hasEgg: boolean): CinematicWarning[] {
+/** 产品物理规则（Product Bible「物理规则」）：不能自立的产品，每个产品镜头必须写明它靠什么立着 */
+const SUPPORT_WORDS = /骑|踩|跨|推|扶|握|拿|抱|抬|提|扛|靠|倚|倒|躺|摔|跌|侧撑|支架|挂|盒|箱|桌|架子|手|腰|肩|背|载|墙|栏杆|滑行|滑进|滑到|行驶|冲下|held|lean|riding|pushing|lying/i;
+export function checkProductPhysics(shots: LocalShot[], rules: string): CinematicWarning[] {
+  if (!/不能自(己)?立|无支架|没有支架|不能自立|cannot stand/i.test(rules)) return [];
+  return shots
+    .filter((s) => s.product !== "无")
+    .filter((s) => !SUPPORT_WORDS.test(`${s.productNote} ${s.description}`))
+    .map((s) => ({ shotIndex: s.index, message: `镜头 ${s.index}：产品不能自己立着，请在产品出现方式里写明它被谁骑 / 推 / 扶，或靠在什么上、倒在哪里` }));
+}
+
+export function checkStoryboardEpisode(shots: LocalShot[], hasEgg: boolean, productRules = ""): CinematicWarning[] {
   if (shots.length === 0) return [{ shotIndex: null, message: "本集还没有镜头" }];
-  const warnings = checkEpisodeShots(shots, EPISODE_SECONDS);
+  const warnings = [...checkEpisodeShots(shots, EPISODE_SECONDS), ...checkProductPhysics(shots, productRules)];
   if (!shots.some((s) => s.product === "主体")) warnings.push({ shotIndex: null, message: "本集没有产品主体镜头" });
   const productShots = shots.filter((s) => s.product === "主体").length;
   if (productShots > 2) warnings.push({ shotIndex: null, message: `产品主体镜头有 ${productShots} 个，偏多；观众共情来自人物，建议每集 1–2 个` });

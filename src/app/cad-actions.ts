@@ -3,8 +3,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { BlenderError, findBlender, renderProduct } from "@/lib/blender";
-import { CAD_KEYFRAME_MODEL, clampCadParams, buildPlatePrompt, harmonizePrompt, type CadParams } from "@/lib/cad-camera";
-import { composeProduct, protectProduct } from "@/lib/cad-composite";
+import { CAD_KEYFRAME_MODEL, buildInteractionPrompt, clampCadParams, buildPlatePrompt, greenMaskPrompt, harmonizePrompt, type CadParams } from "@/lib/cad-camera";
+import { composeProduct, fitMask, greenMask, protectProduct, replaceProduct } from "@/lib/cad-composite";
+import sharp from "sharp";
 import { deleteRequest, estimate, HiggsfieldError, submit, uploadFile, waitFor } from "@/lib/higgsfield";
 import { addKeyframe, toKeyframeView, type KeyframeView } from "@/lib/keyframe-repo";
 import { cadDir, getProductModel, modelPath } from "@/lib/model-repo";
@@ -88,9 +89,73 @@ export async function estimateCadKeyframeAction(projectId: string, harmonize: bo
 
 export interface CadKeyframeResult {
   keyframe: KeyframeView;
-  files: { product: string; plate: string; composite: string; harmonized?: string };
+  /** 中间文件：标签 → URL */
+  files: [string, string][];
   aiDrift: number | null;
+  fit?: { iou: number; coverage: number };
   renderSeconds: number;
+}
+
+/** 接触镜头：AI 出完整画面（以 CAD 渲染为参考）→ 绿色遮罩定位 → CAD 对齐替换 */
+async function interactionKeyframe(projectId: string, shotId: string, p: CadParams, basePrompt: string, dir: string, glb: string, aspect: string, productNote: string): Promise<Omit<CadKeyframeResult, "keyframe"> & { bytes: Buffer; prompt: string; usd: number }> {
+  const product = getProduct(projectId);
+  const productName = product?.name ?? "";
+  const t0 = Date.now();
+  const renderAt = (azimuth: number, roll: number, name: string) =>
+    renderProduct({
+      glb,
+      out: path.join(dir, name),
+      width: 1600,
+      height: 1600,
+      azimuth_deg: azimuth,
+      elevation_deg: p.elevationDeg,
+      lens_mm: p.lensMm,
+      roll_deg: roll,
+      key_dir_deg: p.keyDirDeg,
+      key_elev_deg: p.keyElevDeg,
+      key_kelvin: p.keyKelvin,
+      exposure: p.exposure,
+      samples: 128,
+    });
+  let render = await renderAt(p.azimuthDeg, p.rollDeg, "product.png");
+  let renderSeconds = Math.round((Date.now() - t0) / 1000);
+  // 参考图：渲染铺在中性灰底上
+  const refPng = await sharp(render.image).flatten({ background: { r: 128, g: 128, b: 128 } }).png().toBuffer();
+  fs.writeFileSync(path.join(dir, "product-ref.png"), refPng);
+  const refUrl = await uploadFile(refPng, "image/png");
+  const prompt = buildInteractionPrompt(basePrompt, productName, product?.bible ?? [], productNote);
+  const unit = await estimate(PLATE_MODEL, plateInput(prompt, aspect, [refUrl])).then((r) => r.usd).catch(() => NaN);
+  const ai = await runFlare(plateInput(prompt, aspect, [refUrl]));
+  fs.writeFileSync(path.join(dir, "ai.png"), ai);
+  const aiUrl = await uploadFile(ai, "image/png");
+  const green = await runFlare(plateInput(greenMaskPrompt(productName), aspect, [aiUrl]));
+  fs.writeFileSync(path.join(dir, "green.png"), green);
+  const meta = await sharp(ai).metadata();
+  const W = meta.width ?? 0, H = meta.height ?? 0;
+  const gm = await greenMask(green, W, H);
+  // 车头朝向：红色座椅在产品右侧 = 车头朝左。渲染的朝向由方位角符号决定（负 = 车头朝左），不一致就按镜像机位重渲染
+  const renderFacing = p.azimuthDeg < 0 ? "left" : "right";
+  let mirrored = false;
+  if (gm.facing && gm.facing !== renderFacing) {
+    const t1 = Date.now();
+    render = await renderAt(-p.azimuthDeg, -p.rollDeg, "product.png");
+    renderSeconds += Math.round((Date.now() - t1) / 1000);
+    mirrored = true;
+  }
+  const fit = await fitMask(render.mask, gm, W, H);
+  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, mirrored, aiFacing: gm.facing }));
+  const rep = await replaceProduct(ai, render.image, render.mask, fit, gm, W, H, p.protect);
+  fs.writeFileSync(path.join(dir, "final.png"), rep.final);
+  const f = (name: string) => `/api/cad/${projectId}?f=${shotId.toLowerCase()}/${name}`;
+  return {
+    bytes: rep.final,
+    prompt: `${prompt}\n\n[CAD interaction] ${JSON.stringify({ ...p, fit })}`,
+    usd: Number.isFinite(unit) ? unit * 2 : 0,
+    files: [["CAD 渲染（参考）", f("product-ref.png")], ["AI 完整画面（替换前）", f("ai.png")], ["绿色遮罩", f("green.png")]],
+    aiDrift: null,
+    fit: { iou: Math.round(fit.iou * 100) / 100, coverage: Math.round(fit.coverage * 100) / 100 },
+    renderSeconds,
+  };
 }
 
 /**
@@ -112,6 +177,13 @@ export async function generateCadKeyframeAction(projectId: string, shotId: strin
     const dir = path.join(cadDir(projectId), shotId.toLowerCase());
     fs.mkdirSync(dir, { recursive: true });
 
+    if (p.interaction) {
+      const r = await interactionKeyframe(projectId, shotId, p, basePrompt, dir, modelPath(m), board.visualSpec.aspectRatio, shot.productNote);
+      const k = addKeyframe({ projectId, shotId, bytes: r.bytes, model: CAD_KEYFRAME_MODEL, prompt: r.prompt, usd: r.usd });
+      if (!k) throw new Error("保存关键帧失败");
+      return { result: { keyframe: toKeyframeView(k), files: r.files, aiDrift: r.aiDrift, fit: r.fit, renderSeconds: r.renderSeconds } };
+    }
+
     // 1) 空场景（可复用上次的，便于只调产品光线 / 位置）
     const platePrompt = buildPlatePrompt(basePrompt, p, productName);
     const plateFile = path.join(dir, "plate.png");
@@ -130,6 +202,7 @@ export async function generateCadKeyframeAction(projectId: string, shotId: strin
       azimuth_deg: p.azimuthDeg,
       elevation_deg: p.elevationDeg,
       lens_mm: p.lensMm,
+      roll_deg: p.rollDeg,
       key_dir_deg: p.keyDirDeg,
       key_elev_deg: p.keyElevDeg,
       key_kelvin: p.keyKelvin,
@@ -171,14 +244,9 @@ export async function generateCadKeyframeAction(projectId: string, shotId: strin
     });
     if (!k) throw new Error("保存关键帧失败");
     const f = (name: string) => `/api/cad/${projectId}?f=${shotId.toLowerCase()}/${name}`;
-    return {
-      result: {
-        keyframe: toKeyframeView(k),
-        files: { product: f("product.png"), plate: f("plate.png"), composite: f("composite.png"), harmonized: harmonizedUrl },
-        aiDrift,
-        renderSeconds,
-      },
-    };
+    const files: [string, string][] = [["产品渲染", f("product.png")], ["空场景", f("plate.png")], ["直接合成", f("composite.png")]];
+    if (harmonizedUrl) files.push(["AI 融合（贴回前）", harmonizedUrl]);
+    return { result: { keyframe: toKeyframeView(k), files, aiDrift, renderSeconds } };
   } catch (e) {
     return fail(e);
   }

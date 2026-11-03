@@ -26,6 +26,21 @@ for o in objs: o.location -= shift
 mn -= shift; mx -= shift; center -= shift
 yaw = math.radians(g("yaw_deg", 0))
 for o in objs: o.rotation_euler.z += yaw
+# 产品姿态：roll_deg 绕前进轴侧倾（靠在物体上 / 倒地），pitch_deg 绕横轴（上坡 / 下坡）
+roll = math.radians(g("roll_deg", 0)); pitch = math.radians(g("pitch_deg", 0))
+if roll or pitch:
+    R = mathutils.Euler((roll, pitch, 0), "XYZ").to_matrix().to_4x4()
+    for o in objs: o.matrix_world = R @ o.matrix_world
+    bpy.context.view_layer.update()
+    zmin = min((o.matrix_world @ mathutils.Vector(v)).z for o in objs for v in o.bound_box)
+    for o in objs: o.location.z -= zmin
+    bpy.context.view_layer.update()
+    mn = mathutils.Vector((1e9,) * 3); mx = mathutils.Vector((-1e9,) * 3)
+    for o in objs:
+        for v in o.bound_box:
+            w = o.matrix_world @ mathutils.Vector(v)
+            mn = mathutils.Vector(map(min, mn, w)); mx = mathutils.Vector(map(max, mx, w))
+    center = (mn + mx) / 2
 
 for o in objs:
     for m in o.data.materials:
