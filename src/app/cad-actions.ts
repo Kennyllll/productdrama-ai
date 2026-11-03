@@ -164,6 +164,7 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
   const searchSeconds = Math.round((Date.now() - t1) / 1000);
 
   // 按匹配到的视角正式渲染并对齐替换
+  const backlit = /逆光|背光|黄昏|夕阳|backlit|backlight|sunset|golden hour/i.test(basePrompt);
   const t2 = Date.now();
   render = await renderProduct({
     glb,
@@ -174,9 +175,14 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
     elevation_deg: view.elevation_deg,
     lens_mm: p.lensMm,
     roll_deg: view.roll_deg,
-    key_dir_deg: p.keyDirDeg,
-    key_elev_deg: p.keyElevDeg,
+    // 用去车后的背景当环境光；主光放在相机对面低角度，模拟逆光太阳，轮廓光由 Blender 真实计算
+    env_image: path.join(dir, "clean.png"),
+    env_strength: p.envStrength,
+    key_dir_deg: backlit ? view.azimuth_deg + 180 : p.keyDirDeg,
+    key_elev_deg: backlit ? 12 : p.keyElevDeg,
     key_kelvin: p.keyKelvin,
+    key_strength: backlit ? 6 : 3,
+    key_mix: backlit ? 0.9 : 0.4,
     exposure: p.exposure,
     samples: 128,
   });
