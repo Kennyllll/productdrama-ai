@@ -3,9 +3,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { BlenderError, findBlender, renderProduct, renderSilhouettes, type SilhouetteView } from "@/lib/blender";
-import { CAD_KEYFRAME_MODEL, buildInteractionPrompt, clampCadParams, buildPlatePrompt, greenMaskPrompt, harmonizePrompt, removeProductPrompt, type CadParams } from "@/lib/cad-camera";
+import { CAD_KEYFRAME_MODEL, buildInteractionPrompt, buildProductFirstPrompt, buildProductFirstPlatePrompt, clampCadParams, buildPlatePrompt, greenMaskPrompt, harmonizePrompt, removeProductPrompt, type CadParams } from "@/lib/cad-camera";
 import { anchorFit, composeProduct, contactShadow, estimateSun, fitMask, greenMask, groundRow, handFixMask,
-  handPoints, lockScene, contactQa, relightLoss, occluderMask, placedMask, productHoleImage, protectProduct, relightTransfer, replaceProduct, snapToGround } from "@/lib/cad-composite";
+  handPoints, lockScene, contactQa, relightLoss, occluderMask, type MaskFit, placedMask, productHoleImage, protectProduct, relightTransfer, replaceProduct, snapToGround } from "@/lib/cad-composite";
 import sharp from "sharp";
 import { deleteRequest, estimate, HiggsfieldError, submit, uploadFile, waitFor } from "@/lib/higgsfield";
 import { addKeyframe, toKeyframeView, type KeyframeView } from "@/lib/keyframe-repo";
@@ -282,6 +282,116 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
   };
 }
 
+/** 接触镜头（产品先行）：AI 出无人空场景 → CAD 车按分镜机位 / 姿态放进去 → AI 在这张照片里加人（骑、扶、靠） → 标注遮挡 → CAD 像素贴回 + AI 光影迁移 */
+async function productFirstKeyframe(projectId: string, shotId: string, p: CadParams, basePrompt: string, dir: string, glb: string, aspect: string, productNote: string, hasPeople: boolean): Promise<Omit<CadKeyframeResult, "keyframe"> & { bytes: Buffer; prompt: string; usd: number }> {
+  const product = getProduct(projectId);
+  const productName = product?.name ?? "";
+  // 靠物：车必须向远离镜头的方向倒（支撑物在车后面，不挡车）。相机水平方向 (sin az, −cos az)，侧倾后车的竖直轴 (0, −sin r, cos r)，点积 = cos az · sin r
+  const az = (p.azimuthDeg * Math.PI) / 180;
+  const leaning = Math.abs(p.rollDeg) >= 8 && Math.abs(p.rollDeg) <= 30;
+  const fallen = Math.abs(p.rollDeg) > 60;
+  let roll = p.rollDeg;
+  if (leaning) {
+    const r = Math.min(18, Math.max(10, Math.abs(roll)));
+    roll = Math.cos(az) >= 0 ? -r : r;
+  }
+  // 画面左右：相机右方向 (cos az, sin az)，点积 = −sin az · sin r
+  const leanSide = leaning ? (-Math.sin(az) * Math.sin((roll * Math.PI) / 180) > 0 ? "right" : "left") : null;
+  // 1) 空场景：同一镜头但没有人、没有车，车的位置留空
+  const platePrompt = buildProductFirstPlatePrompt(basePrompt, p, productName);
+  const plateFile = path.join(dir, "plate.png");
+  const plate = await runFlare(plateInput(platePrompt, aspect));
+  fs.writeFileSync(plateFile, plate);
+  // 2) 用空场景当环境光渲染真车（含接触阴影），按分镜位置 / 大小放进去
+  const t0 = Date.now();
+  const render = await renderProduct({
+    glb,
+    out: path.join(dir, "product.png"),
+    width: 1600,
+    height: 1600,
+    azimuth_deg: p.azimuthDeg,
+    elevation_deg: p.elevationDeg,
+    lens_mm: p.lensMm,
+    roll_deg: roll,
+    key_dir_deg: p.keyDirDeg,
+    key_elev_deg: p.keyElevDeg,
+    key_kelvin: p.keyKelvin,
+    env_image: plateFile,
+    env_strength: p.envStrength,
+    exposure: p.exposure,
+    samples: 96,
+  });
+  const renderSeconds = Math.round((Date.now() - t0) / 1000);
+  const comp = await composeProduct(plate, render.image, render.mask, p);
+  const CW = comp.width, CH = comp.height;
+  fs.writeFileSync(path.join(dir, "product-ref.png"), comp.composite);
+  const productOnly = path.join(dir, "product-only.png");
+  const alpha = await sharp(render.mask).ensureAlpha().extractChannel("alpha").toBuffer();
+  await sharp(render.image).removeAlpha().joinChannel(alpha).png().toFile(productOnly);
+  const renderW = (await sharp(render.image).metadata()).width ?? 1600;
+  const refUrl = await uploadFile(comp.composite, "image/png");
+  const prompt = buildProductFirstPrompt(basePrompt, productName, product?.bible ?? [], productNote, { leanDeg: leaning ? Math.abs(roll) : 0, leanSide, fallen, hasPeople });
+  const unit = await estimate(PLATE_MODEL, plateInput(prompt, aspect, [refUrl])).then((r) => r.usd).catch(() => NaN);
+  let calls = 1;
+  const attempt = async () => {
+    const ai = await runFlare(plateInput(prompt, aspect, [refUrl]));
+    calls++;
+    const meta = await sharp(ai).metadata();
+    const W = meta.width ?? CW, H = meta.height ?? CH;
+    const k = W / CW;
+    const fit: MaskFit = { left: comp.box.left * k, top: comp.box.top * (H / CH), scale: (comp.box.width / renderW) * k, iou: 0, coverage: 0 };
+    const placed = await placedMask(render.mask, fit, W, H);
+    const green = await runFlare(plateInput(greenMaskPrompt(productName), aspect, [await uploadFile(ai, "image/png")]));
+    calls++;
+    const gm = await greenMask(green, W, H);
+    const occ = await occluderMask(green, W, H);
+    // AI 必须把车留在原位：AI 画面里的车（绿 + 挡在车前的人）与 CAD 位置的重合度；车框外的绿色 = 又画了一辆车
+    let x0 = W, x1 = -1, y0 = H, y1 = -1, pc = 0;
+    for (let i = 0; i < W * H; i++) if (placed[i] > 128) { pc++; const x = i % W, y = (i / W) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    const mx = (x1 - x0) * 0.15, my = (y1 - y0) * 0.15;
+    let inter = 0, uni = 0, extra = 0;
+    for (let i = 0; i < W * H; i++) {
+      const g = gm[i] > 128, a = placed[i] > 128, o = occ[i] > 128;
+      if (a && (g || o)) inter++;
+      if (a || g) uni++;
+      if (g && !a) { const x = i % W, y = (i / W) | 0; if (x < x0 - mx || x > x1 + mx || y < y0 - my || y > y1 + my) extra++; }
+    }
+    return { ai, green, gm, occ, W, H, fit, placed, keep: uni ? inter / uni : 0, extra: pc ? extra / pc : 0 };
+  };
+  let r = await attempt();
+  if (r.keep < 0.6 || r.extra > 0.15) {
+    const r2 = await attempt();
+    if (r2.keep - r2.extra > r.keep - r.extra) r = r2;
+  }
+  const { ai, green, occ, W, H, fit, placed } = r;
+  fs.writeFileSync(path.join(dir, "ai.png"), ai);
+  fs.writeFileSync(path.join(dir, "green.png"), green);
+  const visible = Buffer.from(placed);
+  for (let i = 0; i < visible.length; i++) if (occ[i] > 128) visible[i] = 0;
+  // 完整贴 CAD（只在人挡在车前处露出 AI 画的人），整车按 AI 画面里同位置的车统一调曝光 / 色温，再迁移 AI 的低频光影
+  const rep = await replaceProduct(ai, productOnly, render.mask, fit, visible, W, H, "grade", { occluder: occ, gradeRef: ai });
+  fs.writeFileSync(path.join(dir, "replaced.png"), rep.final);
+  const finalPng = await relightTransfer(ai, rep.final, visible, W, H);
+  fs.writeFileSync(path.join(dir, "final.png"), finalPng);
+  const lost = await relightLoss(ai, rep.final, visible, W, H);
+  const qa: string[] = [];
+  if (r.keep < 0.6) qa.push(`AI 没有把车留在原位（重合 ${Math.round(r.keep * 100)}%），可能改了车的位置或形状`);
+  if (r.extra > 0.15) qa.push("AI 在画面别处又画了一辆车");
+  if (lost > 0.5) qa.push(`AI 重画了大部分车身（${Math.round(lost * 100)}%），车身光影可能不准`);
+  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, mode: "product-first", roll, leanSide, keep: r.keep, extra: r.extra, gain: rep.gain, relightLoss: lost, calls, qa }));
+  const f = (name: string) => `/api/cad/${projectId}?f=${shotId.toLowerCase()}/${name}`;
+  return {
+    bytes: finalPng,
+    prompt: `${prompt}\n\n[CAD product-first] ${JSON.stringify({ ...p, roll, fit })}`,
+    usd: Number.isFinite(unit) ? unit * calls : 0,
+    files: [["空场景 + 真车", f("product-ref.png")], ["AI 加人后", f("ai.png")], ["标注（绿=车 蓝=挡在车前的人）", f("green.png")]],
+    aiDrift: null,
+    fit: { iou: Math.round(r.keep * 100) / 100, coverage: Math.round(r.keep * 100) / 100 },
+    qa,
+    renderSeconds,
+  };
+}
+
 /**
  * CAD 保护合成关键帧：
  * 1) Blender 按机位渲染产品（透明背景 + 接触阴影 + 产品遮罩）
@@ -302,7 +412,9 @@ export async function generateCadKeyframeAction(projectId: string, shotId: strin
     fs.mkdirSync(dir, { recursive: true });
 
     if (p.interaction) {
-      const r = await interactionKeyframe(projectId, shotId, p, basePrompt, dir, modelPath(m), board.visualSpec.aspectRatio, shot.productNote);
+      const r = p.productFirst
+        ? await productFirstKeyframe(projectId, shotId, p, basePrompt, dir, modelPath(m), board.visualSpec.aspectRatio, shot.productNote, shot.characterIds.length > 0)
+        : await interactionKeyframe(projectId, shotId, p, basePrompt, dir, modelPath(m), board.visualSpec.aspectRatio, shot.productNote);
       const k = addKeyframe({ projectId, shotId, bytes: r.bytes, model: CAD_KEYFRAME_MODEL, prompt: r.prompt, usd: r.usd });
       if (!k) throw new Error("保存关键帧失败");
       return { result: { keyframe: toKeyframeView(k), files: r.files, aiDrift: r.aiDrift, fit: r.fit, qa: r.qa, renderSeconds: r.renderSeconds } };

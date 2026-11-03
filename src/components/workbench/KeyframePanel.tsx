@@ -16,7 +16,7 @@ const numField = "mt-1 w-full rounded-md border border-white/10 bg-black/40 px-2
 
 type Mode = "ai" | "cad";
 
-const CAD_FIELDS: { key: keyof Omit<CadParams, "harmonize" | "protect" | "reusePlate" | "interaction">; label: string; step: number }[] = [
+const CAD_FIELDS: { key: keyof Omit<CadParams, "harmonize" | "protect" | "reusePlate" | "interaction" | "productFirst">; label: string; step: number }[] = [
   { key: "azimuthDeg", label: "相机方位角°（0 正前，负 左前）", step: 5 },
   { key: "elevationDeg", label: "相机仰角°（负 = 仰拍）", step: 2 },
   { key: "lensMm", label: "焦距 mm", step: 5 },
@@ -217,6 +217,10 @@ export function KeyframePanel({
               <label className="flex items-center gap-2 text-xs text-neutral-300">
                 <input type="checkbox" checked={params.interaction} onChange={(e) => setParams((p) => ({ ...p, interaction: e.target.checked }))} aria-label="产品与人物或场景有接触" />
                 产品与人物 / 场景有接触（骑、推、扶、靠）：AI 出完整画面 → 绿色遮罩定位 → CAD 对齐替换
+              </label>
+              <label className={`flex items-center gap-2 text-xs text-neutral-300 ${params.interaction ? "" : "opacity-40"}`}>
+                <input type="checkbox" disabled={!params.interaction} checked={params.productFirst} onChange={(e) => setParams((p) => ({ ...p, productFirst: e.target.checked }))} aria-label="产品先行" />
+                产品先行（推荐）：先把真车按机位放进画面，AI 围绕这辆车画场景和人；不勾选则 AI 先画车再替换
               </label>
               {physicsRule ? <p className="text-[11px] text-amber-200/80">物理规则：{physicsRule}</p> : null}
               <label className={`flex items-center gap-2 text-xs text-neutral-300 ${params.interaction ? "opacity-40" : ""}`}>

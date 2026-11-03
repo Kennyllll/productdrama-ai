@@ -19,6 +19,7 @@ export interface CadParams {
   reflection: number; // 地面倒影强度 0–1（0 = 干燥地面）
   floorRoughness: number; // 倒影模糊程度 0.02–0.5
   interaction: boolean; // 产品与人物 / 场景有接触：AI 出完整画面 → 绿色遮罩定位 → CAD 对齐替换；否则空场景 + 合成
+  productFirst: boolean; // 接触镜头「产品先行」：先把 CAD 车按分镜放进画面，AI 围绕这辆车画场景和人（推荐）
   reusePlate: boolean; // 复用该镜头上次生成的空场景（只调产品时省一次 Flare）
   harmonize: boolean; // 是否让 AI 做一次融合（之后用遮罩贴回产品像素）
   protect: "grade" | "pixel" | "tone"; // grade：CAD 像素 + 整车统一曝光 / 色温；pixel：CAD 原样；tone：低频取 AI（会把背景颜色混进产品，不推荐）
@@ -39,12 +40,14 @@ export function defaultCadParams(shot: LocalShot): CadParams {
     keyKelvin: /夜|暖|钨|窗|黄昏|golden|warm|night/i.test(shot.lighting) ? 3400 : 5400,
     x: hero ? 0.5 : 0.68,
     y: 0.88,
-    scale: hero ? SCALE[shot.size] : SCALE[shot.size] * 0.7,
+    // 有人物时车要按人的比例缩小，人才能完整入画
+    scale: (hero ? SCALE[shot.size] : SCALE[shot.size] * 0.7) * (shot.characterIds.length ? 0.8 : 1),
     envStrength: 1.2,
     exposure: 0,
     reflection: /雨|湿|水|wet|rain|镜面|石材|marble|polished/i.test(`${shot.description} ${shot.lighting}`) ? 0.7 : 0.2,
     floorRoughness: 0.12,
     interaction: shot.characterIds.length > 0 || /靠|扶|推|骑|跨|挂|抱/.test(`${shot.productNote} ${shot.description}`),
+    productFirst: true,
     reusePlate: false,
     harmonize: true,
     protect: "grade",
@@ -69,6 +72,7 @@ export function clampCadParams(p: CadParams): CadParams {
     reflection: c(p.reflection, 0, 1, 0.3),
     floorRoughness: c(p.floorRoughness, 0.02, 0.5, 0.12),
     interaction: Boolean(p.interaction),
+    productFirst: p.productFirst !== false,
     reusePlate: Boolean(p.reusePlate),
     harmonize: Boolean(p.harmonize),
     protect: p.protect === "pixel" || p.protect === "tone" ? p.protect : "grade",
@@ -85,6 +89,11 @@ export function buildPlatePrompt(base: string, p: CadParams, productName: string
   ].join("\n");
 }
 
+/** 产品先行的空场景：没有人、没有任何车，之后先放真车再加人 */
+export function buildProductFirstPlatePrompt(base: string, p: CadParams, productName: string): string {
+  return `${buildPlatePrompt(base, p, productName)}\nThis plate is the empty location only: no people, no animals, and no bikes, motorcycles, cars or other vehicles anywhere in the frame. People and the product are added later.`;
+}
+
 /** 接触镜头：让 AI 按 CAD 渲染图把产品画进完整画面（形状会有偏差，之后用 CAD 替换） */
 export function buildInteractionPrompt(base: string, productName: string, bible: { key: string; value: string }[], productNote: string): string {
   const v = (k: string) => bible.find((f) => f.key === k)?.value?.trim() ?? "";
@@ -92,6 +101,30 @@ export function buildInteractionPrompt(base: string, productName: string, bible:
   return [
     base.replace(/^Product:.*$/m, "").replace(/\n{2,}/g, "\n").trim(),
     `Product: the FIRST attached image is a studio render of the real ${productName || "product"} (${facts}). Reproduce this exact product in the scene — same model, same parts, same colors and decal — and show it from the SAME viewing angle and lean as in the render, scaled correctly for the people in the scene. How it appears: ${productNote || "as described"}. It must obey its physics (${v("physics") || "no kickstand, cannot stand by itself"}): someone holds, rides or pushes it, or it leans on something, with visible contact. One single frozen moment, not a sequence: exactly one ${productName || "product"} in the frame and every person appears exactly once (no repeated figures, no multiple exposures, no before/after in one image).`,
+  ].join("\n");
+}
+
+/** 产品先行：真车已放进空场景，AI 只在照片里加人和支撑物，车不许动 */
+export function buildProductFirstPrompt(
+  base: string,
+  productName: string,
+  bible: { key: string; value: string }[],
+  productNote: string,
+  o: { leanDeg: number; leanSide: "left" | "right" | null; fallen: boolean; hasPeople: boolean },
+): string {
+  const v = (k: string) => bible.find((f) => f.key === k)?.value?.trim() ?? "";
+  const name = productName || "product";
+  const facts = [v("color-main") && `main color: ${v("color-main")}`, v("color-sub") && `other parts: ${v("color-sub")}`, v("geometry") && `geometry: ${v("geometry")}`, v("logo") && `logo: ${v("logo")}`].filter(Boolean).join("; ");
+  const pose = o.leanDeg
+    ? `It leans about ${o.leanDeg}° away from the camera, its top tilted toward the frame ${o.leanSide}. It has no kickstand, so it must rest against the support described below: put that support right behind it so the handlebar or saddle visibly touches it and carries its weight.`
+    : o.fallen
+      ? "It is lying on its side on the ground."
+      : o.hasPeople
+        ? "It stays upright only because a person holds or rides it: a hand firmly grips the black handlebar grip, or the child sits on the brown saddle with both hands on the grips, as described below."
+        : `It cannot stand by itself (${v("physics") || "no kickstand"}).`;
+  return [
+    base.replace(/^Product:.*$/m, "").replace(/\n{2,}/g, "\n").trim(),
+    `Edit this film still: add the people described above (and any support object the product rests against) into the attached photo. The real ${name} (${facts}) is already in the scene at its exact position, size, angle and lean. KEEP the ${name} exactly as it is: do not move, resize, redraw, repaint, duplicate or remove it, and keep the rest of the scene unchanged except where you add people, their shadows and the support. ${pose} How the product appears: ${productNote || "as described"}. People are scaled correctly to the ${name} and interact with THIS ${name} with real physical contact; their hands, legs or body may overlap it where they are naturally in front of it. You may adjust the light on the ${name} so it matches the scene (light direction, color temperature, rim light, contact shadows). One single frozen moment, not a sequence: exactly one ${name} in the frame and every person appears exactly once (no repeated figures, no multiple exposures, no before/after in one image).`,
   ].join("\n");
 }
 
