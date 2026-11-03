@@ -81,6 +81,15 @@ kc = kelvin_rgb(g("key_kelvin", 5200))
 light("key", "SUN", (math.sin(kd) * 5, -math.cos(kd) * 5, math.tan(ke) * 5), g("key_strength", 3.0), kc)
 light("fill", "AREA", (-math.sin(kd) * size * 2.5, -size * 2.5, size * 1.5), g("fill_strength", 60) * size, (1, 1, 1), size * 2.5)
 light("rim", "AREA", (0, size * 2.5, size * 2.2), g("rim_strength", 80) * size, (1, 1, 1), size)
+# 电影轮廓灯：相机对面左右各一盏低位面光，只勾产品边缘（不投影到地面阴影捕捉）
+cr = g("cine_rim", 0)
+if cr:
+    rc = kelvin_rgb(g("cine_rim_kelvin", 2800))
+    for side in (-1, 1):
+        a = az + math.pi + side * math.radians(38)
+        pos = (tgt.x + math.sin(a) * size * 1.6, tgt.y - math.cos(a) * size * 1.6, tgt.z + size * 0.25)
+        lo = light(f"cine_rim_{side}", "AREA", pos, cr * 120 * size, rc, size * 0.6)
+        lo.visible_shadow = False
 w = bpy.data.worlds.new("w"); bpy.context.scene.world = w; w.use_nodes = True
 bg = w.node_tree.nodes["Background"]; bg.inputs[0].default_value = (*g("env_color", (0.6, 0.65, 0.75)), 1); bg.inputs[1].default_value = g("env_strength", 0.5)
 env_image = g("env_image")

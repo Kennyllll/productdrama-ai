@@ -187,6 +187,9 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
     key_kelvin: backlit ? Math.min(p.keyKelvin, 3200) : p.keyKelvin,
     key_strength: backlit ? 9 : 3,
     rim_strength: backlit ? 160 : 80,
+    // 电影轮廓灯：强度按背景高光亮度（太阳越亮、画面越暗，轮廓光越强）
+    cine_rim: backlit ? Math.min(3, Math.max(0.6, (sun.brightness - sun.median) * 4)) : 0,
+    cine_rim_kelvin: 2800,
     key_mix: backlit ? 1 : 0.4,
     exposure: p.exposure,
     samples: 128,

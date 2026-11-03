@@ -27,6 +27,8 @@ export interface RenderSpec {
   env_color?: [number, number, number];
   env_image?: string; // 用空场景图当环境光
   key_mix?: number; // 有环境图时灯光强度倍数（默认 0.25）
+  cine_rim?: number; // 电影轮廓灯强度（0 = 关）
+  cine_rim_kelvin?: number;
   exposure?: number;
   floor_roughness?: number;
   out_refl?: string;
