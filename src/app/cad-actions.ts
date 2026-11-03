@@ -3,8 +3,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { BlenderError, findBlender, renderProduct, renderSilhouettes, type SilhouetteView } from "@/lib/blender";
-import { CAD_KEYFRAME_MODEL, buildInteractionPrompt, clampCadParams, buildPlatePrompt, ghostFillPrompt, greenMaskPrompt, harmonizePrompt, type CadParams } from "@/lib/cad-camera";
-import { composeProduct, fitMask, ghostRegion, greenMask, placedMask, protectProduct, replaceProduct } from "@/lib/cad-composite";
+import { CAD_KEYFRAME_MODEL, buildInteractionPrompt, clampCadParams, buildPlatePrompt, greenMaskPrompt, harmonizePrompt, removeProductPrompt, type CadParams } from "@/lib/cad-camera";
+import { composeProduct, fitMask, greenMask, occluderMask, productHoleImage, protectProduct, replaceProduct } from "@/lib/cad-composite";
 import sharp from "sharp";
 import { deleteRequest, estimate, HiggsfieldError, submit, uploadFile, waitFor } from "@/lib/higgsfield";
 import { addKeyframe, toKeyframeView, type KeyframeView } from "@/lib/keyframe-repo";
@@ -133,6 +133,14 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
   const meta = await sharp(ai).metadata();
   const W = meta.width ?? 0, H = meta.height ?? 0;
   const gm = await greenMask(green, W, H);
+  const occ = await occluderMask(green, W, H);
+
+  // AI 只看到一块绿色空洞（看不到任何产品细节），把它补成背景；人和手保留
+  const holeImg = await productHoleImage(ai, gm, occ, W, H);
+  fs.writeFileSync(path.join(dir, "hole.png"), holeImg);
+  const holeUrl = await uploadFile(holeImg, "image/png");
+  const clean = await runFlare(plateInput(removeProductPrompt(), aspect, [holeUrl]));
+  fs.writeFileSync(path.join(dir, "clean.png"), clean);
 
   // 自动匹配视角：按 AI 画的车头朝向（红色座椅）定方位角正负，批量渲染剪影比对 IoU，再在最优解附近细化
   const sign = gm.facing === "right" ? 1 : gm.facing === "left" ? -1 : Math.sign(p.azimuthDeg) || -1;
@@ -174,28 +182,15 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
   });
   renderSeconds += Math.round((Date.now() - t2) / 1000);
   const fit = await fitMask(render.mask, gm, W, H);
-  let rep = await replaceProduct(ai, render.image, render.mask, fit, gm, W, H, p.protect);
-  fs.writeFileSync(path.join(dir, "replaced.png"), rep.final);
-
-  // 残影：AI 的车比 CAD 的车多出来的部分涂成品红，交给 AI 补背景，再把 CAD 产品贴回
-  const cadPlaced = await placedMask(render.mask, fit, W, H);
-  const ghost = await ghostRegion(rep.final, gm, cadPlaced, W, H);
-  let cleaned = false;
-  let calls = 2;
-  if (ghost.pixels > 400) {
-    fs.writeFileSync(path.join(dir, "ghost.png"), ghost.painted);
-    const gUrl = await uploadFile(ghost.painted, "image/png");
-    const fixed = await runFlare(plateInput(ghostFillPrompt(productName), aspect, [gUrl]));
-    calls++;
-    fs.writeFileSync(path.join(dir, "ghost-filled.png"), fixed);
-    rep = await replaceProduct(fixed, render.image, render.mask, fit, gm, W, H, p.protect);
-    cleaned = true;
-  }
+  // 完整贴 CAD：一个像素不少，只在蓝色遮挡处露出人；曝光 / 色温系数按原 AI 画面里的车算
+  const rep = await replaceProduct(clean, render.image, render.mask, fit, gm, W, H, p.protect === "tone" ? "grade" : p.protect, { occluder: occ, gradeRef: ai });
+  const calls = 3;
   fs.writeFileSync(path.join(dir, "final.png"), rep.final);
-  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, view, aiFacing: gm.facing, coarseIou: b1.iou, fineIou: b2.iou, ghostPixels: ghost.pixels, cleaned, searchSeconds }));
+  let occPx = 0;
+  for (const v of occ) if (v > 128) occPx++;
+  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, view, aiFacing: gm.facing, coarseIou: b1.iou, fineIou: b2.iou, occluderPixels: occPx, gain: rep.gain, searchSeconds }));
   const f = (name: string) => `/api/cad/${projectId}?f=${shotId.toLowerCase()}/${name}`;
-  const files: [string, string][] = [["AI 完整画面（替换前）", f("ai.png")], ["绿色遮罩", f("green.png")], ["CAD 替换后（清残影前）", f("replaced.png")]];
-  if (cleaned) files.push(["残影区域", f("ghost.png")]);
+  const files: [string, string][] = [["AI 完整画面", f("ai.png")], ["标注（绿=车 红=座椅 蓝=遮挡）", f("green.png")], ["去车后的背景", f("clean.png")]];
   return {
     bytes: rep.final,
     prompt: `${prompt}\n\n[CAD interaction] ${JSON.stringify({ ...p, view, fit })}`,

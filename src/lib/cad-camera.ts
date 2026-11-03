@@ -96,7 +96,10 @@ export function buildInteractionPrompt(base: string, productName: string, bible:
 }
 
 export const greenMaskPrompt = (productName: string) =>
-  `Image editing task, not a redesign. Repaint ONLY the ${productName || "product"} (the white balance bike) as a flat, solid, pure green (#00FF00) silhouette that exactly covers its visible pixels — frame, wheels, handlebar, number plate — except the saddle/seat, which must be painted flat pure red (#FF0000). Where a person's hand, leg or body is in front of the bike, keep the person unchanged (do not paint over them). Change nothing else in the image: no other colors, no lighting changes, no new objects.`;
+  `Image labeling task, not a redesign. Paint flat solid colors, no shading: (1) the ${productName || "product"} (the white balance bike) — frame, wheels, handlebar, number plate — pure green #00FF00, exactly covering its visible pixels; (2) its saddle/seat pure red #FF0000; (3) any part of a person (hand, finger, arm, leg, foot) that is IN FRONT of the bike and overlaps it pure blue #0000FF — only the overlapping part. Do not color anything else. Keep every other pixel exactly unchanged.`;
+
+export const removeProductPrompt = () =>
+  `Image cleanup task. The flat pure green (#00FF00) area is a hole where an object was removed. Fill the entire green area with what is naturally behind it — road, curb, grass, the motorcycle, background, or a person's legs/clothing where they continue — matching surrounding texture, lighting, shadows and film grain. The hole must be filled with background only: do NOT draw any bike, scooter, wheel, toy or new object there. Leave no green. Keep every pixel outside the green area unchanged.`;
 
 export const ghostFillPrompt = (productName: string) =>
   `Image cleanup task. The areas painted flat magenta (#FF00FF) are leftovers of a wrongly drawn object next to the ${productName || "product"}. Fill every magenta area with what would naturally be behind it — road, curb, grass, background, or the person's hand/clothing if it continues there — matching the surrounding texture, lighting and film grain exactly. Do not leave any magenta. Do not change the white balance bike or anything else outside the magenta areas; do not add objects.`;

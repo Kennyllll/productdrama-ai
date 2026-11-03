@@ -168,7 +168,17 @@ export async function fitMask(cadMaskPng: string, target: Buffer, W: number, H: 
  * 用对齐后的 CAD 渲染替换 AI 画面里的产品：只在「绿色遮罩 ∩ CAD 遮罩」内替换（被手 / 腿遮挡的部分保留 AI），
  * tone 模式下光线低频取 AI、形状细节取 CAD。
  */
-export async function replaceProduct(ai: Buffer, productPng: string, cadMaskPng: string, fit: MaskFit, green: Buffer, W: number, H: number, mode: ProtectMode = "tone") {
+export async function replaceProduct(
+  ai: Buffer,
+  productPng: string,
+  cadMaskPng: string,
+  fit: MaskFit,
+  green: Buffer,
+  W: number,
+  H: number,
+  mode: ProtectMode = "tone",
+  opts: { occluder?: Buffer; gradeRef?: Buffer } = {},
+) {
   const meta = await sharp(productPng).metadata();
   const rw = Math.max(1, Math.round((meta.width ?? 1) * fit.scale));
   const rh = Math.max(1, Math.round((meta.height ?? 1) * fit.scale));
@@ -190,10 +200,11 @@ export async function replaceProduct(ai: Buffer, productPng: string, cadMaskPng:
   // grade：整辆车用同一组通道增益（曝光 + 色温），由 AI 画的车和 CAD 车在重叠区域的平均亮度之比得出；CAD 像素的相对明暗和颜色不变
   const gain = [1, 1, 1];
   if (mode === "grade") {
+    const ref = opts.gradeRef ? await sharp(opts.gradeRef).resize(W, H, { fit: "fill" }).removeAlpha().raw().toBuffer() : a;
     const sa = [0, 0, 0], sb = [0, 0, 0];
     for (let i = 0; i < W * H; i++) {
       if (maskRaw[i * 4 + 3] <= 128 || green[i] <= 128) continue;
-      for (let c = 0; c < 3; c++) { sa[c] += a[i * 3 + c]; sb[c] += prodRaw[i * 4 + c]; }
+      for (let c = 0; c < 3; c++) { sa[c] += ref[i * 3 + c]; sb[c] += prodRaw[i * 4 + c]; }
     }
     const lum = (v: number[]) => 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
     const exposure = Math.min(1.15, Math.max(0.55, lum(sa) / Math.max(1, lum(sb))));
@@ -206,7 +217,9 @@ export async function replaceProduct(ai: Buffer, productPng: string, cadMaskPng:
   let replaced = 0;
   for (let i = 0; i < W * H; i++) {
     const al = prodRaw[i * 4 + 3] / 255;
-    if (al <= 0 || green[i] <= 128) continue;
+    if (al <= 0) continue;
+    // 有遮挡遮罩时：完整贴 CAD，只在人物挡在车前的地方露出底图；否则只在 AI 的车区域内替换
+    if (opts.occluder ? opts.occluder[i] > 128 : green[i] <= 128) continue;
     for (let c = 0; c < 3; c++) {
       const j = i * 3 + c;
       const cad = prodRaw[i * 4 + c];
@@ -217,6 +230,28 @@ export async function replaceProduct(ai: Buffer, productPng: string, cadMaskPng:
   }
   const final = await sharp(out, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer();
   return { final, replacedPixels: replaced, gain };
+}
+
+/** 遮挡遮罩：标注图里涂成纯蓝 #0000FF 的人物部位（挡在产品前面的手 / 腿），外扩 2 像素 */
+export async function occluderMask(png: Buffer, W: number, H: number): Promise<Buffer> {
+  const rgb = await sharp(png).resize(W, H, { fit: "fill" }).removeAlpha().raw().toBuffer();
+  const m = Buffer.alloc(W * H);
+  for (let i = 0; i < m.length; i++) { const r = rgb[i * 3], g = rgb[i * 3 + 1], b = rgb[i * 3 + 2]; if (b > 170 && r < 90 && g < 90) m[i] = 255; }
+  const out = Buffer.from(m);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (m[y * W + x]) for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < W && yy < H) out[yy * W + xx] = 255; }
+  return out;
+}
+
+/** 去车输入：原 AI 画面里产品区域（外扩 grow 像素，不覆盖遮挡的人）涂成纯绿，AI 只能看到一块绿色，看不到任何产品细节 */
+export async function productHoleImage(ai: Buffer, product: Buffer, occluder: Buffer, W: number, H: number, grow = 8): Promise<Buffer> {
+  const rgb = await sharp(ai).resize(W, H, { fit: "fill" }).removeAlpha().raw().toBuffer();
+  const hole = Buffer.alloc(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (!product[y * W + x]) continue;
+    for (let dy = -grow; dy <= grow; dy += 2) for (let dx = -grow; dx <= grow; dx += 2) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < W && yy < H) hole[yy * W + xx] = 255; }
+  }
+  for (let i = 0; i < hole.length; i++) if (hole[i] && occluder[i] <= 128) { rgb[i * 3] = 0; rgb[i * 3 + 1] = 255; rgb[i * 3 + 2] = 0; }
+  return sharp(rgb, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer();
 }
 
 /** 对齐后的 CAD 产品遮罩铺到场景画布（单通道 raw，0/255） */
