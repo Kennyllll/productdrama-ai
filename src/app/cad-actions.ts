@@ -4,7 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { BlenderError, findBlender, renderProduct, renderSilhouettes, type SilhouetteView } from "@/lib/blender";
 import { CAD_KEYFRAME_MODEL, buildInteractionPrompt, clampCadParams, buildPlatePrompt, greenMaskPrompt, harmonizePrompt, removeProductPrompt, type CadParams } from "@/lib/cad-camera";
-import { composeProduct, contactShadow, estimateSun, fitMask, greenMask, occluderMask, placedMask, productHoleImage, protectProduct, relightTransfer, replaceProduct, snapToGround } from "@/lib/cad-composite";
+import { anchorFit, composeProduct, contactShadow, estimateSun, fitMask, greenMask, groundRow, handFixMask,
+  handPoints, occluderMask, placedMask, productHoleImage, protectProduct, relightTransfer, replaceProduct, snapToGround } from "@/lib/cad-composite";
 import sharp from "sharp";
 import { deleteRequest, estimate, HiggsfieldError, submit, uploadFile, waitFor } from "@/lib/higgsfield";
 import { addKeyframe, toKeyframeView, type KeyframeView } from "@/lib/keyframe-repo";
@@ -144,23 +145,41 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
 
   // 自动匹配视角：按 AI 画的车头朝向（红色座椅）定方位角正负，批量渲染剪影比对 IoU，再在最优解附近细化
   const sign = gm.facing === "right" ? 1 : gm.facing === "left" ? -1 : Math.sign(p.azimuthDeg) || -1;
+  // 评分 = 形状 IoU − 握把与手的偏差：车把必须落在手里，形状再像但握把对不上手也不选
+  const hands = await handPoints(green, W, H, gm);
+  const groundY = groundRow(gm, W, H);
+  let bx0 = W, bx1 = 0;
+  for (let i = 0; i < gm.length; i++) if (gm[i] > 128) { const x = i % W; if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; }
+  const bikeW = Math.max(1, bx1 - bx0);
   const searchViews = async (views: SilhouetteView[], tag: string) => {
-    const files = await renderSilhouettes(glb, path.join(dir, `sil-${tag}`), p.lensMm, views);
-    let best = { view: views[0], iou: -1 };
+    const { files, grips } = await renderSilhouettes(glb, path.join(dir, `sil-${tag}`), p.lensMm, views);
+    let best = { view: views[0], iou: -1, score: -Infinity, gripErr: NaN };
     for (let i = 0; i < files.length; i++) {
       const fit = await fitMask(files[i], gm, W, H).catch(() => null);
-      if (fit && fit.iou > best.iou) best = { view: views[i], iou: fit.iou };
+      if (!fit) continue;
+      let gripErr = NaN;
+      const g = (grips[i] ?? []).slice().sort((a, b) => a[0] - b[0]);
+      if (hands.length >= 2 && g.length >= 2) {
+        const an = await anchorFit(files[i], fit, g, hands, groundY);
+        if (an) gripErr = g.reduce((s, q, k) => s + Math.hypot(an.left + q[0] * an.scale - hands[k][0], an.top + q[1] * an.scale - hands[k][1]), 0) / g.length / bikeW;
+      }
+      const score = fit.iou - (Number.isFinite(gripErr) ? 1.5 * gripErr : 0);
+      if (score > best.score) best = { view: views[i], iou: fit.iou, score, gripErr };
     }
     return best;
   };
   const t1 = Date.now();
+  // 车把转向只在有 rig 文件时搜索；孩子扶车时 AI 常把车把画成转向的，不转就对不上手
+  const hasRig = fs.existsSync(`${glb}.rig.json`);
+  const steers = hasRig ? [-30, 0, 30] : [0];
   const coarse: SilhouetteView[] = [];
-  for (let a = 10; a <= 80; a += 10) for (const e of [p.elevationDeg - 10, p.elevationDeg, p.elevationDeg + 10]) for (const r of new Set([p.rollDeg * sign * -1, 0])) coarse.push({ azimuth_deg: sign * a, elevation_deg: e, roll_deg: r });
+  for (let a = 10; a <= 80; a += 10) for (const e of [p.elevationDeg - 10, p.elevationDeg, p.elevationDeg + 10]) for (const r of new Set([p.rollDeg * sign * -1, 0])) for (const st of steers) coarse.push({ azimuth_deg: sign * a, elevation_deg: e, roll_deg: r, steer_deg: st });
   const b1 = await searchViews(coarse, "coarse");
   const fine: SilhouetteView[] = [];
-  for (const da of [-5, 0, 5]) for (const de of [-5, 0, 5]) for (const dr of [-6, 0, 6]) fine.push({ azimuth_deg: b1.view.azimuth_deg + da, elevation_deg: b1.view.elevation_deg + de, roll_deg: b1.view.roll_deg + dr });
+  for (const da of [-5, 0, 5]) for (const de of [-5, 0, 5]) for (const dr of [-6, 0, 6]) for (const ds of hasRig ? [-15, 0, 15] : [0]) fine.push({ azimuth_deg: b1.view.azimuth_deg + da, elevation_deg: b1.view.elevation_deg + de, roll_deg: b1.view.roll_deg + dr, steer_deg: (b1.view.steer_deg ?? 0) + ds });
   const b2 = await searchViews(fine, "fine");
-  const view = b2.iou > b1.iou ? b2.view : b1.view;
+  const bestView = b2.score > b1.score ? b2 : b1;
+  const view = bestView.view;
   const searchSeconds = Math.round((Date.now() - t1) / 1000);
 
   // 按匹配到的视角正式渲染并对齐替换
@@ -179,6 +198,7 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
     elevation_deg: view.elevation_deg,
     lens_mm: p.lensMm,
     roll_deg: view.roll_deg,
+    steer_deg: view.steer_deg ?? 0,
     // 用去车后的背景当环境光；主光放在相机对面低角度，模拟逆光太阳，轮廓光由 Blender 真实计算
     env_image: path.join(dir, "clean.png"),
     env_strength: p.envStrength,
@@ -195,7 +215,11 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
     samples: 128,
   });
   renderSeconds += Math.round((Date.now() - t2) / 1000);
-  const fit0 = await fitMask(render.mask, gm, W, H);
+  const fitIou = await fitMask(render.mask, gm, W, H);
+  // 手 + 地面双约束：握把中心对到 AI 画面里握车把的手（黄色标注），车轮最低点对到地面线；没有手时只贴地
+  const grips = ((render.meta.grips as number[][] | undefined) ?? []).map((g) => [g[0], g[1]] as [number, number]).sort((a, b) => a[0] - b[0]);
+  const anchored = await anchorFit(render.mask, fitIou, grips, hands, groundY);
+  const fit0 = anchored ?? fitIou;
   // 贴地：CAD 车轮最低点对到 AI 画面的地面接触线，再在触地点下画接触阴影
   const snap = await snapToGround(render.mask, fit0, gm, W, H);
   const fit = snap.fit;
@@ -206,16 +230,24 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
   fs.writeFileSync(path.join(dir, "replaced.png"), rep.final);
   // AI 只做重新打光：此时 AI 的车和 CAD 车位置重合；只取车身低频光影，形状 / 字标 / 细节保留 CAD
   const repUrl = await uploadFile(rep.final, "image/png");
-  const relit = await runFlare(plateInput(harmonizePrompt(productName), aspect, [repUrl]));
+  const relit = await runFlare(plateInput(harmonizePrompt(productName, hands.length > 0), aspect, [repUrl]));
   fs.writeFileSync(path.join(dir, "relit.png"), relit);
+  // 手握车把：AI 重画并盖在 CAD 握把上的手指像素保留 AI，其余车身像素仍锁死 CAD
+  const gripPx = grips.map((g) => [fit.left + g[0] * fit.scale, fit.top + g[1] * fit.scale] as [number, number]);
+  const handFix = hands.length ? await handFixMask(relit, rep.final, placed, gripPx, W, H) : Buffer.alloc(W * H);
+  let handFixPx = 0;
   const visible = Buffer.from(placed);
-  for (let i = 0; i < visible.length; i++) if (occ[i] > 128) visible[i] = 0;
+  for (let i = 0; i < visible.length; i++) {
+    if (handFix[i] > 128) handFixPx++;
+    if (occ[i] > 128 || handFix[i] > 128) visible[i] = 0;
+  }
+  fs.writeFileSync(path.join(dir, "handfix.png"), await sharp(handFix, { raw: { width: W, height: H, channels: 1 } }).png().toBuffer());
   const finalPng = await relightTransfer(relit, rep.final, visible, W, H);
   const calls = 4;
   fs.writeFileSync(path.join(dir, "final.png"), finalPng);
   let occPx = 0;
   for (const v of occ) if (v > 128) occPx++;
-  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, view, aiFacing: gm.facing, coarseIou: b1.iou, fineIou: b2.iou, occluderPixels: occPx, gain: rep.gain, sun, sunDir, sunElev, groundDy: snap.dy, searchSeconds }));
+  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, view, aiFacing: gm.facing, coarseIou: b1.iou, fineIou: b2.iou, occluderPixels: occPx, gain: rep.gain, sun, sunDir, sunElev, groundDy: snap.dy, hands, grips, anchored: Boolean(anchored), gripErr: bestView.gripErr, handFixPixels: handFixPx, searchSeconds }));
   const f = (name: string) => `/api/cad/${projectId}?f=${shotId.toLowerCase()}/${name}`;
   const files: [string, string][] = [["AI 完整画面", f("ai.png")], ["标注（绿=车 红=座椅 蓝=遮挡）", f("green.png")], ["去车后的背景", f("clean.png")]];
   return {

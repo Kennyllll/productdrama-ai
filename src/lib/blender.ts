@@ -13,6 +13,7 @@ export interface RenderSpec {
   elevation_deg: number;
   yaw_deg?: number;
   roll_deg?: number; // 侧倾（靠物 / 倒地）
+  steer_deg?: number; // 车把转向（需要 <glb>.rig.json）
   pitch_deg?: number;
   lens_mm: number;
   distance_m?: number | null;
@@ -54,22 +55,37 @@ export interface SilhouetteView {
   azimuth_deg: number;
   elevation_deg: number;
   roll_deg: number;
+  steer_deg?: number; // 车把转向（需要 <glb>.rig.json）
 }
 
 /** 一次 Blender 调用批量渲染产品剪影（Workbench，无光照，几秒），用于和 AI 画面里的产品比对视角 */
-export async function renderSilhouettes(glb: string, outDir: string, lensMm: number, views: SilhouetteView[]): Promise<string[]> {
+export async function renderSilhouettes(glb: string, outDir: string, lensMm: number, views: SilhouetteView[]): Promise<{ files: string[]; grips: [number, number][][] }> {
   const blender = findBlender();
   if (!blender) throw new BlenderError("未找到 Blender。请安装 Blender 4.2 到 /Applications，或设置环境变量 BLENDER_PATH");
-  fs.mkdirSync(outDir, { recursive: true });
-  const specFile = path.join(outDir, "spec.json");
-  fs.writeFileSync(specFile, JSON.stringify({ glb, out_dir: outDir, size_px: 400, lens_mm: lensMm, views }));
-  await new Promise<void>((resolve, reject) => {
-    execFile(blender, ["-b", "-noaudio", "--python", SILHOUETTE_SCRIPT, "--", specFile], { timeout: 5 * 60 * 1000, maxBuffer: 32 * 1024 * 1024 }, (err, out, errOut) => {
-      if (err || !String(out).includes("SIL_OK")) reject(new BlenderError(`剪影渲染失败：${String(errOut || err?.message || "").split("\n").filter(Boolean).slice(-2).join(" / ")}`));
-      else resolve();
+  // 转向会改变模型本身，按转向角分组，每组一次 Blender 调用
+  const groups = new Map<number, number[]>();
+  views.forEach((v, i) => groups.set(v.steer_deg ?? 0, [...(groups.get(v.steer_deg ?? 0) ?? []), i]));
+  const files: string[] = new Array(views.length);
+  const grips: [number, number][][] = new Array(views.length);
+  for (const [steer, idx] of groups) {
+    const sub = path.join(outDir, `steer${steer}`);
+    fs.mkdirSync(sub, { recursive: true });
+    const specFile = path.join(sub, "spec.json");
+    fs.writeFileSync(specFile, JSON.stringify({ glb, out_dir: sub, size_px: 400, lens_mm: lensMm, steer_deg: steer, views: idx.map((i) => views[i]) }));
+    await new Promise<void>((resolve, reject) => {
+      execFile(blender, ["-b", "-noaudio", "--python", SILHOUETTE_SCRIPT, "--", specFile], { timeout: 5 * 60 * 1000, maxBuffer: 32 * 1024 * 1024 }, (err, out, errOut) => {
+        if (err || !String(out).includes("SIL_OK")) reject(new BlenderError(`剪影渲染失败：${String(errOut || err?.message || "").split("\n").filter(Boolean).slice(-2).join(" / ")}`));
+        else resolve();
+      });
     });
-  });
-  return views.map((_, i) => path.join(outDir, `sil_${i}.png`));
+    const gf = path.join(sub, "grips.json");
+    const g = fs.existsSync(gf) ? (JSON.parse(fs.readFileSync(gf, "utf8")) as [number, number][][]) : [];
+    idx.forEach((i, k) => {
+      files[i] = path.join(sub, `sil_${k}.png`);
+      grips[i] = g[k] ?? [];
+    });
+  }
+  return { files, grips };
 }
 
 export class BlenderError extends Error {}

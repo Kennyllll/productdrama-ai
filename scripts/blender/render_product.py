@@ -11,6 +11,14 @@ g = lambda k, d=None: spec.get(k, d)
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=g("glb"))
 objs = [o for o in bpy.data.objects if o.type == "MESH"]
+# 转向：车把 / 前叉 / 前轮绕车头管轴转 steer_deg（孩子扶车时车把通常转着）；部件和轴来自 <glb>.rig.json（导入坐标）
+_rig = g("rig") or (g("glb") + ".rig.json")
+if g("steer_deg", 0) and os.path.exists(_rig):
+    _r = json.load(open(_rig)); _a = mathutils.Vector(_r["axis"][0]); _b = mathutils.Vector(_r["axis"][1])
+    _S = mathutils.Matrix.Translation(_a) @ mathutils.Matrix.Rotation(math.radians(g("steer_deg")), 4, (_b - _a).normalized()) @ mathutils.Matrix.Translation(-_a)
+    for o in objs:
+        if o.name in _r["parts"]: o.matrix_world = _S @ o.matrix_world
+    bpy.context.view_layer.update()
 mn = mathutils.Vector((1e9,) * 3); mx = mathutils.Vector((-1e9,) * 3)
 for o in objs:
     for v in o.bound_box:
@@ -26,6 +34,16 @@ for o in objs: o.location -= shift
 mn -= shift; mx -= shift; center -= shift
 yaw = math.radians(g("yaw_deg", 0))
 for o in objs: o.rotation_euler.z += yaw
+# 握把中心：在侧倾前（正立姿态）取车把最高 12% 顶点里横向两端各 20% 的质心，侧倾后随车一起变换（与 silhouettes.py 一致）
+bpy.context.view_layer.update()
+_vs = [o.matrix_world @ v.co for o in objs for v in o.data.vertices]
+_x = [v.x for v in _vs]; _y = [v.y for v in _vs]; _z = [v.z for v in _vs]
+_lat = 0 if (max(_x) - min(_x)) < (max(_y) - min(_y)) else 1
+_zmax, _zmin = max(_z), min(_z)
+_top = [v for v in _vs if v.z > _zmax - 0.12 * (_zmax - _zmin)]
+_lv = [v[_lat] for v in _top]; _lo, _hi = min(_lv), max(_lv); _span = _hi - _lo
+grip_w = [sum(_sel, mathutils.Vector()) / len(_sel) for _sel in ([v for v in _top if v[_lat] < _lo + 0.2 * _span], [v for v in _top if v[_lat] > _hi - 0.2 * _span]) if _sel]
+del _vs, _x, _y, _z, _top
 # 产品姿态：roll_deg 绕前进轴侧倾（靠在物体上 / 倒地），pitch_deg 绕横轴（上坡 / 下坡）
 roll = math.radians(g("roll_deg", 0)); pitch = math.radians(g("pitch_deg", 0))
 if roll or pitch:
@@ -34,6 +52,7 @@ if roll or pitch:
     bpy.context.view_layer.update()
     zmin = min((o.matrix_world @ mathutils.Vector(v)).z for o in objs for v in o.bound_box)
     for o in objs: o.location.z -= zmin
+    grip_w = [(R @ c) - mathutils.Vector((0, 0, zmin)) for c in grip_w]
     bpy.context.view_layer.update()
     mn = mathutils.Vector((1e9,) * 3); mx = mathutils.Vector((-1e9,) * 3)
     for o in objs:
@@ -135,4 +154,12 @@ for lo in bpy.data.objects:
 w.cycles_visibility.glossy = False
 s.cycles.samples = max(32, g("samples", 128) // 2); s.render.filepath = refl_out
 bpy.ops.render.render(write_still=True)
-print("RENDER_OK", json.dumps({"camera": list(loc), "target": list(tgt), "lens": lens, "size_m": size}))
+
+from bpy_extras.object_utils import world_to_camera_view
+bpy.context.view_layer.update()
+_sc = bpy.context.scene; _rw = _sc.render.resolution_x; _rh = _sc.render.resolution_y
+grips_px = []
+for _c in grip_w:
+    _p = world_to_camera_view(_sc, co, _c)
+    grips_px.append([_p.x * _rw, (1 - _p.y) * _rh, (co.location - _c).length])
+print("RENDER_OK", json.dumps({"camera": list(loc), "target": list(tgt), "lens": lens, "size_m": size, "grips": grips_px}))

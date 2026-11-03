@@ -236,7 +236,7 @@ export async function replaceProduct(
 export async function occluderMask(png: Buffer, W: number, H: number): Promise<Buffer> {
   const rgb = await sharp(png).resize(W, H, { fit: "fill" }).removeAlpha().raw().toBuffer();
   const m = Buffer.alloc(W * H);
-  for (let i = 0; i < m.length; i++) { const r = rgb[i * 3], g = rgb[i * 3 + 1], b = rgb[i * 3 + 2]; if (b > 170 && r < 90 && g < 90) m[i] = 255; }
+  for (let i = 0; i < m.length; i++) { const r = rgb[i * 3], g = rgb[i * 3 + 1], b = rgb[i * 3 + 2]; if ((b > 170 && r < 90 && g < 90) || (r > 170 && g > 170 && b < 100)) m[i] = 255; }
   const out = Buffer.from(m);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (m[y * W + x]) for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < W && yy < H) out[yy * W + xx] = 255; }
   return out;
@@ -328,6 +328,68 @@ export async function estimateSun(img: Buffer, lensMm: number, cameraElevDeg: nu
 function bottomRow(m: Buffer, W: number, H: number, x0: number, x1: number) {
   for (let y = H - 1; y >= 0; y--) for (let x = Math.max(0, x0); x < Math.min(W, x1); x++) if (m[y * W + x] > 128) return y;
   return -1;
+}
+
+/** AI 标注里握住车把的手（纯黄）：按连通块取质心，最多两个（面积最大），按 x 排序 */
+export async function handPoints(png: Buffer, W: number, H: number, product: Buffer): Promise<[number, number][]> {
+  const rgb = await sharp(png).resize(W, H, { fit: "fill" }).removeAlpha().raw().toBuffer();
+  // 只在产品包围盒（外扩 10%）里找，排除夕阳、天空的黄色
+  let x0 = W, x1 = -1, y0 = H, y1 = -1;
+  for (let i = 0; i < W * H; i++) if (product[i] > 128) { const x = i % W, y = Math.floor(i / W); if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0) return [];
+  const px = (x1 - x0) * 0.1, py = (y1 - y0) * 0.1;
+  const C = 4, cw = Math.ceil(W / C), ch = Math.ceil(H / C);
+  const cell = new Uint16Array(cw * ch);
+  for (let i = 0; i < W * H; i++) {
+    const r = rgb[i * 3], g = rgb[i * 3 + 1], b = rgb[i * 3 + 2];
+    const x = i % W, y = Math.floor(i / W);
+    if (x < x0 - px || x > x1 + px || y < y0 - py || y > y1 + py) continue;
+    if (r > 170 && g > 170 && b < 100 && Math.abs(r - g) < 60) cell[Math.floor(Math.floor(i / W) / C) * cw + Math.floor((i % W) / C)]++;
+  }
+  const seen = new Uint8Array(cw * ch);
+  const blobs: { n: number; x: number; y: number }[] = [];
+  for (let s = 0; s < cell.length; s++) {
+    if (seen[s] || cell[s] < 4) continue;
+    const st = [s]; seen[s] = 1; let n = 0, sx = 0, sy = 0;
+    while (st.length) {
+      const c = st.pop()!; const cx = c % cw, cy = Math.floor(c / cw);
+      n += cell[c]; sx += (cx * C + C / 2) * cell[c]; sy += (cy * C + C / 2) * cell[c];
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const xx = cx + dx, yy = cy + dy, k = yy * cw + xx;
+        if (xx >= 0 && yy >= 0 && xx < cw && yy < ch && !seen[k] && cell[k] >= 4) { seen[k] = 1; st.push(k); }
+      }
+    }
+    if (n > W * H * 0.0002) blobs.push({ n, x: sx / n, y: sy / n });
+  }
+  return blobs.sort((a, b) => b.n - a.n).slice(0, 2).map((b) => [b.x, b.y] as [number, number]).sort((a, b) => a[0] - b[0]);
+}
+
+/** AI 画面的地面接触线：绿色产品遮罩的最低行 */
+export function groundRow(green: Buffer, W: number, H: number) {
+  return bottomRow(green, W, H, 0, W);
+}
+
+/**
+ * 手 + 地面双约束定位：握把中心（Blender 投影，渲染图像素）对到手的位置，车轮最低点对到地面线。
+ * 解 s·g + t = hand，s·bottom + ty = ground。缩放偏离 IoU 解太多时返回 null。
+ */
+export async function anchorFit(cadMaskPng: string, fit: MaskFit, grips: [number, number][], hands: [number, number][], groundY: number): Promise<MaskFit | null> {
+  if (!grips.length || !hands.length || groundY < 0) return null;
+  const { data, info } = await sharp(cadMaskPng).ensureAlpha().extractChannel("alpha").raw().toBuffer({ resolveWithObject: true });
+  let bottom = -1;
+  for (let y = info.height - 1; y >= 0 && bottom < 0; y--) for (let x = 0; x < info.width; x++) if (data[y * info.width + x] > 128) { bottom = y; break; }
+  if (bottom < 0) return null;
+  const mean = (ps: [number, number][]) => [ps.reduce((a, p) => a + p[0], 0) / ps.length, ps.reduce((a, p) => a + p[1], 0) / ps.length];
+  let g: number[], h: number[];
+  if (hands.length >= 2 && grips.length >= 2) { g = mean(grips); h = mean(hands); }
+  else {
+    h = hands[0];
+    const d = (p: [number, number]) => Math.hypot(fit.left + p[0] * fit.scale - h[0], fit.top + p[1] * fit.scale - h[1]);
+    g = grips.slice().sort((a, b) => d(a) - d(b))[0];
+  }
+  const s = (h[1] - groundY) / (g[1] - bottom);
+  if (!(s > fit.scale * 0.6 && s < fit.scale * 1.6)) return null;
+  return { ...fit, scale: s, left: h[0] - g[0] * s, top: h[1] - g[1] * s };
 }
 
 /**
@@ -434,4 +496,32 @@ export async function protectProduct(harmonized: Buffer, composite: Buffer, mask
   }
   const final = await sharp(out, { raw: { width, height, channels: 3 } }).png().toBuffer();
   return { final, aiDrift: n ? sum / (3 * n) : 0, protectedPixels: n };
+}
+
+/** 握把附近被 AI 重画成「手握住握把」的像素：只在 CAD 握把周围的圆内、且比黑色握把明显变亮（手指 / 袖子）才算，其余车身像素不受影响 */
+export async function handFixMask(relit: Buffer, base: Buffer, placed: Buffer, grips: [number, number][], W: number, H: number, rFrac = 0.03): Promise<Buffer> {
+  const [r, b] = await Promise.all([relit, base].map((x) => sharp(x).resize(W, H, { fit: "fill" }).removeAlpha().raw().toBuffer()));
+  const m = Buffer.alloc(W * H);
+  const R = Math.round(W * rFrac);
+  for (const [px, py] of grips) {
+    for (let y = Math.max(0, Math.round(py - R)); y < Math.min(H, Math.round(py + R)); y++) {
+      for (let x = Math.max(0, Math.round(px - R)); x < Math.min(W, Math.round(px + R)); x++) {
+        const i = y * W + x;
+        if (Math.hypot(x - px, y - py) > R || placed[i] <= 128) continue;
+        const lum = (r[i * 3] + r[i * 3 + 1] + r[i * 3 + 2]) / 3;
+        const blum = (b[i * 3] + b[i * 3 + 1] + b[i * 3 + 2]) / 3;
+        const d = (Math.abs(r[i * 3] - b[i * 3]) + Math.abs(r[i * 3 + 1] - b[i * 3 + 1]) + Math.abs(r[i * 3 + 2] - b[i * 3 + 2])) / 3;
+        if (d > 45 && lum > blum + 30) m[i] = 255;
+      }
+    }
+  }
+  const out = Buffer.from(m);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (!m[y * W + x]) continue;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const xx = x + dx, yy = y + dy;
+      if (xx >= 0 && yy >= 0 && xx < W && yy < H && placed[yy * W + xx] > 128) out[yy * W + xx] = 255;
+    }
+  }
+  return out;
 }
