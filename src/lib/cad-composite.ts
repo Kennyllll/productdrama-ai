@@ -331,8 +331,11 @@ function bottomRow(m: Buffer, W: number, H: number, x0: number, x1: number) {
 }
 
 /** AI 标注里握住车把的手（纯黄）：按连通块取质心，最多两个（面积最大），按 x 排序 */
-export async function handPoints(png: Buffer, W: number, H: number, product: Buffer): Promise<[number, number][]> {
+export async function handPoints(png: Buffer, W: number, H: number, product: Buffer, aiImage?: Buffer): Promise<[number, number][]> {
   const rgb = await sharp(png).resize(W, H, { fit: "fill" }).removeAlpha().raw().toBuffer();
+  // 原 AI 画面同位置是黑色握把（不是手指 / 袖子）时，说明 AI 把握把本身涂成了黄色，不算手
+  const src = aiImage ? await sharp(aiImage).resize(W, H, { fit: "fill" }).removeAlpha().raw().toBuffer() : null;
+  const lumSum = new Float64Array(Math.ceil(W / 4) * Math.ceil(H / 4));
   // 只在产品包围盒（外扩 10%）里找，排除夕阳、天空的黄色
   let x0 = W, x1 = -1, y0 = H, y1 = -1;
   for (let i = 0; i < W * H; i++) if (product[i] > 128) { const x = i % W, y = Math.floor(i / W); if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
@@ -344,22 +347,26 @@ export async function handPoints(png: Buffer, W: number, H: number, product: Buf
     const r = rgb[i * 3], g = rgb[i * 3 + 1], b = rgb[i * 3 + 2];
     const x = i % W, y = Math.floor(i / W);
     if (x < x0 - px || x > x1 + px || y < y0 - py || y > y1 + py) continue;
-    if (r > 170 && g > 170 && b < 100 && Math.abs(r - g) < 60) cell[Math.floor(Math.floor(i / W) / C) * cw + Math.floor((i % W) / C)]++;
+    if (r > 170 && g > 170 && b < 100 && Math.abs(r - g) < 60) {
+      const k = Math.floor(y / C) * cw + Math.floor(x / C);
+      cell[k]++;
+      if (src) lumSum[k] += (src[i * 3] + src[i * 3 + 1] + src[i * 3 + 2]) / 3;
+    }
   }
   const seen = new Uint8Array(cw * ch);
   const blobs: { n: number; x: number; y: number }[] = [];
   for (let s = 0; s < cell.length; s++) {
     if (seen[s] || cell[s] < 4) continue;
-    const st = [s]; seen[s] = 1; let n = 0, sx = 0, sy = 0;
+    const st = [s]; seen[s] = 1; let n = 0, sx = 0, sy = 0, lum = 0;
     while (st.length) {
       const c = st.pop()!; const cx = c % cw, cy = Math.floor(c / cw);
-      n += cell[c]; sx += (cx * C + C / 2) * cell[c]; sy += (cy * C + C / 2) * cell[c];
+      n += cell[c]; lum += lumSum[c]; sx += (cx * C + C / 2) * cell[c]; sy += (cy * C + C / 2) * cell[c];
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const xx = cx + dx, yy = cy + dy, k = yy * cw + xx;
         if (xx >= 0 && yy >= 0 && xx < cw && yy < ch && !seen[k] && cell[k] >= 4) { seen[k] = 1; st.push(k); }
       }
     }
-    if (n > W * H * 0.0002) blobs.push({ n, x: sx / n, y: sy / n });
+    if (n > W * H * 0.0002 && (!src || lum / n > 55)) blobs.push({ n, x: sx / n, y: sy / n });
   }
   return blobs.sort((a, b) => b.n - a.n).slice(0, 2).map((b) => [b.x, b.y] as [number, number]).sort((a, b) => a[0] - b[0]);
 }
@@ -545,4 +552,33 @@ export async function handFixMask(relit: Buffer, base: Buffer, placed: Buffer, g
     }
   }
   return out;
+}
+
+/**
+ * AI 重新打光只允许改产品及其周边（接触阴影 / 倒影区域），其余场景还原为打光前的画面：
+ * 防止 AI 借打光往画面里加东西（例如再画一辆车）。返回锁定后的图和区域外 AI 改动的像素比例。
+ */
+export async function lockScene(final: Buffer, base: Buffer, placed: Buffer, W: number, H: number) {
+  const [f, b] = await Promise.all([final, base].map((x) => sharp(x).resize(W, H, { fit: "fill" }).removeAlpha().raw().toBuffer()));
+  let x0 = W, x1 = -1, y0 = H, y1 = -1;
+  for (let i = 0; i < W * H; i++) if (placed[i] > 128) { const x = i % W, y = Math.floor(i / W); if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0) return { png: await sharp(b, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer(), drift: 0 };
+  const bw = x1 - x0, bh = y1 - y0;
+  const rx0 = x0 - bw * 0.08, rx1 = x1 + bw * 0.08, ry0 = y0 - bh * 0.05, ry1 = y1 + bh * 0.3;
+  const region = Buffer.alloc(W * H);
+  let changed = 0, outside = 0;
+  for (let i = 0; i < W * H; i++) {
+    const x = i % W, y = Math.floor(i / W);
+    if (x >= rx0 && x <= rx1 && y >= ry0 && y <= ry1) { region[i] = 255; continue; }
+    outside++;
+    const d = (Math.abs(f[i * 3] - b[i * 3]) + Math.abs(f[i * 3 + 1] - b[i * 3 + 1]) + Math.abs(f[i * 3 + 2] - b[i * 3 + 2])) / 3;
+    if (d > 60) changed++;
+  }
+  const a = await sharp(region, { raw: { width: W, height: H, channels: 1 } }).blur(Math.max(2, W * 0.008)).raw().toBuffer();
+  const out = Buffer.alloc(W * H * 3);
+  for (let i = 0; i < W * H; i++) {
+    const w = placed[i] > 128 ? 1 : a[i] / 255;
+    for (let c = 0; c < 3; c++) out[i * 3 + c] = Math.round(f[i * 3 + c] * w + b[i * 3 + c] * (1 - w));
+  }
+  return { png: await sharp(out, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer(), drift: outside ? changed / outside : 0 };
 }

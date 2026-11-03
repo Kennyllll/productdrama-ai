@@ -5,7 +5,7 @@ import path from "node:path";
 import { BlenderError, findBlender, renderProduct, renderSilhouettes, type SilhouetteView } from "@/lib/blender";
 import { CAD_KEYFRAME_MODEL, buildInteractionPrompt, clampCadParams, buildPlatePrompt, greenMaskPrompt, harmonizePrompt, removeProductPrompt, type CadParams } from "@/lib/cad-camera";
 import { anchorFit, composeProduct, contactShadow, estimateSun, fitMask, greenMask, groundRow, handFixMask,
-  handPoints, occluderMask, placedMask, productHoleImage, protectProduct, relightTransfer, replaceProduct, snapToGround } from "@/lib/cad-composite";
+  handPoints, lockScene, occluderMask, placedMask, productHoleImage, protectProduct, relightTransfer, replaceProduct, snapToGround } from "@/lib/cad-composite";
 import sharp from "sharp";
 import { deleteRequest, estimate, HiggsfieldError, submit, uploadFile, waitFor } from "@/lib/higgsfield";
 import { addKeyframe, toKeyframeView, type KeyframeView } from "@/lib/keyframe-repo";
@@ -146,7 +146,7 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
   // 自动匹配视角：按 AI 画的车头朝向（红色座椅）定方位角正负，批量渲染剪影比对 IoU，再在最优解附近细化
   const sign = gm.facing === "right" ? 1 : gm.facing === "left" ? -1 : Math.sign(p.azimuthDeg) || -1;
   // 评分 = 形状 IoU − 握把与手的偏差：车把必须落在手里，形状再像但握把对不上手也不选
-  const hands = await handPoints(green, W, H, gm);
+  const hands = await handPoints(green, W, H, gm, ai);
   const groundY = groundRow(gm, W, H);
   let bx0 = W, bx1 = 0;
   for (let i = 0; i < gm.length; i++) if (gm[i] > 128) { const x = i % W; if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; }
@@ -242,12 +242,14 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
     if (occ[i] > 128 || handFix[i] > 128) visible[i] = 0;
   }
   fs.writeFileSync(path.join(dir, "handfix.png"), await sharp(handFix, { raw: { width: W, height: H, channels: 1 } }).png().toBuffer());
-  const finalPng = await relightTransfer(relit, rep.final, visible, W, H);
+  const lit = await relightTransfer(relit, rep.final, visible, W, H);
+  const locked = await lockScene(lit, rep.final, placed, W, H);
+  const finalPng = locked.png;
   const calls = 4;
   fs.writeFileSync(path.join(dir, "final.png"), finalPng);
   let occPx = 0;
   for (const v of occ) if (v > 128) occPx++;
-  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, view, aiFacing: gm.facing, coarseIou: b1.iou, fineIou: b2.iou, occluderPixels: occPx, gain: rep.gain, sun, sunDir, sunElev, groundDy: snap.dy, hands, grips, anchored: Boolean(anchored), gripErr: bestView.gripErr, handFixPixels: handFixPx, searchSeconds }));
+  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, view, aiFacing: gm.facing, coarseIou: b1.iou, fineIou: b2.iou, occluderPixels: occPx, gain: rep.gain, sun, sunDir, sunElev, groundDy: snap.dy, hands, grips, anchored: Boolean(anchored), gripErr: bestView.gripErr, handFixPixels: handFixPx, sceneDrift: locked.drift, searchSeconds }));
   const f = (name: string) => `/api/cad/${projectId}?f=${shotId.toLowerCase()}/${name}`;
   const files: [string, string][] = [["AI 完整画面", f("ai.png")], ["标注（绿=车 红=座椅 蓝=遮挡）", f("green.png")], ["去车后的背景", f("clean.png")]];
   return {
