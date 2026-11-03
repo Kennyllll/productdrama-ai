@@ -48,6 +48,7 @@ for i, v in enumerate(g("views")):
     az = math.radians(v["azimuth_deg"]); el = math.radians(v.get("elevation_deg", 6))
     tgt = mathutils.Vector((0, 0, (vmx.z - vmn.z) * g("target_height_frac", 0.42)))
     dist = size * 2.3 * (lens / 50) ** 0.9
+    el = max(el, math.asin(max(-1.0, min(1.0, (size * 0.02 - tgt.z) / dist))))  # 相机不能低于地面，否则地面会挡住产品
     loc = tgt + mathutils.Vector((math.cos(el) * math.sin(az), -math.cos(el) * math.cos(az), math.sin(el))) * dist
     co.location = loc; co.rotation_euler = (tgt - loc).to_track_quat("-Z", "Y").to_euler()
     s.render.filepath = os.path.join(g("out_dir"), f"sil_{i}.png")

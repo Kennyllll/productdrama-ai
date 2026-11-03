@@ -55,6 +55,7 @@ az = math.radians(g("azimuth_deg", -35)); el = math.radians(g("elevation_deg", 1
 tgt = mathutils.Vector((0, 0, (mx.z - mn.z) * g("target_height_frac", 0.42)))
 lens = g("lens_mm", 50)
 dist = g("distance_m") or size * 2.3 * (lens / 50) ** 0.9
+el = max(el, math.asin(max(-1.0, min(1.0, (size * 0.02 - tgt.z) / dist))))  # 相机不能低于地面，否则地面会挡住产品
 loc = tgt + mathutils.Vector((math.cos(el) * math.sin(az), -math.cos(el) * math.cos(az), math.sin(el))) * dist
 cam = bpy.data.cameras.new("cam"); cam.lens = lens; cam.sensor_width = 36
 co = bpy.data.objects.new("cam", cam); bpy.context.collection.objects.link(co)
