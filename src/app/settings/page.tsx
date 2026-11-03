@@ -1,16 +1,19 @@
 import { Card, PageHeader } from "@/components/ui";
 import { AiSettingsForm } from "@/components/workbench/AiSettingsForm";
+import { HiggsfieldSettingsForm } from "@/components/workbench/HiggsfieldSettingsForm";
 import { aiPublicInfo } from "@/lib/ai/settings";
+import { hfPublicInfo } from "@/lib/higgsfield";
 
 export const dynamic = "force-dynamic";
 
 export default function SettingsPage() {
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
-      <PageHeader title="模型设置" description="工具级设置：配置文字模型，用于 AI 生成故事提案和四集剧本。以后可切换其他模型。" />
+      <PageHeader title="模型设置" description="工具级设置：文字模型（故事、剧本、分镜、声音设计）与画面生成平台（Higgsfield）。凭证只保存在本机。" />
       <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        <div className="space-y-6 lg:col-span-2">
           <AiSettingsForm initial={aiPublicInfo()} />
+          <HiggsfieldSettingsForm initial={hfPublicInfo()} />
         </div>
         <Card title="数据与费用">
           <ul className="list-inside list-disc space-y-1 text-sm text-neutral-300">

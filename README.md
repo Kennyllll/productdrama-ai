@@ -117,3 +117,8 @@ PROJECT_BRIEF.md / AGENTS.md / docs/ / tasks/   交接文档
 
 - 新增「声音工作台」：全片母题 / 产品声音标志 / 混音说明，每集声音提示（音乐、环境声、音效、静音留白）与时间线；可 AI 生成（声音导演），可编辑保存；本地检查留白、铺满、转折无变化等。
 - 每集可上传对白 / 音乐 / 环境声 / 音效分轨并调音量；视频合成时自动混音（sidechain 压低音乐、-14 LUFS），无分轨时写静音音轨。
+
+## TASK-011 Higgsfield 接入层
+
+- 模型设置页新增 Higgsfield 凭证（Key ID + Secret，只存本机），测试连接使用估价接口，不产生费用，并检测常用模型可用性。
+- 服务端适配器 src/lib/higgsfield.ts：估价、提交、轮询、上传、删除远端数据。详见 tasks/011-higgsfield-integration.md。
