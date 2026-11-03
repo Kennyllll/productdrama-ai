@@ -592,3 +592,16 @@ export function contactQa(green: Buffer, placed: Buffer) {
   if (coverage < 0.75) warnings.push(`AI 画的车只有 ${Math.round(coverage * 100)}% 被真车盖住，AI 车的残留或错位很可能露出来，不建议选用`);
   return { coverage, warnings };
 }
+
+/** AI 打光结果里产品还剩多少：产品区域亮度变化 > 40 的像素比例。比例高 = AI 把车删掉或重画了，车身拿不到场景光影 */
+export async function relightLoss(relit: Buffer, base: Buffer, mask: Buffer, W: number, H: number) {
+  const [r, b] = await Promise.all([relit, base].map((x) => sharp(x).resize(W, H, { fit: "fill" }).removeAlpha().raw().toBuffer()));
+  let n = 0, bad = 0;
+  for (let i = 0; i < W * H; i++) {
+    if (mask[i] <= 128) continue;
+    n++;
+    const dl = (r[i * 3] + r[i * 3 + 1] + r[i * 3 + 2] - b[i * 3] - b[i * 3 + 1] - b[i * 3 + 2]) / 3;
+    if (Math.abs(dl) > 40) bad++;
+  }
+  return n ? bad / n : 0;
+}

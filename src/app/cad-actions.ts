@@ -5,7 +5,7 @@ import path from "node:path";
 import { BlenderError, findBlender, renderProduct, renderSilhouettes, type SilhouetteView } from "@/lib/blender";
 import { CAD_KEYFRAME_MODEL, buildInteractionPrompt, clampCadParams, buildPlatePrompt, greenMaskPrompt, harmonizePrompt, removeProductPrompt, type CadParams } from "@/lib/cad-camera";
 import { anchorFit, composeProduct, contactShadow, estimateSun, fitMask, greenMask, groundRow, handFixMask,
-  handPoints, lockScene, contactQa, occluderMask, placedMask, productHoleImage, protectProduct, relightTransfer, replaceProduct, snapToGround } from "@/lib/cad-composite";
+  handPoints, lockScene, contactQa, relightLoss, occluderMask, placedMask, productHoleImage, protectProduct, relightTransfer, replaceProduct, snapToGround } from "@/lib/cad-composite";
 import sharp from "sharp";
 import { deleteRequest, estimate, HiggsfieldError, submit, uploadFile, waitFor } from "@/lib/higgsfield";
 import { addKeyframe, toKeyframeView, type KeyframeView } from "@/lib/keyframe-repo";
@@ -232,7 +232,16 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
   fs.writeFileSync(path.join(dir, "replaced.png"), rep.final);
   // AI 只做重新打光：此时 AI 的车和 CAD 车位置重合；只取车身低频光影，形状 / 字标 / 细节保留 CAD
   const repUrl = await uploadFile(rep.final, "image/png");
-  const relit = await runFlare(plateInput(harmonizePrompt(productName, hands.length > 0), aspect, [repUrl]));
+  let relit = await runFlare(plateInput(harmonizePrompt(productName, hands.length > 0), aspect, [repUrl]));
+  let calls = 4;
+  // AI 打光有时会把车删掉或重画，车身就拿不到场景光影：自动重试一次，仍失败则在自检里标出
+  let lost = await relightLoss(relit, rep.final, placed, W, H);
+  if (lost > 0.35) {
+    const retry = await runFlare(plateInput(`${harmonizePrompt(productName, hands.length > 0)} The white balance bike in the image MUST remain fully visible in the same place — never remove, hide or repaint it; only change its lighting.`, aspect, [repUrl]));
+    calls++;
+    const lost2 = await relightLoss(retry, rep.final, placed, W, H);
+    if (lost2 < lost) { relit = retry; lost = lost2; }
+  }
   fs.writeFileSync(path.join(dir, "relit.png"), relit);
   // 手握车把：AI 重画并盖在 CAD 握把上的手指像素保留 AI，其余车身像素仍锁死 CAD
   const gripPx = grips.map((g) => [fit.left + g[0] * fit.scale, fit.top + g[1] * fit.scale] as [number, number]);
@@ -247,13 +256,13 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
   const lit = await relightTransfer(relit, rep.final, visible, W, H);
   const locked = await lockScene(lit, rep.final, placed, W, H);
   const finalPng = locked.png;
-  const calls = 4;
   fs.writeFileSync(path.join(dir, "final.png"), finalPng);
   const qa = contactQa(gm, placed);
+  if (lost > 0.35) qa.warnings.push(`AI 打光时删掉或重画了车（${Math.round(lost * 100)}% 车身变化），车身没有场景光影`);
   if (locked.drift > 0.05) qa.warnings.push(`AI 打光改动了产品周边以外 ${Math.round(locked.drift * 100)}% 的画面，已还原，请检查画面是否完整`);
   let occPx = 0;
   for (const v of occ) if (v > 128) occPx++;
-  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, view, aiFacing: gm.facing, coarseIou: b1.iou, fineIou: b2.iou, occluderPixels: occPx, gain: rep.gain, sun, sunDir, sunElev, groundDy: snap.dy, hands, grips, anchored: Boolean(anchored), gripErr: bestView.gripErr, handFixPixels: handFixPx, sceneDrift: locked.drift, coverage: qa.coverage, qa: qa.warnings, searchSeconds }));
+  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, view, aiFacing: gm.facing, coarseIou: b1.iou, fineIou: b2.iou, occluderPixels: occPx, gain: rep.gain, sun, sunDir, sunElev, groundDy: snap.dy, hands, grips, anchored: Boolean(anchored), gripErr: bestView.gripErr, handFixPixels: handFixPx, sceneDrift: locked.drift, coverage: qa.coverage, relightLoss: lost, qa: qa.warnings, searchSeconds }));
   const f = (name: string) => `/api/cad/${projectId}?f=${shotId.toLowerCase()}/${name}`;
   const files: [string, string][] = [["AI 完整画面", f("ai.png")], ["标注（绿=车 红=座椅 蓝=遮挡）", f("green.png")], ["去车后的背景", f("clean.png")]];
   return {
