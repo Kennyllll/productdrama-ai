@@ -435,24 +435,45 @@ export async function contactShadow(img: Buffer, cadPlaced: Buffer, W: number, H
   return sharp(rgb, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer();
 }
 
-/**
- * 光影迁移：AI 对「已贴好 CAD 车」的整图重新打光后，只取车身区域的低频光影（遮罩内归一化模糊，背景不串色），
- * 叠加到 CAD 像素上；形状、字标、细节仍是 CAD。车身以外的像素用 AI 重新打光后的结果（阴影、反光）。
- */
+/** AI 重新打光结果 → CAD 像素：只迁移遮罩内的低频光影（曝光 / 色温 / 明暗），形状和细节保留 base。
+ * AI 打光时偶尔会删掉或改掉部件（例如号码牌），那里的差值是结构变化不是光影：不采样，用周围的光影补 */
 export async function relightTransfer(relit: Buffer, base: Buffer, mask: Buffer, W: number, H: number, radius = 8) {
   const [r, b] = await Promise.all([relit, base].map((x) => sharp(x).resize(W, H, { fit: "fill" }).removeAlpha().raw().toBuffer()));
-  const m = Buffer.alloc(W * H * 3);
-  const rm = Buffer.alloc(W * H * 3), bm = Buffer.alloc(W * H * 3);
-  for (let i = 0; i < W * H; i++) if (mask[i] > 128) for (let c = 0; c < 3; c++) { m[i * 3 + c] = 255; rm[i * 3 + c] = r[i * 3 + c]; bm[i * 3 + c] = b[i * 3 + c]; }
-  const blur = (x: Buffer) => sharp(x, { raw: { width: W, height: H, channels: 3 } }).blur(radius).raw().toBuffer();
-  const [mL, rL, bL] = await Promise.all([blur(m), blur(rm), blur(bm)]);
+  // 结构变化像素（亮度差 > 40）外扩 6px 一起排除，避免边缘半变化的像素混进光影
+  const bad = Buffer.alloc(W * H);
+  for (let i = 0; i < W * H; i++) {
+    if (mask[i] <= 128) continue;
+    const dl = (r[i * 3] + r[i * 3 + 1] + r[i * 3 + 2] - b[i * 3] - b[i * 3 + 1] - b[i * 3 + 2]) / 3;
+    if (Math.abs(dl) > 40) bad[i] = 255;
+  }
+  const badWide = await sharp(bad, { raw: { width: W, height: H, channels: 1 } }).blur(3).raw().toBuffer();
+  const m = Buffer.alloc(W * H * 3), rm = Buffer.alloc(W * H * 3), bm = Buffer.alloc(W * H * 3);
+  const hist = [new Uint32Array(511), new Uint32Array(511), new Uint32Array(511)];
+  let nValid = 0;
+  for (let i = 0; i < W * H; i++) {
+    if (mask[i] <= 128 || bad[i] || badWide[i] > 8) continue;
+    nValid++;
+    for (let c = 0; c < 3; c++) {
+      m[i * 3 + c] = 255;
+      rm[i * 3 + c] = r[i * 3 + c];
+      bm[i * 3 + c] = b[i * 3 + c];
+      hist[c][r[i * 3 + c] - b[i * 3 + c] + 255]++;
+    }
+  }
+  const med = hist.map((h) => {
+    let acc = 0;
+    for (let k = 0; k < h.length; k++) if ((acc += h[k]) >= nValid / 2) return k - 255;
+    return 0;
+  });
+  const blur = (x: Buffer, s: number) => sharp(x, { raw: { width: W, height: H, channels: 3 } }).blur(s).raw().toBuffer();
+  const [mL, rL, bL, mX, rX, bX] = await Promise.all([blur(m, radius), blur(rm, radius), blur(bm, radius), blur(m, radius * 6), blur(rm, radius * 6), blur(bm, radius * 6)]);
   const out = Buffer.from(r);
   for (let i = 0; i < W * H; i++) {
     if (mask[i] <= 128) continue;
     for (let c = 0; c < 3; c++) {
       const j = i * 3 + c;
-      const w = Math.max(1, mL[j]);
-      const delta = (rL[j] - bL[j]) * (255 / w);
+      let delta = mL[j] > 200 ? (rL[j] - bL[j]) * (255 / mL[j]) : mX[j] > 60 ? (rX[j] - bX[j]) * (255 / mX[j]) : med[c];
+      delta = Math.max(med[c] - 40, Math.min(med[c] + 40, delta));
       out[j] = Math.max(0, Math.min(255, Math.round(b[j] + delta)));
     }
   }
