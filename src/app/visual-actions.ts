@@ -41,8 +41,8 @@ export async function testHfAction(): Promise<FormState & { checks?: { label: st
   const checks: { label: string; result: string }[] = [];
   for (const c of CHECKS) {
     try {
-      const usd = await estimate(c.endpoint, c.input);
-      checks.push({ label: c.label, result: Number.isFinite(usd) ? `可用，预估 $${usd}` : "可用" });
+      const { usd, description } = await estimate(c.endpoint, c.input);
+      checks.push({ label: c.label, result: Number.isFinite(usd) ? `可用，预估 $${usd}` : description ? `可用。${description.slice(0, 240)}` : "可用" });
     } catch (e) {
       if (e instanceof HiggsfieldError && e.status === 401) return { error: e.message };
       checks.push({ label: c.label, result: e instanceof Error ? e.message : "检测失败" });

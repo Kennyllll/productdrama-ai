@@ -90,11 +90,13 @@ export interface HfRequest {
   images?: { url: string }[];
   video?: { url: string };
   expires_at?: string;
+  error?: string;
 }
 
-export async function estimate(endpoint: string, input: Record<string, unknown>): Promise<number> {
-  const r = (await hf(`/estimate/${endpoint}`, { method: "POST", body: input })) as { usd?: string } | null;
-  return Number(r?.usd ?? NaN);
+/** 估价：部分模型返回具体金额（usd），按 token 计费的模型只返回计价说明（description） */
+export async function estimate(endpoint: string, input: Record<string, unknown>): Promise<{ usd: number; description: string }> {
+  const r = (await hf(`/estimate/${endpoint}`, { method: "POST", body: input })) as { usd?: string; pricing_description?: string } | null;
+  return { usd: Number(r?.usd ?? NaN), description: typeof r?.pricing_description === "string" ? r.pricing_description : "" };
 }
 
 export function submit(endpoint: string, input: Record<string, unknown>): Promise<HfRequest> {
@@ -115,7 +117,7 @@ export async function waitFor(requestId: string, timeoutMs = 15 * 60_000): Promi
   while (Date.now() < end) {
     const r = await getStatus(requestId);
     if (r.status === "completed") return r;
-    if (r.status === "failed") throw new HiggsfieldError("生成失败（不收费），请重试");
+    if (r.status === "failed") throw new HiggsfieldError(`生成失败（不收费）${r.error ? `：${r.error}` : ""}，请重试`);
     if (r.status === "nsfw") throw new HiggsfieldError("内容被审核拦截（不收费），请调整画面描述");
     if (r.status === "canceled") throw new HiggsfieldError("任务已取消");
     await new Promise((res) => setTimeout(res, delay));

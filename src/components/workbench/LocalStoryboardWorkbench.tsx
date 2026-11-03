@@ -3,7 +3,10 @@
 import { useState, useTransition } from "react";
 import { aiStoryboardAction } from "@/app/ai-actions";
 import { saveStoryboardAction } from "@/app/storyboard-actions";
-import { Card, LaterButton, PlaceholderFrame, Tag } from "@/components/ui";
+import { Card, Tag } from "@/components/ui";
+import { KeyframePanel } from "@/components/workbench/KeyframePanel";
+import { buildKeyframePrompt } from "@/lib/keyframe-prompt";
+import type { KeyframeView } from "@/lib/keyframe-repo";
 import { AiButton, UsageNote } from "@/components/workbench/AiButton";
 import { SaveBar } from "@/components/workbench/SaveBar";
 import type { AiUsage } from "@/lib/ai/models";
@@ -55,6 +58,10 @@ export function LocalStoryboardWorkbench({
   egg,
   initial,
   aiReady,
+  hfReady,
+  initialKeyframes,
+  productName,
+  cad,
 }: {
   projectId: string;
   script: LocalScript;
@@ -63,7 +70,12 @@ export function LocalStoryboardWorkbench({
   egg: { id: string; name: string } | null;
   initial: LocalStoryboard | null;
   aiReady: boolean;
+  hfReady: boolean;
+  initialKeyframes: KeyframeView[];
+  productName: string;
+  cad: { blender: boolean; model: boolean };
 }) {
+  const [keyframes, setKeyframes] = useState(initialKeyframes);
   const [board, setBoard] = useState(initial);
   const [epNo, setEpNo] = useState<EpisodeNumber>(1);
   const [selectedId, setSelectedId] = useState(initial?.episodes[0]?.shots[0]?.id ?? "");
@@ -341,9 +353,21 @@ export function LocalStoryboardWorkbench({
             title={`镜头 ${selected.index} 详情`}
             aside={<Tag tone={reviewLabel[selected.review].tone}>{reviewLabel[selected.review].text}</Tag>}
           >
-            <PlaceholderFrame label={`关键帧 · 镜头 ${selected.index}（未生成）`} />
+            <KeyframePanel
+              key={selected.id}
+              projectId={projectId}
+              shotId={selected.id}
+              shotIndex={selected.index}
+              defaultPrompt={buildKeyframePrompt(selected, style, cast, board.visualSpec, productName, egg?.name ?? null)}
+              keyframes={keyframes}
+              onChange={setKeyframes}
+              ready={hfReady}
+              dirty={dirty}
+              shot={selected}
+              productName={productName}
+              cad={cad}
+            />
             <div className="mt-3 flex flex-wrap gap-2">
-              <LaterButton>生成关键帧</LaterButton>
               <button
                 type="button"
                 onClick={() => updateShot({ review: "approved" })}

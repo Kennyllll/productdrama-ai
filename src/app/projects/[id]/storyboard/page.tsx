@@ -1,3 +1,8 @@
+import { findBlender } from "@/lib/blender";
+import { hfPublicInfo } from "@/lib/higgsfield";
+import { getProductModel } from "@/lib/model-repo";
+import { listKeyframes, toKeyframeView } from "@/lib/keyframe-repo";
+import { getProduct } from "@/lib/repo";
 import { aiPublicInfo } from "@/lib/ai/settings";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -58,6 +63,10 @@ export default async function StoryboardPage({ params }: { params: Promise<{ id:
         egg={egg ? { id: egg.id, name: egg.name } : null}
         initial={getStoryboard(id)}
         aiReady={aiPublicInfo().configured}
+        hfReady={hfPublicInfo().configured}
+        initialKeyframes={listKeyframes(id).map(toKeyframeView)}
+        productName={getProduct(id)?.name ?? ""}
+        cad={{ blender: Boolean(findBlender()), model: Boolean(getProductModel(id)) }}
       />
     </>
   );

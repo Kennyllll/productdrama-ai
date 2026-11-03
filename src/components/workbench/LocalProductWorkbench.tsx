@@ -3,6 +3,7 @@
 import { useActionState, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { saveProductAction } from "@/app/actions";
+import { testRenderAction } from "@/app/cad-actions";
 import { Card, Tag } from "@/components/ui";
 import type { AssetKind, FormState, LocalProduct } from "@/lib/types";
 
@@ -26,12 +27,16 @@ export function LocalProductWorkbench({
   photos,
   logo,
   angles,
+  model,
+  blender,
 }: {
   projectId: string;
   product: LocalProduct;
   photos: AssetView[];
   logo: AssetView | null;
   angles: string[];
+  model: { id: string; originalName: string; size: number } | null;
+  blender: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -39,6 +44,9 @@ export function LocalProductWorkbench({
   const [angle, setAngle] = useState(angles[0]);
   const photoInput = useRef<HTMLInputElement>(null);
   const logoInput = useRef<HTMLInputElement>(null);
+  const modelInput = useRef<HTMLInputElement>(null);
+  const [renderUrl, setRenderUrl] = useState<string | null>(null);
+  const [rendering, setRendering] = useState(false);
   const [saveState, saveAction, saving] = useActionState<FormState, FormData>(saveProductAction, {});
 
   const coveredAngles = new Set(photos.map((p) => p.angle));
@@ -71,6 +79,52 @@ export function LocalProductWorkbench({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function uploadModel() {
+    const f = modelInput.current?.files?.[0];
+    if (!f) {
+      setNotice({ tone: "error", text: "请先选择 GLB 文件" });
+      return;
+    }
+    setBusy(true);
+    setNotice(null);
+    const fd = new FormData();
+    fd.append("file", f);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/models`, { method: "POST", body: fd });
+      const data = (await res.json()) as { error?: string; size?: number };
+      setNotice(res.ok ? { tone: "ok", text: `3D 模型已保存到本机（${formatSize(data.size ?? f.size)}）` } : { tone: "error", text: data.error ?? "上传失败" });
+      if (modelInput.current) modelInput.current.value = "";
+      setRenderUrl(null);
+      router.refresh();
+    } catch {
+      setNotice({ tone: "error", text: "上传失败：无法连接本地服务" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeModel(id: string) {
+    if (!window.confirm("删除 3D 模型？该项目的 CAD 渲染中间文件也会删除。")) return;
+    setBusy(true);
+    const res = await fetch(`/api/models/${id}`, { method: "DELETE" });
+    setNotice(res.ok ? { tone: "ok", text: "已删除" } : { tone: "error", text: "删除失败" });
+    setRenderUrl(null);
+    router.refresh();
+    setBusy(false);
+  }
+
+  async function testRender() {
+    setRendering(true);
+    setNotice(null);
+    const res = await testRenderAction(projectId);
+    if (res.error) setNotice({ tone: "error", text: res.error });
+    else {
+      setRenderUrl(res.result!.url);
+      setNotice({ tone: "ok", text: `测试渲染完成，用时 ${res.result!.seconds} 秒` });
+    }
+    setRendering(false);
   }
 
   async function remove(id: string) {
@@ -169,6 +223,38 @@ export function LocalProductWorkbench({
                   </button>
                 ) : null}
               </div>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="3D 模型（CAD → GLB，产品零变形的来源）" aside={<Tag tone={model ? "emerald" : "amber"}>{model ? "已上传" : "未上传"}</Tag>}>
+          <div className="space-y-3">
+            <p className="text-sm text-neutral-400">
+              关键帧里的产品由本机 Blender 按分镜机位从这个模型渲染，AI 只生成场景，不碰产品像素。需要带材质与 Logo 贴花的 GLB（由工厂 STEP 转换上色），最大 300 MB。
+              {!blender ? <span className="text-amber-300">当前未检测到 Blender（/Applications/Blender.app），渲染前请先安装 Blender 4.2。</span> : null}
+            </p>
+            {model ? (
+              <p className="flex flex-wrap items-center gap-3 text-sm text-neutral-300">
+                <span className="truncate" title={model.originalName}>
+                  {model.originalName} · {formatSize(model.size)}
+                </span>
+                <button type="button" disabled={busy || rendering || !blender} onClick={testRender} className={buttonClass}>
+                  {rendering ? "渲染中…（约 1–2 分钟）" : "测试渲染"}
+                </button>
+                <button type="button" disabled={busy || rendering} onClick={() => removeModel(model.id)} className="text-sm text-rose-300 hover:text-rose-200">
+                  删除
+                </button>
+              </p>
+            ) : null}
+            {renderUrl ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={renderUrl} alt="3D 模型测试渲染" className="w-full rounded-lg border border-white/10 bg-[repeating-conic-gradient(#2a2a2a_0_25%,#1a1a1a_0_50%)] bg-[length:16px_16px]" />
+            ) : null}
+            <div className="flex flex-wrap items-center gap-3">
+              <input ref={modelInput} type="file" accept=".glb,model/gltf-binary" className="text-sm text-neutral-300" />
+              <button type="button" disabled={busy} onClick={uploadModel} className={buttonClass}>
+                {model ? "替换 GLB" : "上传 GLB"}
+              </button>
             </div>
           </div>
         </Card>

@@ -3,6 +3,8 @@ import { ProductBibleEditor } from "@/components/workbench/ProductBibleEditor";
 import { LocalProductWorkbench } from "@/components/workbench/LocalProductWorkbench";
 import { Card, DemoNotice, LaterButton, MockBadge, PageHeader, PlaceholderFrame, Tag } from "@/components/ui";
 import { DEMO_PROJECT_ID, demoProduct, productAngles } from "@/lib/mock/demo";
+import { findBlender } from "@/lib/blender";
+import { getProductModel } from "@/lib/model-repo";
 import { findLocalProject, getProduct, listAssets } from "@/lib/repo";
 import type { AssetRecord } from "@/lib/types";
 
@@ -13,6 +15,7 @@ function LocalProductPage({ id }: { id: string }) {
   if (!product) notFound();
   const assets = listAssets(id);
   const logo = assets.find((a) => a.kind === "logo");
+  const model = getProductModel(id);
   return (
     <>
       <PageHeader title="产品工作台" description="上传真实产品多角度照片与 Logo，建立 Product Bible。文件只保存在本机。" />
@@ -22,6 +25,8 @@ function LocalProductPage({ id }: { id: string }) {
         photos={assets.filter((a) => a.kind === "product_photo").map(toView)}
         logo={logo ? toView(logo) : null}
         angles={productAngles}
+        model={model ? { id: model.id, originalName: model.originalName, size: model.size } : null}
+        blender={Boolean(findBlender())}
       />
     </>
   );

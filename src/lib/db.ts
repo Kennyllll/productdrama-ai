@@ -33,6 +33,14 @@ CREATE TABLE IF NOT EXISTS assets (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS assets_project_kind ON assets(project_id, kind);
+CREATE TABLE IF NOT EXISTS product_models (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  original_name TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS creatives (
   project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
   data TEXT NOT NULL
@@ -96,6 +104,18 @@ CREATE TABLE IF NOT EXISTS shot_media (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS shot_media_project ON shot_media(project_id);
+CREATE TABLE IF NOT EXISTS keyframes (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  shot_id TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  model TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  usd REAL NOT NULL DEFAULT 0,
+  selected INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS sound_plans (
   project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
   data TEXT NOT NULL

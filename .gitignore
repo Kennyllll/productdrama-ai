@@ -50,3 +50,4 @@ next-env.d.ts
 *.mp4
 *.mov
 *.webm
+.kriddo-test/

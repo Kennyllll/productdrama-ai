@@ -122,3 +122,15 @@ PROJECT_BRIEF.md / AGENTS.md / docs/ / tasks/   交接文档
 
 - 模型设置页新增 Higgsfield 凭证（Key ID + Secret，只存本机），测试连接使用估价接口，不产生费用，并检测常用模型可用性。
 - 服务端适配器 src/lib/higgsfield.ts：估价、提交、轮询、上传、删除远端数据。详见 tasks/011-higgsfield-integration.md。
+
+## TASK-012 关键帧（Higgsfield）
+
+- 分镜页每个镜头可「估价并生成关键帧」：GPT Image 2.5 Sunburst（默认，21:9）或 Grok Image 2.0；提示词由分镜自动生成，可修改；参考图为产品照 / Logo、出场角色照、彩蛋照。
+- 生成前显示预估费用并确认；结果下载到 uploads/<projectId>/keyframes/，随后删除 Higgsfield 远端数据；选定的关键帧同步为视频页镜头素材。
+
+## TASK-012b CAD 产品渲染与受保护合成（产品零变形）
+- 原则：产品像素只来自 CAD 渲染，AI 只生成场景与融合光线。图像模型直接画产品会改变几何（实测所有模型都会）。
+- 产品页上传带材质的 GLB（`product_models` 表，`uploads/<projectId>/models/`），「测试渲染」用本机 Blender（Cycles CPU，约 40–60 秒）验证。Blender 查找：`BLENDER_PATH` → `/Applications/Blender.app`。
+- 分镜页关键帧「CAD 保护合成」模式：Blender 按机位 / 光线参数渲染产品（透明背景 + 接触阴影 + 遮罩，`scripts/blender/render_product.py`）→ Flare 生成不含产品的空场景 → 本机 sharp 合成 → 可选 Flare 融合阴影 / 色温 → 按遮罩贴回产品（`tone`：形状 / Logo 用渲染、光线取 AI；`pixel`：逐像素用渲染）。
+- 中间文件在 `uploads/<projectId>/cad/<shotId>/`（product / mask / plate / composite / harmonized / final），结果存为关键帧候选（model = `cad-composite`）。
+- STEP → GLB 与上材质目前在开发机用 OCP + Blender 完成（见 tasks/012b-cad-product-render.md）。
