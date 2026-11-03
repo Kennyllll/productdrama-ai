@@ -324,6 +324,79 @@ export async function estimateSun(img: Buffer, lensMm: number, cameraElevDeg: nu
   return { found: best > 0.85 && best - median > 0.35, dxDeg, elevDeg, brightness: best, median, x: cx / w, y: cy / h };
 }
 
+/** 最低的非零行（只统计 x0..x1 列） */
+function bottomRow(m: Buffer, W: number, H: number, x0: number, x1: number) {
+  for (let y = H - 1; y >= 0; y--) for (let x = Math.max(0, x0); x < Math.min(W, x1); x++) if (m[y * W + x] > 128) return y;
+  return -1;
+}
+
+/**
+ * 贴地约束：AI 画的车轮最低点就是地面接触线。把 CAD 车竖直平移，使它的最低点落在同一条线上。
+ * 返回新的对齐参数和平移量（像素）。
+ */
+export async function snapToGround(cadMaskPng: string, fit: MaskFit, green: Buffer, W: number, H: number) {
+  const placed = await placedMask(cadMaskPng, fit, W, H);
+  let gl = W, gr = -1;
+  for (let i = 0; i < green.length; i++) if (green[i] > 128) { const x = i % W; if (x < gl) gl = x; if (x > gr) gr = x; }
+  const aiBottom = bottomRow(green, W, H, gl, gr + 1);
+  const cadBottom = bottomRow(placed, W, H, 0, W);
+  if (aiBottom < 0 || cadBottom < 0) return { fit, dy: 0 };
+  const dy = aiBottom - cadBottom;
+  return { fit: { ...fit, top: fit.top + dy }, dy };
+}
+
+/** 接触阴影：在 CAD 车每个触地点下方画一块压扁的柔和暗影（乘法），强度 0–1 */
+export async function contactShadow(img: Buffer, cadPlaced: Buffer, W: number, H: number, strength = 0.55) {
+  const bottom = bottomRow(cadPlaced, W, H, 0, W);
+  if (bottom < 0) return img;
+  const band = Math.max(3, Math.round(H * 0.006));
+  const sh = Buffer.alloc(W * H);
+  const rx = Math.round(H * 0.012), ry = Math.max(2, Math.round(H * 0.004));
+  for (let x = 0; x < W; x++) {
+    let touch = false;
+    for (let y = bottom - band; y <= bottom; y++) if (y >= 0 && cadPlaced[y * W + x] > 128) { touch = true; break; }
+    if (!touch) continue;
+    for (let dx = -rx; dx <= rx; dx++) for (let dy = -ry; dy <= ry; dy++) {
+      const xx = x + dx, yy = bottom + dy;
+      if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+      const f = 1 - Math.min(1, Math.sqrt((dx / rx) ** 2 + (dy / ry) ** 2));
+      sh[yy * W + xx] = Math.max(sh[yy * W + xx], Math.round(255 * f));
+    }
+  }
+  const soft = await sharp(sh, { raw: { width: W, height: H, channels: 1 } }).blur(Math.max(1, ry)).raw().toBuffer();
+  const rgb = await sharp(img).resize(W, H, { fit: "fill" }).removeAlpha().raw().toBuffer();
+  const n = soft.length === W * H ? 1 : soft.length / (W * H);
+  for (let i = 0; i < W * H; i++) {
+    const k = 1 - (soft[i * n] / 255) * strength;
+    if (k < 1) for (let c = 0; c < 3; c++) rgb[i * 3 + c] = Math.round(rgb[i * 3 + c] * k);
+  }
+  return sharp(rgb, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer();
+}
+
+/**
+ * 光影迁移：AI 对「已贴好 CAD 车」的整图重新打光后，只取车身区域的低频光影（遮罩内归一化模糊，背景不串色），
+ * 叠加到 CAD 像素上；形状、字标、细节仍是 CAD。车身以外的像素用 AI 重新打光后的结果（阴影、反光）。
+ */
+export async function relightTransfer(relit: Buffer, base: Buffer, mask: Buffer, W: number, H: number, radius = 8) {
+  const [r, b] = await Promise.all([relit, base].map((x) => sharp(x).resize(W, H, { fit: "fill" }).removeAlpha().raw().toBuffer()));
+  const m = Buffer.alloc(W * H * 3);
+  const rm = Buffer.alloc(W * H * 3), bm = Buffer.alloc(W * H * 3);
+  for (let i = 0; i < W * H; i++) if (mask[i] > 128) for (let c = 0; c < 3; c++) { m[i * 3 + c] = 255; rm[i * 3 + c] = r[i * 3 + c]; bm[i * 3 + c] = b[i * 3 + c]; }
+  const blur = (x: Buffer) => sharp(x, { raw: { width: W, height: H, channels: 3 } }).blur(radius).raw().toBuffer();
+  const [mL, rL, bL] = await Promise.all([blur(m), blur(rm), blur(bm)]);
+  const out = Buffer.from(r);
+  for (let i = 0; i < W * H; i++) {
+    if (mask[i] <= 128) continue;
+    for (let c = 0; c < 3; c++) {
+      const j = i * 3 + c;
+      const w = Math.max(1, mL[j]);
+      const delta = (rL[j] - bL[j]) * (255 / w);
+      out[j] = Math.max(0, Math.min(255, Math.round(b[j] + delta)));
+    }
+  }
+  return sharp(out, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer();
+}
+
 export type ProtectMode = "pixel" | "tone" | "grade";
 
 /**

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { BlenderError, findBlender, renderProduct, renderSilhouettes, type SilhouetteView } from "@/lib/blender";
 import { CAD_KEYFRAME_MODEL, buildInteractionPrompt, clampCadParams, buildPlatePrompt, greenMaskPrompt, harmonizePrompt, removeProductPrompt, type CadParams } from "@/lib/cad-camera";
-import { composeProduct, estimateSun, fitMask, greenMask, occluderMask, productHoleImage, protectProduct, replaceProduct } from "@/lib/cad-composite";
+import { composeProduct, contactShadow, estimateSun, fitMask, greenMask, occluderMask, placedMask, productHoleImage, protectProduct, relightTransfer, replaceProduct, snapToGround } from "@/lib/cad-composite";
 import sharp from "sharp";
 import { deleteRequest, estimate, HiggsfieldError, submit, uploadFile, waitFor } from "@/lib/higgsfield";
 import { addKeyframe, toKeyframeView, type KeyframeView } from "@/lib/keyframe-repo";
@@ -195,18 +195,31 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
     samples: 128,
   });
   renderSeconds += Math.round((Date.now() - t2) / 1000);
-  const fit = await fitMask(render.mask, gm, W, H);
+  const fit0 = await fitMask(render.mask, gm, W, H);
+  // 贴地：CAD 车轮最低点对到 AI 画面的地面接触线，再在触地点下画接触阴影
+  const snap = await snapToGround(render.mask, fit0, gm, W, H);
+  const fit = snap.fit;
+  const placed = await placedMask(render.mask, fit, W, H);
+  const shadowed = await contactShadow(clean, placed, W, H);
   // 完整贴 CAD：一个像素不少，只在蓝色遮挡处露出人；曝光 / 色温系数按原 AI 画面里的车算
-  const rep = await replaceProduct(clean, render.image, render.mask, fit, gm, W, H, p.protect === "tone" ? "grade" : p.protect, { occluder: occ, gradeRef: ai });
-  const calls = 3;
-  fs.writeFileSync(path.join(dir, "final.png"), rep.final);
+  const rep = await replaceProduct(shadowed, render.image, render.mask, fit, gm, W, H, p.protect === "tone" ? "grade" : p.protect, { occluder: occ, gradeRef: ai });
+  fs.writeFileSync(path.join(dir, "replaced.png"), rep.final);
+  // AI 只做重新打光：此时 AI 的车和 CAD 车位置重合；只取车身低频光影，形状 / 字标 / 细节保留 CAD
+  const repUrl = await uploadFile(rep.final, "image/png");
+  const relit = await runFlare(plateInput(harmonizePrompt(productName), aspect, [repUrl]));
+  fs.writeFileSync(path.join(dir, "relit.png"), relit);
+  const visible = Buffer.from(placed);
+  for (let i = 0; i < visible.length; i++) if (occ[i] > 128) visible[i] = 0;
+  const finalPng = await relightTransfer(relit, rep.final, visible, W, H);
+  const calls = 4;
+  fs.writeFileSync(path.join(dir, "final.png"), finalPng);
   let occPx = 0;
   for (const v of occ) if (v > 128) occPx++;
-  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, view, aiFacing: gm.facing, coarseIou: b1.iou, fineIou: b2.iou, occluderPixels: occPx, gain: rep.gain, sun, sunDir, sunElev, searchSeconds }));
+  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, view, aiFacing: gm.facing, coarseIou: b1.iou, fineIou: b2.iou, occluderPixels: occPx, gain: rep.gain, sun, sunDir, sunElev, groundDy: snap.dy, searchSeconds }));
   const f = (name: string) => `/api/cad/${projectId}?f=${shotId.toLowerCase()}/${name}`;
   const files: [string, string][] = [["AI 完整画面", f("ai.png")], ["标注（绿=车 红=座椅 蓝=遮挡）", f("green.png")], ["去车后的背景", f("clean.png")]];
   return {
-    bytes: rep.final,
+    bytes: finalPng,
     prompt: `${prompt}\n\n[CAD interaction] ${JSON.stringify({ ...p, view, fit })}`,
     usd: Number.isFinite(unit) ? unit * calls : 0,
     files,

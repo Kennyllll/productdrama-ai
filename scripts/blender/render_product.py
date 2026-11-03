@@ -86,9 +86,10 @@ cr = g("cine_rim", 0)
 if cr:
     rc = kelvin_rgb(g("cine_rim_kelvin", 2800))
     for side in (-1, 1):
-        a = az + math.pi + side * math.radians(38)
-        pos = (tgt.x + math.sin(a) * size * 1.6, tgt.y - math.cos(a) * size * 1.6, tgt.z + size * 0.25)
-        lo = light(f"cine_rim_{side}", "AREA", pos, cr * 120 * size, rc, size * 0.6)
+        a = az + math.pi + side * math.radians(g("cine_rim_spread_deg", 14))
+        pos = (tgt.x + math.sin(a) * size * 2.2, tgt.y - math.cos(a) * size * 2.2, tgt.z + size * 0.55)
+        lo = light(f"cine_rim_{side}", "SPOT", pos, cr * 260 * size, rc)
+        lo.data.spot_size = math.radians(25); lo.data.spot_blend = 0.6; lo.data.shadow_soft_size = size * 0.05
         lo.visible_shadow = False
 w = bpy.data.worlds.new("w"); bpy.context.scene.world = w; w.use_nodes = True
 bg = w.node_tree.nodes["Background"]; bg.inputs[0].default_value = (*g("env_color", (0.6, 0.65, 0.75)), 1); bg.inputs[1].default_value = g("env_strength", 0.5)
