@@ -174,11 +174,15 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
   // 车把转向只在有 rig 文件时搜索；孩子扶车时 AI 常把车把画成转向的，不转就对不上手
   const hasRig = fs.existsSync(`${glb}.rig.json`);
   const steers = hasRig ? [-30, 0, 30] : [0];
+  // 靠物镜头必须侧倾 10–18°（两轮车无支架，直立 = 自己站着），两个方向都试，由 AI 画面里支撑物的位置决定；不靠物时按分镜值 / 直立
+  const leaning = Math.abs(p.rollDeg) >= 8 && Math.abs(p.rollDeg) <= 30;
+  const clampLean = (r: number) => (leaning ? Math.sign(r || 1) * Math.min(18, Math.max(10, Math.abs(r))) : r);
+  const rolls = leaning ? [-16, -12, 12, 16] : [...new Set([p.rollDeg * sign * -1, 0])];
   const coarse: SilhouetteView[] = [];
-  for (let a = 10; a <= 80; a += 10) for (const e of [p.elevationDeg - 10, p.elevationDeg, p.elevationDeg + 10]) for (const r of new Set([p.rollDeg * sign * -1, 0])) for (const st of steers) coarse.push({ azimuth_deg: sign * a, elevation_deg: e, roll_deg: r, steer_deg: st });
+  for (let a = 10; a <= 80; a += 10) for (const e of [p.elevationDeg - 10, p.elevationDeg, p.elevationDeg + 10]) for (const r of rolls) for (const st of steers) coarse.push({ azimuth_deg: sign * a, elevation_deg: e, roll_deg: r, steer_deg: st });
   const b1 = await searchViews(coarse, "coarse");
   const fine: SilhouetteView[] = [];
-  for (const da of [-5, 0, 5]) for (const de of [-5, 0, 5]) for (const dr of [-6, 0, 6]) for (const ds of hasRig ? [-15, 0, 15] : [0]) fine.push({ azimuth_deg: b1.view.azimuth_deg + da, elevation_deg: b1.view.elevation_deg + de, roll_deg: b1.view.roll_deg + dr, steer_deg: (b1.view.steer_deg ?? 0) + ds });
+  for (const da of [-5, 0, 5]) for (const de of [-5, 0, 5]) for (const dr of leaning ? [-3, 0, 3] : [-6, 0, 6]) for (const ds of hasRig ? [-15, 0, 15] : [0]) fine.push({ azimuth_deg: b1.view.azimuth_deg + da, elevation_deg: b1.view.elevation_deg + de, roll_deg: clampLean(b1.view.roll_deg + dr), steer_deg: (b1.view.steer_deg ?? 0) + ds });
   const b2 = await searchViews(fine, "fine");
   const bestView = b2.score > b1.score ? b2 : b1;
   const view = bestView.view;
@@ -258,6 +262,7 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
   const finalPng = locked.png;
   fs.writeFileSync(path.join(dir, "final.png"), finalPng);
   const qa = contactQa(gm, placed);
+  if (leaning && Math.abs(view.roll_deg) < 10) qa.warnings.push(`靠物镜头的车只侧倾 ${Math.abs(view.roll_deg)}°，看起来会像自己立着`);
   if (lost > 0.35) qa.warnings.push(`AI 打光时删掉或重画了车（${Math.round(lost * 100)}% 车身变化），车身没有场景光影`);
   if (locked.drift > 0.05) qa.warnings.push(`AI 打光改动了产品周边以外 ${Math.round(locked.drift * 100)}% 的画面，已还原，请检查画面是否完整`);
   let occPx = 0;
