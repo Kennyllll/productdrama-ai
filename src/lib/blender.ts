@@ -45,6 +45,29 @@ export function findBlender(): string | null {
 }
 
 export const RENDER_SCRIPT = path.join(process.cwd(), "scripts", "blender", "render_product.py");
+export const SILHOUETTE_SCRIPT = path.join(process.cwd(), "scripts", "blender", "silhouettes.py");
+
+export interface SilhouetteView {
+  azimuth_deg: number;
+  elevation_deg: number;
+  roll_deg: number;
+}
+
+/** 一次 Blender 调用批量渲染产品剪影（Workbench，无光照，几秒），用于和 AI 画面里的产品比对视角 */
+export async function renderSilhouettes(glb: string, outDir: string, lensMm: number, views: SilhouetteView[]): Promise<string[]> {
+  const blender = findBlender();
+  if (!blender) throw new BlenderError("未找到 Blender。请安装 Blender 4.2 到 /Applications，或设置环境变量 BLENDER_PATH");
+  fs.mkdirSync(outDir, { recursive: true });
+  const specFile = path.join(outDir, "spec.json");
+  fs.writeFileSync(specFile, JSON.stringify({ glb, out_dir: outDir, size_px: 400, lens_mm: lensMm, views }));
+  await new Promise<void>((resolve, reject) => {
+    execFile(blender, ["-b", "-noaudio", "--python", SILHOUETTE_SCRIPT, "--", specFile], { timeout: 5 * 60 * 1000, maxBuffer: 32 * 1024 * 1024 }, (err, out, errOut) => {
+      if (err || !String(out).includes("SIL_OK")) reject(new BlenderError(`剪影渲染失败：${String(errOut || err?.message || "").split("\n").filter(Boolean).slice(-2).join(" / ")}`));
+      else resolve();
+    });
+  });
+  return views.map((_, i) => path.join(outDir, `sil_${i}.png`));
+}
 
 export class BlenderError extends Error {}
 

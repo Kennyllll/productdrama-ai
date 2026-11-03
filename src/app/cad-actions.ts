@@ -2,9 +2,9 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { BlenderError, findBlender, renderProduct } from "@/lib/blender";
-import { CAD_KEYFRAME_MODEL, buildInteractionPrompt, clampCadParams, buildPlatePrompt, greenMaskPrompt, harmonizePrompt, type CadParams } from "@/lib/cad-camera";
-import { composeProduct, fitMask, greenMask, protectProduct, replaceProduct } from "@/lib/cad-composite";
+import { BlenderError, findBlender, renderProduct, renderSilhouettes, type SilhouetteView } from "@/lib/blender";
+import { CAD_KEYFRAME_MODEL, buildInteractionPrompt, clampCadParams, buildPlatePrompt, ghostFillPrompt, greenMaskPrompt, harmonizePrompt, type CadParams } from "@/lib/cad-camera";
+import { composeProduct, fitMask, ghostRegion, greenMask, placedMask, protectProduct, replaceProduct } from "@/lib/cad-composite";
 import sharp from "sharp";
 import { deleteRequest, estimate, HiggsfieldError, submit, uploadFile, waitFor } from "@/lib/higgsfield";
 import { addKeyframe, toKeyframeView, type KeyframeView } from "@/lib/keyframe-repo";
@@ -133,25 +133,74 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
   const meta = await sharp(ai).metadata();
   const W = meta.width ?? 0, H = meta.height ?? 0;
   const gm = await greenMask(green, W, H);
-  // 车头朝向：红色座椅在产品右侧 = 车头朝左。渲染的朝向由方位角符号决定（负 = 车头朝左），不一致就按镜像机位重渲染
-  const renderFacing = p.azimuthDeg < 0 ? "left" : "right";
-  let mirrored = false;
-  if (gm.facing && gm.facing !== renderFacing) {
-    const t1 = Date.now();
-    render = await renderAt(-p.azimuthDeg, -p.rollDeg, "product.png");
-    renderSeconds += Math.round((Date.now() - t1) / 1000);
-    mirrored = true;
-  }
+
+  // 自动匹配视角：按 AI 画的车头朝向（红色座椅）定方位角正负，批量渲染剪影比对 IoU，再在最优解附近细化
+  const sign = gm.facing === "right" ? 1 : gm.facing === "left" ? -1 : Math.sign(p.azimuthDeg) || -1;
+  const searchViews = async (views: SilhouetteView[], tag: string) => {
+    const files = await renderSilhouettes(glb, path.join(dir, `sil-${tag}`), p.lensMm, views);
+    let best = { view: views[0], iou: -1 };
+    for (let i = 0; i < files.length; i++) {
+      const fit = await fitMask(files[i], gm, W, H).catch(() => null);
+      if (fit && fit.iou > best.iou) best = { view: views[i], iou: fit.iou };
+    }
+    return best;
+  };
+  const t1 = Date.now();
+  const coarse: SilhouetteView[] = [];
+  for (let a = 10; a <= 80; a += 10) for (const e of [p.elevationDeg - 10, p.elevationDeg, p.elevationDeg + 10]) for (const r of new Set([p.rollDeg * sign * -1, 0])) coarse.push({ azimuth_deg: sign * a, elevation_deg: e, roll_deg: r });
+  const b1 = await searchViews(coarse, "coarse");
+  const fine: SilhouetteView[] = [];
+  for (const da of [-5, 0, 5]) for (const de of [-5, 0, 5]) for (const dr of [-6, 0, 6]) fine.push({ azimuth_deg: b1.view.azimuth_deg + da, elevation_deg: b1.view.elevation_deg + de, roll_deg: b1.view.roll_deg + dr });
+  const b2 = await searchViews(fine, "fine");
+  const view = b2.iou > b1.iou ? b2.view : b1.view;
+  const searchSeconds = Math.round((Date.now() - t1) / 1000);
+
+  // 按匹配到的视角正式渲染并对齐替换
+  const t2 = Date.now();
+  render = await renderProduct({
+    glb,
+    out: path.join(dir, "product.png"),
+    width: 1600,
+    height: 1600,
+    azimuth_deg: view.azimuth_deg,
+    elevation_deg: view.elevation_deg,
+    lens_mm: p.lensMm,
+    roll_deg: view.roll_deg,
+    key_dir_deg: p.keyDirDeg,
+    key_elev_deg: p.keyElevDeg,
+    key_kelvin: p.keyKelvin,
+    exposure: p.exposure,
+    samples: 128,
+  });
+  renderSeconds += Math.round((Date.now() - t2) / 1000);
   const fit = await fitMask(render.mask, gm, W, H);
-  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, mirrored, aiFacing: gm.facing }));
-  const rep = await replaceProduct(ai, render.image, render.mask, fit, gm, W, H, p.protect);
+  let rep = await replaceProduct(ai, render.image, render.mask, fit, gm, W, H, p.protect);
+  fs.writeFileSync(path.join(dir, "replaced.png"), rep.final);
+
+  // 残影：AI 的车比 CAD 的车多出来的部分涂成品红，交给 AI 补背景，再把 CAD 产品贴回
+  const cadPlaced = await placedMask(render.mask, fit, W, H);
+  const ghost = await ghostRegion(rep.final, gm, cadPlaced, W, H);
+  let cleaned = false;
+  let calls = 2;
+  if (ghost.pixels > 400) {
+    fs.writeFileSync(path.join(dir, "ghost.png"), ghost.painted);
+    const gUrl = await uploadFile(ghost.painted, "image/png");
+    const fixed = await runFlare(plateInput(ghostFillPrompt(productName), aspect, [gUrl]));
+    calls++;
+    fs.writeFileSync(path.join(dir, "ghost-filled.png"), fixed);
+    rep = await replaceProduct(fixed, render.image, render.mask, fit, gm, W, H, p.protect);
+    cleaned = true;
+  }
   fs.writeFileSync(path.join(dir, "final.png"), rep.final);
+  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, view, aiFacing: gm.facing, coarseIou: b1.iou, fineIou: b2.iou, ghostPixels: ghost.pixels, cleaned, searchSeconds }));
   const f = (name: string) => `/api/cad/${projectId}?f=${shotId.toLowerCase()}/${name}`;
+  const files: [string, string][] = [["AI 完整画面（替换前）", f("ai.png")], ["绿色遮罩", f("green.png")], ["CAD 替换后（清残影前）", f("replaced.png")]];
+  if (cleaned) files.push(["残影区域", f("ghost.png")]);
   return {
     bytes: rep.final,
-    prompt: `${prompt}\n\n[CAD interaction] ${JSON.stringify({ ...p, fit })}`,
-    usd: Number.isFinite(unit) ? unit * 2 : 0,
-    files: [["CAD 渲染（参考）", f("product-ref.png")], ["AI 完整画面（替换前）", f("ai.png")], ["绿色遮罩", f("green.png")]],
+    prompt: `${prompt}\n\n[CAD interaction] ${JSON.stringify({ ...p, view, fit })}`,
+    usd: Number.isFinite(unit) ? unit * calls : 0,
+    files,
     aiDrift: null,
     fit: { iou: Math.round(fit.iou * 100) / 100, coverage: Math.round(fit.coverage * 100) / 100 },
     renderSeconds,

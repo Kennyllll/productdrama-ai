@@ -205,6 +205,51 @@ export async function replaceProduct(ai: Buffer, productPng: string, cadMaskPng:
   return { final, replacedPixels: replaced };
 }
 
+/** 对齐后的 CAD 产品遮罩铺到场景画布（单通道 raw，0/255） */
+export async function placedMask(cadMaskPng: string, fit: MaskFit, W: number, H: number): Promise<Buffer> {
+  const meta = await sharp(cadMaskPng).metadata();
+  const rw = Math.max(1, Math.round((meta.width ?? 1) * fit.scale));
+  const rh = Math.max(1, Math.round((meta.height ?? 1) * fit.scale));
+  const left = Math.round(fit.left), top = Math.round(fit.top);
+  const cx0 = Math.max(0, left), cy0 = Math.max(0, top), cx1 = Math.min(W, left + rw), cy1 = Math.min(H, top + rh);
+  const out = Buffer.alloc(W * H);
+  if (cx1 <= cx0 || cy1 <= cy0) return out;
+  const a = await sharp(cadMaskPng).ensureAlpha().resize(rw, rh).extractChannel("alpha").extract({ left: cx0 - left, top: cy0 - top, width: cx1 - cx0, height: cy1 - cy0 }).raw().toBuffer();
+  const w = cx1 - cx0;
+  for (let y = cy0; y < cy1; y++) for (let x = cx0; x < cx1; x++) out[y * W + x] = a[(y - cy0) * w + (x - cx0)] > 128 ? 255 : 0;
+  return out;
+}
+
+/**
+ * 残影区域：AI 画的产品（绿色遮罩）里没被 CAD 产品盖住的部分，外扩几像素。
+ * 返回 raw 遮罩和「残影涂成品红 #FF00FF」的图（交给 AI 补背景）。
+ */
+export async function ghostRegion(ai: Buffer, green: Buffer, cadPlaced: Buffer, W: number, H: number, grow = 6) {
+  const ghost = Buffer.alloc(W * H);
+  for (let i = 0; i < ghost.length; i++) if (green[i] > 128 && cadPlaced[i] <= 128) ghost[i] = 255;
+  // 外扩 grow 像素（可分离的方形最大值滤波），但不进入 CAD 产品区域
+  const tmp = Buffer.alloc(W * H);
+  for (let y = 0; y < H; y++) {
+    let last = -1e9;
+    for (let x = 0; x < W; x++) if (ghost[y * W + x]) last = x; else if (x - last <= grow) tmp[y * W + x] = 255;
+    last = 1e9;
+    for (let x = W - 1; x >= 0; x--) if (ghost[y * W + x]) { last = x; tmp[y * W + x] = 255; } else if (last - x <= grow) tmp[y * W + x] = 255;
+  }
+  const grown = Buffer.alloc(W * H);
+  for (let x = 0; x < W; x++) {
+    let last = -1e9;
+    for (let y = 0; y < H; y++) if (tmp[y * W + x]) { last = y; grown[y * W + x] = 255; } else if (y - last <= grow) grown[y * W + x] = 255;
+    last = 1e9;
+    for (let y = H - 1; y >= 0; y--) if (tmp[y * W + x]) last = y; else if (last - y <= grow) grown[y * W + x] = 255;
+  }
+  let n = 0;
+  for (let i = 0; i < grown.length; i++) { if (cadPlaced[i] > 128) grown[i] = 0; if (grown[i] > 128) n++; }
+  const rgb = await sharp(ai).resize(W, H, { fit: "fill" }).removeAlpha().raw().toBuffer();
+  for (let i = 0; i < grown.length; i++) if (grown[i] > 128) { rgb[i * 3] = 255; rgb[i * 3 + 1] = 0; rgb[i * 3 + 2] = 255; }
+  const painted = await sharp(rgb, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer();
+  return { mask: grown, painted, pixels: n };
+}
+
 export type ProtectMode = "pixel" | "tone";
 
 /**
