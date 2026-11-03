@@ -582,3 +582,13 @@ export async function lockScene(final: Buffer, base: Buffer, placed: Buffer, W: 
   }
   return { png: await sharp(out, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer(), drift: outside ? changed / outside : 0 };
 }
+
+/** 接触镜头自检：AI 画的车（绿色）有多少被 CAD 车盖住。覆盖低 = AI 车的残留会露出来或 CAD 车放错位置 */
+export function contactQa(green: Buffer, placed: Buffer) {
+  let g = 0, both = 0;
+  for (let i = 0; i < green.length; i++) if (green[i] > 128) { g++; if (placed[i] > 128) both++; }
+  const coverage = g ? both / g : 0;
+  const warnings: string[] = [];
+  if (coverage < 0.75) warnings.push(`AI 画的车只有 ${Math.round(coverage * 100)}% 被真车盖住，AI 车的残留或错位很可能露出来，不建议选用`);
+  return { coverage, warnings };
+}

@@ -5,7 +5,7 @@ import path from "node:path";
 import { BlenderError, findBlender, renderProduct, renderSilhouettes, type SilhouetteView } from "@/lib/blender";
 import { CAD_KEYFRAME_MODEL, buildInteractionPrompt, clampCadParams, buildPlatePrompt, greenMaskPrompt, harmonizePrompt, removeProductPrompt, type CadParams } from "@/lib/cad-camera";
 import { anchorFit, composeProduct, contactShadow, estimateSun, fitMask, greenMask, groundRow, handFixMask,
-  handPoints, lockScene, occluderMask, placedMask, productHoleImage, protectProduct, relightTransfer, replaceProduct, snapToGround } from "@/lib/cad-composite";
+  handPoints, lockScene, contactQa, occluderMask, placedMask, productHoleImage, protectProduct, relightTransfer, replaceProduct, snapToGround } from "@/lib/cad-composite";
 import sharp from "sharp";
 import { deleteRequest, estimate, HiggsfieldError, submit, uploadFile, waitFor } from "@/lib/higgsfield";
 import { addKeyframe, toKeyframeView, type KeyframeView } from "@/lib/keyframe-repo";
@@ -94,6 +94,8 @@ export interface CadKeyframeResult {
   files: [string, string][];
   aiDrift: number | null;
   fit?: { iou: number; coverage: number };
+  /** 自检警告（不合格的原因） */
+  qa?: string[];
   renderSeconds: number;
 }
 
@@ -247,9 +249,11 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
   const finalPng = locked.png;
   const calls = 4;
   fs.writeFileSync(path.join(dir, "final.png"), finalPng);
+  const qa = contactQa(gm, placed);
+  if (locked.drift > 0.05) qa.warnings.push(`AI 打光改动了产品周边以外 ${Math.round(locked.drift * 100)}% 的画面，已还原，请检查画面是否完整`);
   let occPx = 0;
   for (const v of occ) if (v > 128) occPx++;
-  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, view, aiFacing: gm.facing, coarseIou: b1.iou, fineIou: b2.iou, occluderPixels: occPx, gain: rep.gain, sun, sunDir, sunElev, groundDy: snap.dy, hands, grips, anchored: Boolean(anchored), gripErr: bestView.gripErr, handFixPixels: handFixPx, sceneDrift: locked.drift, searchSeconds }));
+  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, view, aiFacing: gm.facing, coarseIou: b1.iou, fineIou: b2.iou, occluderPixels: occPx, gain: rep.gain, sun, sunDir, sunElev, groundDy: snap.dy, hands, grips, anchored: Boolean(anchored), gripErr: bestView.gripErr, handFixPixels: handFixPx, sceneDrift: locked.drift, coverage: qa.coverage, qa: qa.warnings, searchSeconds }));
   const f = (name: string) => `/api/cad/${projectId}?f=${shotId.toLowerCase()}/${name}`;
   const files: [string, string][] = [["AI 完整画面", f("ai.png")], ["标注（绿=车 红=座椅 蓝=遮挡）", f("green.png")], ["去车后的背景", f("clean.png")]];
   return {
@@ -258,7 +262,8 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
     usd: Number.isFinite(unit) ? unit * calls : 0,
     files,
     aiDrift: null,
-    fit: { iou: Math.round(fit.iou * 100) / 100, coverage: Math.round(fit.coverage * 100) / 100 },
+    fit: { iou: Math.round(fit.iou * 100) / 100, coverage: Math.round(qa.coverage * 100) / 100 },
+    qa: qa.warnings,
     renderSeconds,
   };
 }
@@ -286,7 +291,7 @@ export async function generateCadKeyframeAction(projectId: string, shotId: strin
       const r = await interactionKeyframe(projectId, shotId, p, basePrompt, dir, modelPath(m), board.visualSpec.aspectRatio, shot.productNote);
       const k = addKeyframe({ projectId, shotId, bytes: r.bytes, model: CAD_KEYFRAME_MODEL, prompt: r.prompt, usd: r.usd });
       if (!k) throw new Error("保存关键帧失败");
-      return { result: { keyframe: toKeyframeView(k), files: r.files, aiDrift: r.aiDrift, fit: r.fit, renderSeconds: r.renderSeconds } };
+      return { result: { keyframe: toKeyframeView(k), files: r.files, aiDrift: r.aiDrift, fit: r.fit, qa: r.qa, renderSeconds: r.renderSeconds } };
     }
 
     // 1) 空场景（可复用上次的，便于只调产品光线 / 位置）

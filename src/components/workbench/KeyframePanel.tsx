@@ -108,6 +108,7 @@ export function KeyframePanel({
       onChange([...keyframes, res.result.keyframe]);
       setLast(res.result);
       const r = res.result;
+      if (r.qa?.length) return setMsg({ error: `已生成但自检不合格：${r.qa.join("；")}。建议重跑或调整镜头描述` });
       setMsg({
         ok: r.fit
           ? `已生成（接触镜头）：产品渲染 ${r.renderSeconds} 秒；CAD 与 AI 画的产品对齐 IoU ${r.fit.iou}，覆盖 ${Math.round(r.fit.coverage * 100)}%。IoU 低于 0.6 说明 AI 画的角度和渲染不一致，请改相机方位 / 仰角重试`

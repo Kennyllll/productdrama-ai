@@ -91,7 +91,7 @@ export function buildInteractionPrompt(base: string, productName: string, bible:
   const facts = [v("color-main") && `main color: ${v("color-main")}`, v("color-sub") && `other parts: ${v("color-sub")}`, v("geometry") && `geometry: ${v("geometry")}`, v("logo") && `logo: ${v("logo")}`, v("physics") && `physics: ${v("physics")}`].filter(Boolean).join("; ");
   return [
     base.replace(/^Product:.*$/m, "").replace(/\n{2,}/g, "\n").trim(),
-    `Product: the FIRST attached image is a studio render of the real ${productName || "product"} (${facts}). Reproduce this exact product in the scene — same model, same parts, same colors and decal — and show it from the SAME viewing angle and lean as in the render, scaled correctly for the people in the scene. How it appears: ${productNote || "as described"}. It must obey its physics (${v("physics") || "no kickstand, cannot stand by itself"}): someone holds, rides or pushes it, or it leans on something, with visible contact.`,
+    `Product: the FIRST attached image is a studio render of the real ${productName || "product"} (${facts}). Reproduce this exact product in the scene — same model, same parts, same colors and decal — and show it from the SAME viewing angle and lean as in the render, scaled correctly for the people in the scene. How it appears: ${productNote || "as described"}. It must obey its physics (${v("physics") || "no kickstand, cannot stand by itself"}): someone holds, rides or pushes it, or it leans on something, with visible contact. One single frozen moment, not a sequence: exactly one ${productName || "product"} in the frame and every person appears exactly once (no repeated figures, no multiple exposures, no before/after in one image).`,
   ].join("\n");
 }
 
