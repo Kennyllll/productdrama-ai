@@ -50,12 +50,14 @@ lo, hi = top[:, 1].min(), top[:, 1].max(); span = hi - lo
 grips = [mathutils.Vector(top[top[:, 1] < lo + 0.2 * span].mean(0)), mathutils.Vector(top[top[:, 1] > hi - 0.2 * span].mean(0))]
 
 wall = g("wall"); d = mathutils.Vector((*wall["dir"], 0)); n = mathutils.Vector((*wall["normal"], 0)); A = mathutils.Vector((*wall["a"], 0))
-yaw = math.atan2(d.y, d.x)
+# yaw_off_deg：车身与墙成一定夹角（只有一端碰墙），侧倾才能在画面里看出来
+yaw = math.atan2(d.y, d.x) + math.radians(g("yaw_off_deg", 0))
 Mz = mathutils.Matrix.Rotation(yaw, 4, "Z")
 # 侧倾：绕前进轴，车顶朝墙（-normal）
 r = math.radians(abs(g("roll_deg", 12)))
-side = 1 if d.cross(mathutils.Vector((0, 0, 1))).dot(-n) > 0 else -1
-Mr = mathutils.Matrix.Rotation(side * r, 4, d)
+bd = Mz.to_3x3() @ mathutils.Vector((1, 0, 0))
+side = 1 if bd.cross(mathutils.Vector((0, 0, 1))).dot(-n) > 0 else -1
+Mr = mathutils.Matrix.Rotation(side * r, 4, bd)
 apply(Mr @ Mz); grips = [Mr @ Mz @ p for p in grips]
 V = np.concatenate([v for _, v in verts()])
 zmin = V[:, 2].min()
@@ -108,7 +110,7 @@ if env and os.path.exists(env):
 
 s = bpy.context.scene
 s.render.engine = "CYCLES"; s.cycles.samples = g("samples", 128); s.cycles.device = "CPU"; s.cycles.use_denoising = True
-s.view_settings.view_transform = "AgX"
+s.view_settings.view_transform = "AgX"; s.view_settings.exposure = g("exposure", 0.0)
 s.render.resolution_x = g("width", 1600); s.render.resolution_y = g("height", 900)
 s.render.film_transparent = True
 s.render.image_settings.file_format = "PNG"; s.render.image_settings.color_mode = "RGBA"; s.render.image_settings.color_depth = "16"
