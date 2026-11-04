@@ -14,6 +14,8 @@ import { cadDir, getProductModel, modelPath } from "@/lib/model-repo";
 import { findLocalProject, getProduct } from "@/lib/repo";
 import { getVisionKey, locateGeometry, locateSupport, reviewKeyframe } from "@/lib/vision-qa";
 import { getStoryboard } from "@/lib/storyboard-repo";
+import { composeSetFirst } from "@/lib/set-composite";
+import { findPhoto, listCharacters, photoPath } from "@/lib/cast-repo";
 
 type Result<T> = { error?: string; result?: T };
 const fail = (e: unknown) => ({ error: e instanceof HiggsfieldError || e instanceof BlenderError ? e.message : e instanceof Error ? e.message : "处理失败" });
@@ -428,7 +430,66 @@ async function sceneMatchKeyframe(o: { projectId: string; shotId: string; p: Cad
   };
 }
 
-async function productFirstKeyframe(projectId: string, shotId: string, p: CadParams, basePrompt: string, dir: string, glb: string, aspect: string, productNote: string, hasPeople: boolean, description: string): Promise<Omit<CadKeyframeResult, "keyframe"> & { bytes: Buffer; prompt: string; usd: number; productBox?: { x0: number; y0: number; x1: number; y1: number } }> {
+/** 3D 布景先行（车库靠墙）：车库硬体 + 真车都在 Blender 里，相机 / 接触 / 倾斜 / 阴影由程序定；AI 只写实化并按角色照加人；露出的 AI 车去重影后贴回真车 */
+async function setFirstKeyframe(o: { projectId: string; shotId: string; p: CadParams; basePrompt: string; dir: string; glb: string; aspect: string; productNote: string; characterIds: string[] }): Promise<ProductFirstResult> {
+  const { p, dir } = o;
+  const [W, H] = o.aspect === "9:16" ? [1152, 2048] : o.aspect === "16:9" ? [2560, 1440] : [2688, 1152];
+  const D = 3.0;
+  const x = /左/.test(o.productNote) ? -0.9 : /右/.test(o.productNote) ? 0.6 : -0.35;
+  const t0 = Date.now();
+  const rs = await renderScene({
+    glb: o.glb, out: path.join(dir, "set.png"), out_plate: path.join(dir, "set-plate.png"), width: W, height: H,
+    lens_mm: Math.min(50, Math.max(24, p.lensMm)), cam_height: 0.6, pitch_deg: 3,
+    wall: { a: [-3, D], dir: [1, 0], normal: [0, -1] }, place: [x, D], roll_deg: 14, yaw_off_deg: -25, set: { garage: true },
+    sun_az_deg: -115, sun_elev_deg: 14, sun_kelvin: p.keyKelvin, sun_strength: 5, exposure: p.exposure ?? 0, samples: 96,
+  });
+  const renderSeconds = Math.round((Date.now() - t0) / 1000);
+  const cg = await sharp(rs.image).removeAlpha().png().toBuffer();
+  fs.writeFileSync(path.join(dir, "product-ref.png"), cg);
+  // 角色照：每个出场角色取第一张参考照
+  const chars = listCharacters(o.projectId).filter((c) => o.characterIds.includes(c.id));
+  const refs = chars.flatMap((c) => {
+    const ph = c.photos[0] && findPhoto(c.photos[0].id);
+    return ph && fs.existsSync(photoPath(ph)) ? [{ name: c.name, file: photoPath(ph) }] : [];
+  }).slice(0, 3);
+  const product = getProduct(o.projectId)?.name || "balance bike";
+  const scene = (o.basePrompt.match(/^Scene: (.*)$/m)?.[1] ?? "").split(/(?<=[。！？.!?])/).filter((s) => !/平衡车|童车|车把|座椅|轮子|balance bike|bike|handlebar|saddle/i.test(s)).join("");
+  const cast = (o.basePrompt.match(/^Characters[^:]*: (.*)$/m)?.[1] ?? "").split(";").map((c) => c.trim()).filter(Boolean);
+  const prompt = [
+    "The first attached image is a 3D layout render of the inside of a suburban North American garage; the camera, the walls, the floor, the open garage door, the sunlight pattern and the white kids' balance bike leaning against the back wall are final.",
+    "Turn it into a photorealistic cinematic film still shot on a cinema camera, fine film grain.",
+    scene ? `Story context: ${scene}` : "",
+    "Keep the exact camera, perspective and layout: the back wall, the low concrete stem wall along its base, the floor line, the sunlight pattern and every shadow stay where they are.",
+    `Keep the ${product} exactly as it is: same position, same lean against the wall, same size, same shape, same colors, same shadows. Do not redraw, move or duplicate it, and do not add any other bike, scooter or vehicle.`,
+    "Give the drywall, the concrete stem wall and the concrete floor real-world texture: slight scuffs, a faint oil stain, fine dust in the sunbeam.",
+    cast.length ? `Add exactly ${cast.length} ${cast.length === 1 ? "person" : "people"}: ${cast.join("; ")}. Nobody else. ${o.productNote.match(/[^。]*(?:站|看|抱|holding|stand)[^。]*/)?.[0] ?? ""} Every person stands with both feet on the floor at least two steps away from the bike and does not touch it.` : "Add no people.",
+    refs.length ? `Use the other attached photo${refs.length > 1 ? "s" : ""} only as the face, hair and outfit reference for ${refs.map((r) => r.name).join(", ")}; take nothing else from them.` : "",
+    "On the far right add ordinary American garage details against the right wall (a metal shelf with paint cans), not touching the bike. One single frozen moment.",
+  ].filter(Boolean).join(" ");
+  const urls = [await uploadFile(cg, "image/png"), ...(await Promise.all(refs.map(async (r) => uploadFile(await sharp(r.file).rotate().resize(1024, 1024, { fit: "inside" }).jpeg({ quality: 90 }).toBuffer(), "image/jpeg"))))];
+  const input = plateInput(prompt, o.aspect, urls);
+  const unit = await estimate(PLATE_MODEL, input).then((r) => r.usd).catch(() => NaN);
+  const ai = await runFlare(input);
+  fs.writeFileSync(path.join(dir, "ai.png"), ai);
+  const comp = await composeSetFirst({ ai, cad: rs.image, plate: path.join(dir, "set-plate.png"), mask: rs.mask });
+  fs.writeFileSync(path.join(dir, "final.png"), comp.image);
+  const qa = [`3D 布景先行：车库布景、相机高 0.6 m、${Math.min(50, Math.max(24, p.lensMm))} mm；车向墙倾 ${Math.abs(rs.meta.roll_deg).toFixed(0)}°，${rs.meta.contact.part ? "车把碰墙" : "接触点未知"}`, refs.length ? `角色照：${refs.map((r) => r.name).join("、")}` : "没有角色照，人物只按文字描述"];
+  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ mode: "set-first", render: rs.meta, ghostPx: comp.ghostPx, refs: refs.map((r) => r.name), qa }));
+  const f = (name: string) => `/api/cad/${o.projectId}?f=${o.shotId.toLowerCase()}/${name}`;
+  return {
+    bytes: comp.image,
+    prompt: `${prompt}\n\n[CAD set-first] ${JSON.stringify({ place: [x, D], roll: rs.meta.roll_deg })}`,
+    usd: Number.isFinite(unit) ? unit : 0,
+    files: [["3D 布景 + 真车", f("product-ref.png")], ["AI 写实化", f("ai.png")]],
+    aiDrift: null,
+    fit: { iou: 1, coverage: 1 },
+    qa,
+    renderSeconds,
+    productBox: comp.box,
+  };
+}
+
+async function productFirstKeyframe(projectId: string, shotId: string, p: CadParams, basePrompt: string, dir: string, glb: string, aspect: string, productNote: string, hasPeople: boolean, description: string, characterIds: string[] = []): Promise<Omit<CadKeyframeResult, "keyframe"> & { bytes: Buffer; prompt: string; usd: number; productBox?: { x0: number; y0: number; x1: number; y1: number } }> {
   const product = getProduct(projectId);
   const productName = product?.name ?? "";
   // 靠物：车必须向远离镜头的方向倒（支撑物在车后面，不挡车）。相机水平方向 (sin az, −cos az)，侧倾后车的竖直轴 (0, −sin r, cos r)，点积 = cos az · sin r
@@ -443,6 +504,9 @@ async function productFirstKeyframe(projectId: string, shotId: string, p: CadPar
   // 画面左右：相机右方向 (cos az, sin az)，点积 = −sin az · sin r
   const sideOf = (r: number) => (-Math.sin(az) * Math.sin((r * Math.PI) / 180) > 0 ? "right" : "left");
   let leanSide: "left" | "right" | null = leaning ? sideOf(roll) : null;
+  // 车库里靠墙：走 3D 布景先行，不再让 AI 出空场景再估透视
+  if (leaning && /墙|wall/i.test(supportNoun(productNote)) && /garage|车库/i.test(`${description}\n${basePrompt}`))
+    return setFirstKeyframe({ projectId, shotId, p, basePrompt, dir, glb, aspect, productNote, characterIds });
   // 1) 空场景：同一镜头但没有人、没有车；靠物镜头必须包含支撑物
   const plateFile = path.join(dir, "plate.png");
   const reused = p.reusePlate && fs.existsSync(plateFile);
@@ -713,7 +777,7 @@ export async function generateCadKeyframeAction(projectId: string, shotId: strin
     if (p.interaction) {
       const runOnce = (q: CadParams = p) =>
         q.productFirst
-          ? productFirstKeyframe(projectId, shotId, q, basePrompt, dir, modelPath(m), board.visualSpec.aspectRatio, shot.productNote, shot.characterIds.length > 0, shot.description)
+          ? productFirstKeyframe(projectId, shotId, q, basePrompt, dir, modelPath(m), board.visualSpec.aspectRatio, shot.productNote, shot.characterIds.length > 0, shot.description, shot.characterIds)
           : interactionKeyframe(projectId, shotId, p, basePrompt, dir, modelPath(m), board.visualSpec.aspectRatio, shot.productNote);
       const save = (x: Awaited<ReturnType<typeof runOnce>>) => {
         const k = addKeyframe({ projectId, shotId, bytes: x.bytes, model: CAD_KEYFRAME_MODEL, prompt: x.prompt, usd: x.usd });
