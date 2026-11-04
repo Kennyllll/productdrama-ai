@@ -223,8 +223,8 @@ export function KeyframePanel({
                 产品先行（推荐）：先把真车按机位放进画面，AI 围绕这辆车画场景和人；不勾选则 AI 先画车再替换
               </label>
               {physicsRule ? <p className="text-[11px] text-amber-200/80">物理规则：{physicsRule}</p> : null}
-              <label className={`flex items-center gap-2 text-xs text-neutral-300 ${params.interaction ? "opacity-40" : ""}`}>
-                <input type="checkbox" disabled={params.interaction} checked={params.reusePlate} onChange={(e) => setParams((p) => ({ ...p, reusePlate: e.target.checked }))} aria-label="复用上次空场景" />
+              <label className={`flex items-center gap-2 text-xs text-neutral-300 ${params.interaction && !params.productFirst ? "opacity-40" : ""}`}>
+                <input type="checkbox" disabled={params.interaction && !params.productFirst} checked={params.reusePlate} onChange={(e) => setParams((p) => ({ ...p, reusePlate: e.target.checked }))} aria-label="复用上次空场景" />
                 复用该镜头上次的空场景（只调产品光线 / 位置时省一次 Flare）
               </label>
               <label className="flex items-center gap-2 text-xs text-neutral-300">

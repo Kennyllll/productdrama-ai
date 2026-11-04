@@ -89,9 +89,28 @@ export function buildPlatePrompt(base: string, p: CadParams, productName: string
   ].join("\n");
 }
 
+const SUPPORTS: [RegExp, string][] = [
+  [/墙|wall/i, "a clear, uncluttered stretch of wall reaching down to the floor"],
+  [/台阶|阶梯|steps?\b/i, "front steps"],
+  [/门廊|porch/i, "the porch edge"],
+  [/栏杆|扶手|rail/i, "a railing"],
+  [/篱笆|栅栏|fence/i, "a fence"],
+  [/柱|post/i, "a post"],
+  [/树|tree/i, "a tree trunk"],
+];
+
+/** 从产品出现方式里只取支撑物（不带产品），用于空场景提示词 */
+export function supportNoun(productNote: string): string {
+  const hit = SUPPORTS.find(([re]) => re.test(productNote));
+  if (!hit) return "";
+  const side = /右/.test(productNote) ? " on the right side of the frame" : /左/.test(productNote) ? " on the left side of the frame" : "";
+  return `${hit[1]}${side}`;
+}
+
 /** 产品先行的空场景：没有人、没有任何车，之后先放真车再加人 */
-export function buildProductFirstPlatePrompt(base: string, p: CadParams, productName: string): string {
-  return `${buildPlatePrompt(base, p, productName)}\nThis plate is the empty location only: no people, no animals, and no bikes, motorcycles, cars or other vehicles anywhere in the frame. People and the product are added later.`;
+export function buildProductFirstPlatePrompt(base: string, p: CadParams, productName: string, support = ""): string {
+  const s = support ? `\nThe plate MUST clearly show, with open empty floor directly in front of it: ${support}` : "";
+  return `${buildPlatePrompt(base, p, productName)}\nThis plate is the empty location only: no people, no animals, and no bikes, motorcycles, cars or other vehicles anywhere in the frame. People and the product are added later.${s}`;
 }
 
 /** 接触镜头：让 AI 按 CAD 渲染图把产品画进完整画面（形状会有偏差，之后用 CAD 替换） */
@@ -110,12 +129,14 @@ export function buildProductFirstPrompt(
   productName: string,
   bible: { key: string; value: string }[],
   productNote: string,
-  o: { leanDeg: number; leanSide: "left" | "right" | null; fallen: boolean; hasPeople: boolean },
+  o: { leanDeg: number; leanSide: "left" | "right" | null; fallen: boolean; hasPeople: boolean; support?: string },
 ): string {
   const v = (k: string) => bible.find((f) => f.key === k)?.value?.trim() ?? "";
   const name = productName || "product";
   const facts = [v("color-main") && `main color: ${v("color-main")}`, v("color-sub") && `other parts: ${v("color-sub")}`, v("geometry") && `geometry: ${v("geometry")}`, v("logo") && `logo: ${v("logo")}`].filter(Boolean).join("; ");
-  const pose = o.leanDeg
+  const pose = o.leanDeg && o.support
+    ? `It leans about ${o.leanDeg}° away from the camera against the ${o.support} that is already in the photo directly behind it; its handlebar or saddle touches it. Do not add another support and do not move the ${name} toward anything.`
+    : o.leanDeg
     ? `It leans about ${o.leanDeg}° away from the camera, its top tilted toward the frame ${o.leanSide}. It has no kickstand, so it must rest against the support described below: put that support right behind it so the handlebar or saddle visibly touches it and carries its weight.`
     : o.fallen
       ? "It is lying on its side on the ground."
@@ -124,7 +145,7 @@ export function buildProductFirstPrompt(
         : `It cannot stand by itself (${v("physics") || "no kickstand"}).`;
   return [
     base.replace(/^Product:.*$/m, "").replace(/\n{2,}/g, "\n").trim(),
-    `Edit this film still: add the people described above (and any support object the product rests against) into the attached photo. The real ${name} (${facts}) is already in the scene at its exact position, size, angle and lean. KEEP the ${name} exactly as it is: do not move, resize, redraw, repaint, duplicate or remove it, and keep the rest of the scene unchanged except where you add people, their shadows and the support. ${pose} How the product appears: ${productNote || "as described"}. People are scaled correctly to the ${name} and interact with THIS ${name} with real physical contact; their hands, legs or body may overlap it where they are naturally in front of it. You may adjust the light on the ${name} so it matches the scene (light direction, color temperature, rim light, contact shadows). One single frozen moment, not a sequence: exactly one ${name} in the frame and every person appears exactly once (no repeated figures, no multiple exposures, no before/after in one image).`,
+    `Edit this film still: add the people described above${o.support ? "" : " (and any support object the product rests against)"} into the attached photo. The real ${name} (${facts}) is already in the scene at its exact position, size, angle and lean. KEEP the ${name} exactly as it is: do not move, resize, redraw, repaint, duplicate or remove it, and keep the rest of the scene unchanged except where you add people, their shadows and the support. ${pose} How the product appears: ${productNote || "as described"}. People are scaled correctly to the ${name} and interact with THIS ${name} with real physical contact; their hands, legs or body may overlap it where they are naturally in front of it. You may adjust the light on the ${name} so it matches the scene (light direction, color temperature, rim light, contact shadows). One single frozen moment, not a sequence: exactly one ${name} in the frame and every person appears exactly once (no repeated figures, no multiple exposures, no before/after in one image).`,
   ].join("\n");
 }
 

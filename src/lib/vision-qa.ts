@@ -43,6 +43,7 @@ async function generate(parts: Part[], timeoutMs: number): Promise<unknown> {
   if (!key) throw new Error("尚未配置视觉质检 Key");
   let res: Response | null = null;
   let lastErr = "";
+  let quota = false;
   // Gemini 高峰期经常 503：每轮把模型都试一遍，最多 3 轮，轮间等待
   outer: for (let round = 0; round < 3; round++) {
     if (round) await new Promise((r) => setTimeout(r, round * 8_000));
@@ -63,10 +64,13 @@ async function generate(parts: Part[], timeoutMs: number): Promise<unknown> {
       }
       if (res.ok) break;
       lastErr = STATUS_MESSAGES[res.status] ?? `Gemini 返回错误（HTTP ${res.status}）`;
-      if (res.status !== 404 && res.status !== 503) break;
+      // 免费层每个模型每天只有少量请求；按模型分开计数，换下一个模型试
+      if (res.status === 429 && /PerDay|FreeTier/i.test(await res.clone().text().catch(() => ""))) quota = true;
+      if (res.status !== 404 && res.status !== 503 && res.status !== 429) break;
     }
-    if (res?.ok || (res && res.status !== 503)) break outer;
+    if (res?.ok || (res && res.status !== 503) || quota) break outer;
   }
+  if (!res?.ok && quota) throw new Error("Gemini 免费额度今天已用完（每个模型每天约 20 次），请在 Google AI Studio 给该项目开通付费，或明天再试");
   if (!res?.ok) throw new Error(res?.status === 404 ? "Gemini 模型已下线，请更新 VISION_MODELS" : lastErr || "Gemini 请求失败");
   const body = (await res.json().catch(() => null)) as { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[] } | null;
   const text = body?.candidates?.[0]?.content?.parts?.filter((p) => !p.thought).map((p) => p.text ?? "").join("").trim();
@@ -89,6 +93,34 @@ const jpegPart = async (img: Buffer, max: number): Promise<Part> => ({
 export interface VisionReview {
   pass: boolean;
   issues: string[];
+}
+
+export interface SupportSpot {
+  support: string;
+  /** 空场景里不该有的人 / 车（AI 没听话画进去了） */
+  intruders: string[];
+  /** 车应占的框（0–1，相对画面）：轮子落在支撑物前的地面上，车顶碰到支撑物 */
+  box: { x0: number; y0: number; x1: number; y1: number };
+}
+
+/** 靠物镜头：在空场景里找分镜写的支撑物（墙 / 台阶 / 门廊），返回车靠上去时应占的位置和大小；找不到返回 null */
+export async function locateSupport(o: { plate: Buffer; productName: string; productNote: string; description: string; sizeHint: string }): Promise<SupportSpot | { support: ""; intruders: string[]; box: null }> {
+  const prompt = [
+    "You are a film set dresser. The image is an empty location plate (no people, no vehicles).",
+    `The ${o.productName || "product"} (${o.sizeHint}) will be placed leaning against a support, as described: ${o.productNote}`,
+    `Shot description: ${o.description}`,
+    "Find that support (e.g. a wall, step, porch post) in the image. Then decide where the product stands: both wheels on the floor directly in front of the support surface, viewed roughly from the side, its top touching the support, at the correct perspective scale for its distance from the camera (compare with doors, shelves, bins and floor lines). The product must not overlap the camera-facing area of other large objects.",
+    "Also list anything that should NOT be in an empty plate: any person, animal, bicycle, balance bike, scooter, motorcycle, car or other vehicle (even partly visible or in the background).",
+    'Return JSON only: {"intruders": string[], "found": boolean, "support": string, "box_2d": [ymin, xmin, ymax, xmax]} with intruders short Simplified Chinese names (e.g. "摩托车"), and box_2d the product\'s full bounding box (wheels bottom to handlebar top) in 0–1000 normalized image coordinates. found=false if the described support is not in the image.',
+  ].join("\n");
+  const data = (await generate([{ text: prompt }, await jpegPart(o.plate, 1536)], 90_000)) as { intruders?: unknown; found?: unknown; support?: unknown; box_2d?: unknown };
+  const intruders = Array.isArray(data.intruders) ? data.intruders.filter((x): x is string => typeof x === "string" && x.trim() !== "") : [];
+  const none = { support: "" as const, intruders, box: null };
+  const b = Array.isArray(data.box_2d) ? data.box_2d.map(Number) : [];
+  if (data.found !== true || b.length !== 4 || b.some((v) => !Number.isFinite(v))) return none;
+  const [y0, x0, y1, x1] = b.map((v) => Math.min(1, Math.max(0, v / 1000)));
+  if (x1 - x0 < 0.02 || y1 - y0 < 0.03) return none;
+  return { support: typeof data.support === "string" && data.support ? data.support : "support", intruders, box: { x0, y0, x1, y1 } };
 }
 
 /** 按清单审一张关键帧；返回的问题是中文短句，pass=false 即不合格 */
