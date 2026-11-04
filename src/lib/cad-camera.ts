@@ -129,7 +129,7 @@ const productWords = (productName: string) =>
 
 export function buildProductFirstPlatePrompt(base: string, p: CadParams, productName: string, support = ""): string {
   const s = support ? `\nThe plate MUST clearly show, with open empty floor directly in front of it: ${support}. The camera is close to it, about 2.5 m away, so its lower part and the floor in front fill the lower-middle of the frame.` : "";
-  return `${buildPlatePrompt(stripCast(base, productName), p, productName)}\nThis plate is the location without the cast: no people, no animals, and no bicycles, balance bikes, scooters or kids' ride-on toys anywhere in the frame. People and the product are added later. A larger vehicle (e.g. a parked motorcycle or car) may appear only if the shot description names it, away from the open floor, complete and mechanically correct (a motorcycle has exactly two wheels, front and rear).${s}`;
+  return `${buildPlatePrompt(stripCast(base, productName), p, productName)}\nThis plate is the location without the cast: no people, no animals, and no bicycles, balance bikes, scooters or kids' ride-on toys anywhere in the frame. People and the product are added later. A larger vehicle (e.g. a parked motorcycle or car) may appear only if the shot description names it, standing completely inside the space and fully visible from wheel to wheel, at least 1 m from every wall and door frame (never cut off by or merging into a wall), away from the open floor, complete and mechanically correct (a motorcycle has exactly two wheels, front and rear).${s}`;
 }
 
 /** 靠物且没人碰车的镜头：AI 只在空场景里加人，看不到车；真车之后按程序算好的位置贴上 */

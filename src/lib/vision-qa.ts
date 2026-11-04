@@ -105,7 +105,18 @@ export interface SupportSpot {
   lean: "left" | "right" | "away";
 }
 
-/** 靠物镜头：在空场景里找分镜写的支撑物（墙 / 台阶 / 门廊），返回车靠上去时应占的位置和大小；找不到返回 null */
+/** 单独逐辆检查车辆：嵌进墙 / 门框、被墙体切断、结构变形。混在大清单里时 Gemini 常漏看 */
+export async function vehicleProblems(plate: Buffer): Promise<string[]> {
+  const prompt = [
+    "Look only at the vehicles in this film still (motorcycles, cars, bicycles, scooters). Check each one as a strict film continuity supervisor.",
+    "1. Is any part of it hidden or cut off? A part may only be hidden by an object that is clearly IN FRONT of it (closer to the camera) and that is physically separate from it. If the vehicle's body or a wheel disappears into a wall, door jamb, garage door frame, pillar, side wall or the floor — so that in 3D the vehicle would have to overlap that solid surface — it is embedded, which is an error. A vehicle standing right at an opening edge with its rear vanishing behind the jamb is embedded unless there is visible room behind the jamb.",
+    "2. Count its wheels and check they sit on the floor on real axles; check for melted, missing or duplicated parts.",
+    'Return JSON only: {"vehicles": [{"name": string, "hidden_by": string | null, "embedded": boolean, "wheels": number, "deformed": boolean}], "problems": string[]} with problems short Simplified Chinese phrases for every embedded or deformed vehicle (e.g. "摩托车一半嵌在墙里", "摩托车有三个轮子"), [] if none.',
+  ].join("\n");
+  const data = (await generate([{ text: prompt }, await jpegPart(plate, 1536)], 90_000)) as { problems?: unknown };
+  return Array.isArray(data.problems) ? data.problems.filter((x): x is string => typeof x === "string" && x.trim() !== "") : [];
+}
+
 export async function locateSupport(o: { plate: Buffer; productName: string; productNote: string; description: string; sizeHint: string; cast?: boolean }): Promise<SupportSpot | { support: ""; intruders: string[]; box: null; lean: "away" }> {
   const prompt = [
     o.cast
@@ -114,11 +125,14 @@ export async function locateSupport(o: { plate: Buffer; productName: string; pro
     `The ${o.productName || "product"} (${o.sizeHint}) will be placed leaning against a support, as described: ${o.productNote}`,
     `Shot description: ${o.description}`,
     "Find that support (e.g. a wall, step, porch post) in the image. Then decide where the product stands: both wheels on the floor directly in front of the support surface, viewed roughly from the side, its top touching the support, at the correct perspective scale for its distance from the camera (compare with doors, shelves, bins and floor lines). The product must not overlap the camera-facing area of other large objects.",
-    `Also list anything that should NOT be in this image: ${o.cast ? "any person not described in the shot, any repeated or duplicated person, and any" : "any person, animal,"} bicycle, balance bike, scooter or kids' ride-on toy (even partly visible); any larger vehicle (motorcycle, car) that the shot description does not name; and any vehicle that is deformed (wrong number of wheels, wheels not on axles, melted or impossible parts — a motorcycle has exactly 2 wheels). Count each vehicle's wheels before judging.`,
+    `Also list anything that should NOT be in this image: ${o.cast ? "any person not described in the shot, any repeated or duplicated person, and any" : "any person, animal,"} bicycle, balance bike, scooter or kids' ride-on toy (even partly visible); any larger vehicle (motorcycle, car) that the shot description does not name; and any vehicle that is deformed (wrong number of wheels, wheels not on axles, melted or impossible parts — a motorcycle has exactly 2 wheels); and any vehicle or object that intersects, passes through or is embedded in a wall, door frame, pillar or the floor (part of it vanishing into a solid surface instead of standing fully in front of it, e.g. "摩托车一半嵌在墙里"). Count each vehicle's wheels before judging.`,
     'Return JSON only: {"intruders": string[], "found": boolean, "support": string, "lean": "left" | "right" | "away", "box_2d": [ymin, xmin, ymax, xmax]} with lean the direction, in the image, the product\'s top must tilt to rest on the support ("away" if the support surface is behind the product facing the camera; "left"/"right" if it is a side wall or object beside the product), with intruders short Simplified Chinese phrases (e.g. "多了一辆自行车", "摩托车有三个轮子"), and box_2d the product\'s full bounding box (wheels bottom to handlebar top) in 0–1000 normalized image coordinates. found=false if the described support is not in the image.',
   ].join("\n");
-  const data = (await generate([{ text: prompt }, await jpegPart(o.plate, 1536)], 90_000)) as { intruders?: unknown; found?: unknown; support?: unknown; lean?: unknown; box_2d?: unknown };
-  const intruders = Array.isArray(data.intruders) ? data.intruders.filter((x): x is string => typeof x === "string" && x.trim() !== "") : [];
+  const [data, broken] = await Promise.all([
+    generate([{ text: prompt }, await jpegPart(o.plate, 1536)], 90_000) as Promise<{ intruders?: unknown; found?: unknown; support?: unknown; lean?: unknown; box_2d?: unknown }>,
+    vehicleProblems(o.plate),
+  ]);
+  const intruders = [...(Array.isArray(data.intruders) ? data.intruders.filter((x): x is string => typeof x === "string" && x.trim() !== "") : []), ...broken];
   const none = { support: "" as const, intruders, box: null, lean: "away" as const };
   const lean = data.lean === "left" || data.lean === "right" ? data.lean : "away";
   const b = Array.isArray(data.box_2d) ? data.box_2d.map(Number) : [];
