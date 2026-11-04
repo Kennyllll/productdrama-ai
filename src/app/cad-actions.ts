@@ -444,8 +444,9 @@ async function setFirstKeyframe(o: { projectId: string; shotId: string; p: CadPa
     sun_az_deg: -115, sun_elev_deg: 14, sun_kelvin: p.keyKelvin, sun_strength: 5, exposure: p.exposure ?? 0, samples: 96,
   });
   const renderSeconds = Math.round((Date.now() - t0) / 1000);
-  const cg = await sharp(rs.image).removeAlpha().png().toBuffer();
-  fs.writeFileSync(path.join(dir, "product-ref.png"), cg);
+  fs.writeFileSync(path.join(dir, "product-ref.png"), await sharp(rs.image).removeAlpha().png().toBuffer());
+  // 给 AI 的是无车底图（车对相机不可见，车影保留）：AI 看到车就会重画一辆略有偏差的，贴回真车后变重影
+  const cg = await sharp(path.join(dir, "set-plate.png")).removeAlpha().png().toBuffer();
   // 角色照：每个出场角色取第一张参考照
   const chars = listCharacters(o.projectId).filter((c) => o.characterIds.includes(c.id));
   const refs = chars.flatMap((c) => {
@@ -456,15 +457,15 @@ async function setFirstKeyframe(o: { projectId: string; shotId: string; p: CadPa
   const scene = (o.basePrompt.match(/^Scene: (.*)$/m)?.[1] ?? "").split(/(?<=[。！？.!?])/).filter((s) => !/平衡车|童车|车把|座椅|轮子|balance bike|bike|handlebar|saddle/i.test(s)).join("");
   const cast = (o.basePrompt.match(/^Characters[^:]*: (.*)$/m)?.[1] ?? "").split(";").map((c) => c.trim()).filter(Boolean);
   const prompt = [
-    "The first attached image is a 3D layout render of the inside of a suburban North American garage; the camera, the walls, the floor, the open garage door, the sunlight pattern and the white kids' balance bike leaning against the back wall are final.",
+    "The first attached image is a 3D layout render of the inside of a suburban North American garage; the camera, the walls, the floor, the open garage door, the sunlight pattern and every shadow are final.",
     "Turn it into a photorealistic cinematic film still shot on a cinema camera, fine film grain.",
     scene ? `Story context: ${scene}` : "",
     "Keep the exact camera, perspective and layout: the back wall, the low concrete stem wall along its base, the floor line, the sunlight pattern and every shadow stay where they are.",
-    `Keep the ${product} exactly as it is: same position, same lean against the wall, same size, same shape, same colors, same shadows. Do not redraw, move or duplicate it, and do not add any other bike, scooter or vehicle.`,
+    `The shadow on the back wall and floor belongs to a ${product} that will be composited in later: keep that shadow exactly, keep the floor and wall in front of it empty, and do not draw any bike, balance bike, scooter, toy or vehicle anywhere.`,
     "Give the drywall, the concrete stem wall and the concrete floor real-world texture: slight scuffs, a faint oil stain, fine dust in the sunbeam.",
-    cast.length ? `Add exactly ${cast.length} ${cast.length === 1 ? "person" : "people"}: ${cast.join("; ")}. Nobody else. ${o.productNote.match(/[^。]*(?:站|看|抱|holding|stand)[^。]*/)?.[0] ?? ""} Every person stands with both feet on the floor at least two steps away from the bike and does not touch it.` : "Add no people.",
+    cast.length ? `Add exactly ${cast.length} ${cast.length === 1 ? "person" : "people"}: ${cast.join("; ")}. Nobody else. ${o.productNote.match(/[^。]*(?:站|看|抱|holding|stand)[^。]*/)?.[0] ?? ""} Every person stands with both feet on the floor at least two steps away from that shadow. Every prop appears exactly once: a helmet held in the hands is not also worn.` : "Add no people.",
     refs.length ? `Use the other attached photo${refs.length > 1 ? "s" : ""} only as the face, hair and outfit reference for ${refs.map((r) => r.name).join(", ")}; take nothing else from them.` : "",
-    "On the far right add ordinary American garage details against the right wall (a metal shelf with paint cans), not touching the bike. One single frozen moment.",
+    "On the far right add ordinary American garage details against the right wall (a metal shelf with paint cans), One single frozen moment.",
   ].filter(Boolean).join(" ");
   const urls = [await uploadFile(cg, "image/png"), ...(await Promise.all(refs.map(async (r) => uploadFile(await sharp(r.file).rotate().resize(1024, 1024, { fit: "inside" }).jpeg({ quality: 90 }).toBuffer(), "image/jpeg"))))];
   const input = plateInput(prompt, o.aspect, urls);

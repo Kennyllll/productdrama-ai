@@ -71,7 +71,8 @@ export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: strin
     }
   if (x1 <= x0) throw new Error("布景渲染里没有车");
 
-  // AI 车可能出现的范围：真车轮廓闭合、填洞（轮辐空洞、车架三角）后再外扩
+  // AI 车可能出现的范围：真车轮廓闭合、填洞（轮辐空洞、车架三角）后再外扩。
+  // 主流程给 AI 的是无车底图，AI 不应画车；这里只兜底去掉贴着真车边缘的少量残影
   const r45 = Math.round(W * 0.017);
   const solid = fillHoles(await erode(await dilate(mb, W, H, r45), W, H, r45), W, H);
   for (let i = 0; i < N; i++) if (mb[i]) solid[i] = 255;
@@ -88,11 +89,14 @@ export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: strin
     blur3(w3, W, H, sig * 6), blur3(aiW, W, H, sig * 6), blur3(plW, W, H, sig * 6),
     blur3(ai, W, H, 1.5),
   ]);
-  const pm = Buffer.alloc(N * 3);
+  const pm = Buffer.alloc(N * 3), pf = Buffer.alloc(N * 3), rt = new Float32Array(N * 3);
   for (let j = 0; j < N * 3; j++) {
     const r1 = (ab[j] + 2) / (pb[j] + 2), r2 = (ab2[j] + 2) / (pb2[j] + 2);
     const k = Math.min(1, wb[j] / 255 / 0.15);
     const ratio = wb[j] > 3 ? r1 * k + r2 * (1 - k) : r2;
+    rt[j] = r2;
+    // pm 带 AI 的细节，只用来判断哪里是 AI 车；pf 不带 AI 细节，用来填（否则 AI 车的边缘会跟着填进去，又成重影）
+    pf[j] = Math.max(0, Math.min(255, Math.round(plate[j] * ratio)));
     pm[j] = Math.max(0, Math.min(255, Math.round(plate[j] * ratio + 0.6 * (ai[j] - aiLo[j]))));
   }
   // 只替换「AI 那里明显不是背景」的像素（露出来的 AI 车），其余保留 AI 原貌
@@ -106,16 +110,9 @@ export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: strin
   for (let i = 0; i < N; i++) if (mb[i]) ghost[i] = 0; else if (ghost[i]) ghostPx++;
   const gf = await blur1(ghost, W, H, 1.5);
 
-  // 真车光影：mask 内归一化模糊，AI / 真车的低频比例
-  const R = W * 0.0093;
-  const mk3 = Buffer.alloc(N * 3), aiM = Buffer.alloc(N * 3), cdM = Buffer.alloc(N * 3);
-  for (let i = 0; i < N; i++)
-    if (mb[i]) for (let c = 0; c < 3; c++) { mk3[i * 3 + c] = 255; aiM[i * 3 + c] = ai[i * 3 + c]; cdM[i * 3 + c] = cad[i * 3 + c]; }
-  const [mB, aB, cB, mB2, aB2, cB2, alpha] = await Promise.all([
-    blur3(mk3, W, H, R), blur3(aiM, W, H, R), blur3(cdM, W, H, R),
-    blur3(mk3, W, H, R * 6), blur3(aiM, W, H, R * 6), blur3(cdM, W, H, R * 6),
-    blur1(mRaw, W, H, 1.2),
-  ]);
+  // 真车光影：用车周围环境的「AI / Blender 底图」低频比例（只在车外取样），
+  // 不用 AI 车自己的像素：AI 车和真车错位时，会把 AI 车的座椅 / 轮子形状「打光」到真车上
+  const alpha = await blur1(mRaw, W, H, 1.2);
   const out = Buffer.alloc(N * 3);
   for (let i = 0; i < N; i++) {
     const a = alpha[i] / 255, f = gf[i] / 255;
@@ -123,13 +120,10 @@ export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: strin
     const gMax = lum < 50 ? 1.3 + (lum / 50) * 1.2 : 2.5;
     for (let c = 0; c < 3; c++) {
       const j = i * 3 + c;
-      const bg = ai[j] * (1 - f) + pm[j] * f;
+      const bg = ai[j] * (1 - f) + pf[j] * f;
       let v = bg;
       if (a > 0) {
-        const fine = mB[j] > 120;
-        const av = fine ? aB[j] / mB[j] : aB2[j] / Math.max(1, mB2[j]);
-        const cv = fine ? cB[j] / mB[j] : cB2[j] / Math.max(1, mB2[j]);
-        const g = Math.max(0.35, Math.min(gMax, (av * 255 + 4) / (cv * 255 + 4)));
+        const g = Math.max(0.35, Math.min(gMax, rt[j]));
         v = Math.min(255, cad[j] * g) * a + bg * (1 - a);
       }
       out[j] = Math.round(v);
