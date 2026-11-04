@@ -285,7 +285,7 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
 }
 
 /** 接触镜头（产品先行）：AI 出无人空场景 → CAD 车按分镜机位 / 姿态放进去 → AI 在这张照片里加人（骑、扶、靠） → 标注遮挡 → CAD 像素贴回 + AI 光影迁移 */
-type ProductFirstResult = Omit<CadKeyframeResult, "keyframe"> & { bytes: Buffer; prompt: string; usd: number };
+type ProductFirstResult = Omit<CadKeyframeResult, "keyframe"> & { bytes: Buffer; prompt: string; usd: number; productBox?: { x0: number; y0: number; x1: number; y1: number } };
 
 async function sceneMatchKeyframe(o: { projectId: string; shotId: string; p: CadParams; basePrompt: string; dir: string; glb: string; aspect: string; productName: string; productNote: string; description: string; hasPeople: boolean; plate: Buffer; plateCalls: number; support: string; sizeHint: string; roll: number }): Promise<ProductFirstResult> {
   const { p, dir, plate } = o;
@@ -315,7 +315,7 @@ async function sceneMatchKeyframe(o: { projectId: string; shotId: string; p: Cad
     roll_deg: Math.min(18, Math.max(10, Math.abs(o.roll))), yaw_off_deg: -25,
     env_image: path.join(dir, "plate.png"), env_strength: 1.6,
     sun_az_deg: 180 - p.keyDirDeg, sun_elev_deg: p.keyElevDeg, sun_kelvin: p.keyKelvin, sun_strength: 4,
-    exposure: 0.6 + (p.exposure ?? 0), samples: 96,
+    exposure: 0.6 + (p.exposure ?? 0), samples: 96, contact_light: 400,
   });
   const renderSeconds = Math.round((Date.now() - t0) / 1000);
   const layer = (w: number, h: number) => sharp(rs.image).resize(w, h, { fit: "fill" }).png().toBuffer();
@@ -335,13 +335,41 @@ async function sceneMatchKeyframe(o: { projectId: string; shotId: string; p: Cad
   if (x1 <= x0) throw new Error("3D 场景匹配后车不在画面里，相机解算可能不对");
   const dist = Math.hypot(wall.place[0], wall.place[1]);
   const qa: string[] = [`3D 场景匹配：相机高 ${cam.heightM.toFixed(2)} m、俯仰 ${cam.pitchDeg.toFixed(1)}°、${cam.lensMm} mm；车离相机 ${dist.toFixed(1)} m，向墙倾 ${Math.abs(rs.meta.roll_deg).toFixed(0)}°`];
-  if (y1 - y0 < 0.12) qa.push(`车只占画面高度的 ${Math.round((y1 - y0) * 100)}%，偏小`);
+  // 车离得远、在画面里太小：按车和人的范围裁近（最多 2 倍）再放大回原尺寸，相当于换长焦
+  const nearCrop = async (img: Buffer) => {
+    if ((y1 - y0) * 1.15 > 0.3) return null;
+    let ux0 = x0, ux1 = x1, uy0 = y0, uy1 = y1;
+    // 人的范围：AI 加人后和空场景差别大的区域（低分辨率比较）
+    const w = 96, h = Math.max(1, Math.round((96 * PH) / PW));
+    const [a, b] = await Promise.all([img, plate].map((x) => sharp(x).resize(w, h, { fit: "fill" }).removeAlpha().raw().toBuffer()));
+    const cols = new Array<number>(w).fill(0), rows = new Array<number>(h).fill(0);
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 3;
+        if ((Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2])) / 3 > 60) { cols[x]++; rows[y]++; }
+      }
+    const xs = cols.flatMap((c, i) => (c >= 3 ? [i] : [])), ys = rows.flatMap((c, i) => (c >= 2 ? [i] : []));
+    if (xs.length && ys.length && xs.length < 0.6 * w) {
+      ux0 = Math.min(ux0, xs[0] / w); ux1 = Math.max(ux1, (xs[xs.length - 1] + 1) / w);
+      uy0 = Math.min(uy0, ys[0] / h); uy1 = Math.max(uy1, (ys[ys.length - 1] + 1) / h);
+    }
+    const s = Math.min(1, Math.max(0.5, (y1 - y0) / 0.3, ux1 - ux0 + 0.08, uy1 - uy0 + 0.08));
+    if (s > 0.87) return null;
+    const cx = Math.min(1 - s / 2, Math.max(s / 2, (ux0 + ux1) / 2)), cy = Math.min(1 - s / 2, Math.max(s / 2, (uy0 + uy1) / 2));
+    return { s, l: cx - s / 2, t: cy - s / 2 };
+  };
+  const cut = (img: Buffer, c: Awaited<ReturnType<typeof nearCrop>>) =>
+    c ? sharp(img).extract({ left: Math.round(c.l * PW), top: Math.round(c.t * PH), width: Math.round(c.s * PW), height: Math.round(c.s * PH) }).resize(PW, PH, { fit: "fill", kernel: "lanczos3" }).png().toBuffer() : Promise.resolve(img);
+  const boxIn = (c: Awaited<ReturnType<typeof nearCrop>>) => (c ? { x0: (x0 - c.l) / c.s, y0: (y0 - c.t) / c.s, x1: (x1 - c.l) / c.s, y1: (y1 - c.t) / c.s } : { x0, y0, x1, y1 });
   const meta0 = { mode: "scene-match", cam, wall, geo, render: rs.meta, box: { x0, y0, x1, y1 } };
   const f = (name: string) => `/api/cad/${o.projectId}?f=${o.shotId.toLowerCase()}/${name}`;
   if (!o.hasPeople) {
-    fs.writeFileSync(path.join(dir, "final.png"), ref);
-    fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...meta0, qa }));
-    return { bytes: ref, prompt: `[CAD scene-match] ${JSON.stringify(cam)}`, usd: 0, files: [["空场景 + 真车（3D 匹配）", f("product-ref.png")]], aiDrift: null, fit: { iou: 1, coverage: 1 }, qa, renderSeconds };
+    const c = await nearCrop(plate);
+    if (c) qa.push(`车太远，构图自动裁近 ${(1 / c.s).toFixed(2)} 倍`);
+    const out = await cut(ref, c);
+    fs.writeFileSync(path.join(dir, "final.png"), out);
+    fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...meta0, crop: c, qa }));
+    return { bytes: out, prompt: `[CAD scene-match] ${JSON.stringify(cam)}`, usd: 0, files: [["空场景 + 真车（3D 匹配）", f("product-ref.png")]], aiDrift: null, fit: { iou: 1, coverage: 1 }, qa, renderSeconds, productBox: boxIn(c) };
   }
   // 有人：AI 只在空场景上加人（看不到车），机位不变，所以同一张 3D 渲染直接叠上去
   const prompt = buildPeopleOnlyPrompt(o.basePrompt, o.productName, o.support, (x0 + x1) / 2);
@@ -382,9 +410,11 @@ async function sceneMatchKeyframe(o: { projectId: string; shotId: string; p: Cad
     const why = t.intruders.length ? `AI 加人时又画了不该有的：${t.intruders.join("、")}` : `AI 加的人或东西占了车位（${Math.round(t.occ * 100)}%）`;
     throw new Error(`${why}，这张不合格，没有保存${cost}。中间图在该镜头的 cad 目录`);
   }
-  const final = await over(t.raw);
+  const c = await nearCrop(t.raw);
+  if (c) qa.push(`车太远，构图自动裁近 ${(1 / c.s).toFixed(2)} 倍`);
+  const final = await cut(await over(t.raw), c);
   fs.writeFileSync(path.join(dir, "final.png"), final);
-  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...meta1, qa }));
+  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...meta1, crop: c, qa }));
   return {
     bytes: final,
     prompt: `${prompt}\n\n[CAD scene-match] ${JSON.stringify({ cam, place: wall.place })}`,
@@ -394,10 +424,11 @@ async function sceneMatchKeyframe(o: { projectId: string; shotId: string; p: Cad
     fit: { iou: 1, coverage: 1 },
     qa,
     renderSeconds,
+    productBox: boxIn(c),
   };
 }
 
-async function productFirstKeyframe(projectId: string, shotId: string, p: CadParams, basePrompt: string, dir: string, glb: string, aspect: string, productNote: string, hasPeople: boolean, description: string): Promise<Omit<CadKeyframeResult, "keyframe"> & { bytes: Buffer; prompt: string; usd: number }> {
+async function productFirstKeyframe(projectId: string, shotId: string, p: CadParams, basePrompt: string, dir: string, glb: string, aspect: string, productNote: string, hasPeople: boolean, description: string): Promise<Omit<CadKeyframeResult, "keyframe"> & { bytes: Buffer; prompt: string; usd: number; productBox?: { x0: number; y0: number; x1: number; y1: number } }> {
   const product = getProduct(projectId);
   const productName = product?.name ?? "";
   // 靠物：车必须向远离镜头的方向倒（支撑物在车后面，不挡车）。相机水平方向 (sin az, −cos az)，侧倾后车的竖直轴 (0, −sin r, cos r)，点积 = cos az · sin r
@@ -693,18 +724,26 @@ export async function generateCadKeyframeAction(projectId: string, shotId: strin
       const bible = getProduct(projectId)?.bible ?? [];
       const bv = (key: string) => bible.find((b) => b.key === key)?.value ?? "";
       const facts = ["color-main", "color-sub", "geometry", "logo"].map(bv).filter(Boolean).join("; ");
-      const look = async (bytes: Buffer): Promise<{ issues: string[]; failed: boolean }> => {
+      const look = async (bytes: Buffer, box?: { x0: number; y0: number; x1: number; y1: number }): Promise<{ issues: string[]; failed: boolean }> => {
         if (!getVisionKey()) return { issues: [], failed: false };
         const ref = path.join(dir, "product-only.png");
         try {
-          const v = await reviewKeyframe({ image: bytes, productRef: fs.existsSync(ref) ? fs.readFileSync(ref) : undefined, productName, productFacts: facts, physics: bv("physics"), description: shot.description, productNote: shot.productNote });
+          // 车在画面里小时只看全图会误判：另附一张车周围的放大图
+          let zoom: Buffer | undefined;
+          if (box) {
+            const m = await sharp(bytes).metadata();
+            const W = m.width ?? 0, H = m.height ?? 0, bw = box.x1 - box.x0, bh = box.y1 - box.y0;
+            const l = Math.max(0, box.x0 - bw * 0.6), t = Math.max(0, box.y0 - bh * 0.6), rr = Math.min(1, box.x1 + bw * 0.6), b = Math.min(1, box.y1 + bh * 0.4);
+            if (W && H && rr > l && b > t) zoom = await sharp(bytes).extract({ left: Math.round(l * W), top: Math.round(t * H), width: Math.max(1, Math.round((rr - l) * W)), height: Math.max(1, Math.round((b - t) * H)) }).png().toBuffer();
+          }
+          const v = await reviewKeyframe({ image: bytes, productRef: fs.existsSync(ref) ? fs.readFileSync(ref) : undefined, zoom, productName, productFacts: facts, physics: bv("physics"), description: shot.description, productNote: shot.productNote });
           return { issues: v.pass ? [] : (v.issues.length ? v.issues : ["不合格（未给出原因）"]).map((x) => `看图质检：${x}`), failed: false };
         } catch (e) {
           return { issues: [`看图质检没有完成：${e instanceof Error ? e.message : "未知错误"}`], failed: true };
         }
       };
       let r = await runOnce();
-      let seen = await look(r.bytes);
+      let seen = await look(r.bytes, "productBox" in r ? (r.productBox as { x0: number; y0: number; x1: number; y1: number } | undefined) : undefined);
       let k = save(r);
       let files = r.files;
       if (seen.issues.length && !seen.failed) {
@@ -714,7 +753,7 @@ export async function generateCadKeyframeAction(projectId: string, shotId: strin
           return null;
         });
         if (!r2) return { result: { keyframe: toKeyframeView(k), files, aiDrift: r.aiDrift, fit: r.fit, qa: [...(r.qa ?? []), ...seen.issues], renderSeconds: r.renderSeconds } };
-        const seen2 = await look(r2.bytes);
+        const seen2 = await look(r2.bytes, "productBox" in r2 ? (r2.productBox as { x0: number; y0: number; x1: number; y1: number } | undefined) : undefined);
         const k2 = save(r2);
         if ((r2.qa?.length ?? 0) + seen2.issues.length < (r.qa?.length ?? 0) + seen.issues.length) {
           r = r2;

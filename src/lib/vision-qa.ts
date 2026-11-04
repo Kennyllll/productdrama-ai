@@ -143,11 +143,11 @@ export async function locateSupport(o: { plate: Buffer; productName: string; pro
 }
 
 /** 按清单审一张关键帧；返回的问题是中文短句，pass=false 即不合格 */
-export async function reviewKeyframe(o: { image: Buffer; productRef?: Buffer; productName: string; productFacts: string; physics: string; description: string; productNote: string }): Promise<VisionReview> {
+export async function reviewKeyframe(o: { image: Buffer; productRef?: Buffer; zoom?: Buffer; productName: string; productFacts: string; physics: string; description: string; productNote: string }): Promise<VisionReview> {
   const name = o.productName || "product";
   const prompt = [
     "You are a strict film continuity and physics supervisor reviewing a generated still for a live-action commercial short film. Only report real problems that are clearly visible; no style opinions.",
-    `Image 1 is the still.${o.productRef ? ` Image 2 is a studio render of the real ${name} (${o.productFacts}).` : ` The product is the ${name} (${o.productFacts}).`}`,
+    `Image 1 is the still.${o.productRef ? ` Image 2 is a studio render of the real ${name} (${o.productFacts}).` : ` The product is the ${name} (${o.productFacts}).`}${o.zoom ? ` Image ${o.productRef ? 3 : 2} is a close-up crop of image 1 around the ${name}: use it to judge its tires touching the floor, its lean and whether its handlebar or saddle touches the support.` : ""}`,
     `Shot description: ${o.description}`,
     `How the ${name} should appear: ${o.productNote}`,
     "Checklist:",
@@ -164,6 +164,7 @@ export async function reviewKeyframe(o: { image: Buffer; productRef?: Buffer; pr
   ].join("\n");
   const parts: Part[] = [{ text: prompt }, await jpegPart(o.image, 1536)];
   if (o.productRef) parts.push(await jpegPart(o.productRef, 768));
+  if (o.zoom) parts.push(await jpegPart(o.zoom, 1024));
   const data = (await generate(parts, 120_000)) as { pass?: unknown; issues?: unknown; vehicles?: unknown };
   const issues = Array.isArray(data.issues) ? data.issues.filter((x): x is string => typeof x === "string" && x.trim() !== "").map((x) => x.trim()) : [];
   if (Array.isArray(data.vehicles))

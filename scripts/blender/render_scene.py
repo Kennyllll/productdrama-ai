@@ -107,6 +107,12 @@ env = g("env_image")
 if env and os.path.exists(env):
     tex = w.node_tree.nodes.new("ShaderNodeTexEnvironment"); tex.image = bpy.data.images.load(env); tex.projection = "EQUIRECTANGULAR"
     w.node_tree.links.new(tex.outputs["Color"], bg.inputs["Color"])
+# 顶部柔光：在地面和墙上投出车下方的柔和接触阴影（墙角的环境遮蔽）
+cl = g("contact_light", 0)
+if cl:
+    al = bpy.data.lights.new("contact", "AREA"); al.energy = cl; al.size = g("contact_size", 1.2); al.color = (1, 0.96, 0.9)
+    ao = bpy.data.objects.new("contact", al); bpy.context.collection.objects.link(ao)
+    ao.location = (P.x + n.x * 0.5, P.y + n.y * 0.5, 2.2)
 
 s = bpy.context.scene
 s.render.engine = "CYCLES"; s.cycles.samples = g("samples", 128); s.cycles.device = "CPU"; s.cycles.use_denoising = True
