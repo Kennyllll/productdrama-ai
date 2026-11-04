@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { estimate, getHfCreds, hfPublicInfo, HiggsfieldError, saveHfCreds } from "@/lib/higgsfield";
 import type { FormState } from "@/lib/types";
+import { saveVisionKey, testVision, visionPublicInfo } from "@/lib/vision-qa";
 
 const CRED_RE = /^[\x21-\x7e]{6,300}$/;
 
@@ -49,4 +50,24 @@ export async function testHfAction(): Promise<FormState & { checks?: { label: st
     }
   }
   return { ok: "连接成功（估价接口，不产生费用）", checks };
+}
+
+export async function saveVisionKeyAction(input: { apiKey: string; clear: boolean }): Promise<FormState & { info?: { configured: boolean; keyHint: string } }> {
+  if (input.clear) saveVisionKey("");
+  else {
+    const k = (input.apiKey ?? "").trim();
+    if (!CRED_RE.test(k)) return { error: "Key 格式不正确" };
+    saveVisionKey(k);
+  }
+  revalidatePath("/settings");
+  return { ok: input.clear ? "已清除 Gemini Key" : "已保存到本机", info: visionPublicInfo() };
+}
+
+export async function testVisionAction(): Promise<FormState> {
+  try {
+    await testVision();
+    return { ok: "连接成功（gemini-2.5-flash）" };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "连接失败" };
+  }
 }

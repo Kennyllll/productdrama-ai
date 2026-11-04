@@ -1,8 +1,10 @@
 import { Card, PageHeader } from "@/components/ui";
 import { AiSettingsForm } from "@/components/workbench/AiSettingsForm";
 import { HiggsfieldSettingsForm } from "@/components/workbench/HiggsfieldSettingsForm";
+import { VisionSettingsForm } from "@/components/workbench/VisionSettingsForm";
 import { aiPublicInfo } from "@/lib/ai/settings";
 import { hfPublicInfo } from "@/lib/higgsfield";
+import { visionPublicInfo } from "@/lib/vision-qa";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +16,7 @@ export default function SettingsPage() {
         <div className="space-y-6 lg:col-span-2">
           <AiSettingsForm initial={aiPublicInfo()} />
           <HiggsfieldSettingsForm initial={hfPublicInfo()} />
+          <VisionSettingsForm initial={visionPublicInfo()} />
         </div>
         <Card title="数据与费用">
           <ul className="list-inside list-disc space-y-1 text-sm text-neutral-300">

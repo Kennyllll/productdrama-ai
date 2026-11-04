@@ -11,6 +11,7 @@ import { deleteRequest, estimate, HiggsfieldError, submit, uploadFile, waitFor }
 import { addKeyframe, toKeyframeView, type KeyframeView } from "@/lib/keyframe-repo";
 import { cadDir, getProductModel, modelPath } from "@/lib/model-repo";
 import { findLocalProject, getProduct } from "@/lib/repo";
+import { getVisionKey, reviewKeyframe } from "@/lib/vision-qa";
 import { getStoryboard } from "@/lib/storyboard-repo";
 
 type Result<T> = { error?: string; result?: T };
@@ -412,12 +413,45 @@ export async function generateCadKeyframeAction(projectId: string, shotId: strin
     fs.mkdirSync(dir, { recursive: true });
 
     if (p.interaction) {
-      const r = p.productFirst
-        ? await productFirstKeyframe(projectId, shotId, p, basePrompt, dir, modelPath(m), board.visualSpec.aspectRatio, shot.productNote, shot.characterIds.length > 0)
-        : await interactionKeyframe(projectId, shotId, p, basePrompt, dir, modelPath(m), board.visualSpec.aspectRatio, shot.productNote);
-      const k = addKeyframe({ projectId, shotId, bytes: r.bytes, model: CAD_KEYFRAME_MODEL, prompt: r.prompt, usd: r.usd });
-      if (!k) throw new Error("保存关键帧失败");
-      return { result: { keyframe: toKeyframeView(k), files: r.files, aiDrift: r.aiDrift, fit: r.fit, qa: r.qa, renderSeconds: r.renderSeconds } };
+      const runOnce = () =>
+        p.productFirst
+          ? productFirstKeyframe(projectId, shotId, p, basePrompt, dir, modelPath(m), board.visualSpec.aspectRatio, shot.productNote, shot.characterIds.length > 0)
+          : interactionKeyframe(projectId, shotId, p, basePrompt, dir, modelPath(m), board.visualSpec.aspectRatio, shot.productNote);
+      const save = (x: Awaited<ReturnType<typeof runOnce>>) => {
+        const k = addKeyframe({ projectId, shotId, bytes: x.bytes, model: CAD_KEYFRAME_MODEL, prompt: x.prompt, usd: x.usd });
+        if (!k) throw new Error("保存关键帧失败");
+        return k;
+      };
+      // 看图质检（Gemini）：不合格自动重跑一次，两张都留作候选，返回问题更少的那张
+      const bible = getProduct(projectId)?.bible ?? [];
+      const bv = (key: string) => bible.find((b) => b.key === key)?.value ?? "";
+      const facts = ["color-main", "color-sub", "geometry", "logo"].map(bv).filter(Boolean).join("; ");
+      const look = async (bytes: Buffer): Promise<{ issues: string[]; failed: boolean }> => {
+        if (!getVisionKey()) return { issues: [], failed: false };
+        const ref = path.join(dir, "product-only.png");
+        try {
+          const v = await reviewKeyframe({ image: bytes, productRef: fs.existsSync(ref) ? fs.readFileSync(ref) : undefined, productName, productFacts: facts, physics: bv("physics"), description: shot.description, productNote: shot.productNote });
+          return { issues: v.pass ? [] : (v.issues.length ? v.issues : ["不合格（未给出原因）"]).map((x) => `看图质检：${x}`), failed: false };
+        } catch (e) {
+          return { issues: [`看图质检没有完成：${e instanceof Error ? e.message : "未知错误"}`], failed: true };
+        }
+      };
+      let r = await runOnce();
+      let seen = await look(r.bytes);
+      let k = save(r);
+      let files = r.files;
+      if (seen.issues.length && !seen.failed) {
+        const r2 = await runOnce();
+        const seen2 = await look(r2.bytes);
+        const k2 = save(r2);
+        if ((r2.qa?.length ?? 0) + seen2.issues.length < (r.qa?.length ?? 0) + seen.issues.length) {
+          r = r2;
+          seen = seen2;
+          k = k2;
+          files = r2.files;
+        } else files = []; // 中间文件已被重跑覆盖
+      }
+      return { result: { keyframe: toKeyframeView(k), files, aiDrift: r.aiDrift, fit: r.fit, qa: [...(r.qa ?? []), ...seen.issues], renderSeconds: r.renderSeconds } };
     }
 
     // 1) 空场景（可复用上次的，便于只调产品光线 / 位置）

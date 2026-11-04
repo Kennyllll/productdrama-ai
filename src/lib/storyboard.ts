@@ -147,12 +147,25 @@ export function buildStoryboard(
 
 /** 产品物理规则（Product Bible「物理规则」）：不能自立的产品，每个产品镜头必须写明它靠什么立着 */
 const SUPPORT_WORDS = /骑|踩|跨|推|扶|握|拿|抱|抬|提|扛|靠|倚|倒|躺|摔|跌|侧撑|支架|挂|盒|箱|桌|架子|手|腰|肩|背|载|墙|栏杆|滑行|滑进|滑到|行驶|冲下|held|lean|riding|pushing|lying/i;
+/** 复杂机械道具（AI 最容易画变形）和产品接触 */
+const COMPLEX_PROP = /摩托|机车|汽车|轿车|自行车|单车|婴儿车|motorcycle|bicycle|\bcar\b/i;
+const CONTACT_WORDS = /靠|倚|搭|碰|贴|架在|lean|rest/i;
+/** 关键帧只能是一个瞬间：产品出现方式里写连续动作，AI 会把两个时刻画进同一张图 */
+const SEQUENCE_WORDS = /然后|随后|接着|之后|——|→|\d+\s*秒后|下后/;
 export function checkProductPhysics(shots: LocalShot[], rules: string): CinematicWarning[] {
-  if (!/不能自(己)?立|无支架|没有支架|不能自立|cannot stand/i.test(rules)) return [];
-  return shots
-    .filter((s) => s.product !== "无")
-    .filter((s) => !SUPPORT_WORDS.test(`${s.productNote} ${s.description}`))
-    .map((s) => ({ shotIndex: s.index, message: `镜头 ${s.index}：产品不能自己立着，请在产品出现方式里写明它被谁骑 / 推 / 扶，或靠在什么上、倒在哪里` }));
+  const withProduct = shots.filter((s) => s.product !== "无");
+  const warnings: CinematicWarning[] = [];
+  if (/不能自(己)?立|无支架|没有支架|不能自立|cannot stand/i.test(rules))
+    withProduct
+      .filter((s) => !SUPPORT_WORDS.test(`${s.productNote} ${s.description}`))
+      .forEach((s) => warnings.push({ shotIndex: s.index, message: `镜头 ${s.index}：产品不能自己立着，请在产品出现方式里写明它被谁骑 / 推 / 扶，或靠在什么上、倒在哪里` }));
+  withProduct
+    .filter((s) => s.productNote.split(/[，,；;。]/).some((c) => COMPLEX_PROP.test(c) && CONTACT_WORDS.test(c) && !/不接触|不碰|隔开/.test(c)))
+    .forEach((s) => warnings.push({ shotIndex: s.index, message: `镜头 ${s.index}：产品靠在摩托 / 汽车等复杂机械道具上，AI 很容易把道具画变形或让产品靠空气；改为靠墙 / 台阶 / 门廊或由人扶着，道具只放背景` }));
+  withProduct
+    .filter((s) => SEQUENCE_WORDS.test(s.productNote))
+    .forEach((s) => warnings.push({ shotIndex: s.index, message: `镜头 ${s.index}：产品出现方式写了连续动作，关键帧只能是一个瞬间；只写关键帧那一刻，动作过程写在镜头描述里` }));
+  return warnings;
 }
 
 export function checkStoryboardEpisode(shots: LocalShot[], hasEgg: boolean, productRules = ""): CinematicWarning[] {
