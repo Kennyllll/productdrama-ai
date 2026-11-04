@@ -169,6 +169,11 @@ s.render.resolution_x = g("width", 1600); s.render.resolution_y = g("height", 90
 s.render.film_transparent = not ST
 s.render.image_settings.file_format = "PNG"; s.render.image_settings.color_mode = "RGBA"; s.render.image_settings.color_depth = "16"
 s.render.filepath = g("out"); bpy.ops.render.render(write_still=True)
+if ST and g("out_plate"):
+    # 同一布景、车对相机不可见但保留投影和反射：用来填掉 AI 图里露在真车外的 AI 车（重影）
+    for o in objs: o.visible_camera = False
+    s.render.filepath = g("out_plate"); bpy.ops.render.render(write_still=True)
+    for o in objs: o.visible_camera = True
 floor.hide_render = True; wallo.hide_render = True
 for ob in setobjs: ob.hide_render = True
 s.render.film_transparent = True
