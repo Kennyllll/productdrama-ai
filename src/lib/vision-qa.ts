@@ -157,3 +157,36 @@ export async function reviewKeyframe(o: { image: Buffer; productRef?: Buffer; pr
       if (v?.ok === false && !issues.length) issues.push(`${typeof v.name === "string" ? v.name : "车辆"}结构有问题${typeof v.problem === "string" && v.problem ? `：${v.problem}` : ""}`);
   return { pass: data.pass === true && issues.length === 0, issues };
 }
+
+/** 3D 场景匹配用的几何线索（像素坐标）：墙脚线、空白段、侧墙脚线、已知高度的参照物、地平线 */
+export async function locateGeometry(o: { plate: Buffer; support: string; width: number; height: number }): Promise<import("./scene-geometry").SceneGeom | null> {
+  const prompt = [
+    "You are a VFX matchmove artist preparing this location photo for 3D camera matching. Be precise; coordinates are [y, x] normalised to 0-1000.",
+    `Support surface: ${o.support}.`,
+    'Return JSON only: {"horizon": number | null, "wall_base": [[y, x], [y, x]], "clear_span": [[y, x], [y, x]] | null, "side_base": [[y, x], [y, x]] | null, "refs": [{"name": string, "height_m": number, "top": [y, x], "bottom": [y, x]}]}',
+    "horizon: image row of the true horizon / camera eye level (null if you cannot judge).",
+    "wall_base: two points far apart on the straight line where that support wall meets the floor.",
+    "clear_span: the part of wall_base in front of which the wall is bare and the floor is empty, wide enough for a small children's bike to lean there.",
+    "side_base: the floor line of a different wall perpendicular to it, if one is visible, else null.",
+    "refs: 1-4 upright things standing on the same floor whose real height you know well (interior door 2.03 m, garage door opening 2.13 m, adult man 1.78 m, adult woman 1.63 m, 3-4 year old child 0.98 m, kitchen counter 0.91 m, car wheel 0.66 m); bottom = exactly where it touches the floor, top = the point directly above it at that height.",
+  ].join("\n");
+  const data = (await generate([{ text: prompt }, await jpegPart(o.plate, 1536)], 90_000)) as Record<string, unknown>;
+  const pt = (v: unknown) => (Array.isArray(v) && v.length === 2 && v.every((n) => typeof n === "number") ? { x: (v[1] / 1000) * o.width, y: (v[0] / 1000) * o.height } : null);
+  const line = (v: unknown) => {
+    if (!Array.isArray(v) || v.length !== 2) return null;
+    const a = pt(v[0]), b = pt(v[1]);
+    return a && b ? ([a, b] as [{ x: number; y: number }, { x: number; y: number }]) : null;
+  };
+  const wallBase = line(data.wall_base);
+  if (!wallBase) return null;
+  const refs = (Array.isArray(data.refs) ? data.refs : [])
+    .map((r: { name?: unknown; height_m?: unknown; top?: unknown; bottom?: unknown }) => ({ name: String(r.name ?? ""), heightM: Number(r.height_m), top: pt(r.top), bottom: pt(r.bottom) }))
+    .filter((r): r is { name: string; heightM: number; top: { x: number; y: number }; bottom: { x: number; y: number } } => !!r.top && !!r.bottom && r.heightM > 0.2 && r.heightM < 4);
+  return {
+    horizonY: typeof data.horizon === "number" ? (data.horizon / 1000) * o.height : null,
+    wallBase,
+    clearSpan: line(data.clear_span),
+    sideBase: line(data.side_base),
+    refs,
+  };
+}
