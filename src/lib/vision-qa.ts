@@ -182,7 +182,7 @@ export async function locateGeometry(o: { plate: Buffer; support: string; width:
     "wall_base: two points far apart on the straight line where that support wall meets the floor.",
     "clear_span: the part of wall_base in front of which the wall is bare and the floor is empty, wide enough for a small children's bike to lean there.",
     "side_base: the floor line of a different wall perpendicular to it, if one is visible, else null.",
-    "refs: 1-4 upright things standing on the same floor whose real height you know well (interior door 2.03 m, garage door opening 2.13 m, adult man 1.78 m, adult woman 1.63 m, 3-4 year old child 0.98 m, kitchen counter 0.91 m, car wheel 0.66 m); bottom = exactly where it touches the floor, top = the point directly above it at that height.",
+    "refs: 1-4 upright things standing on the same floor whose real height you know well (interior door 2.03 m, garage door opening 2.13 m, adult man 1.78 m, adult woman 1.63 m, 3-4 year old child 0.98 m, kitchen counter 0.91 m, car wheel 0.66 m, motorcycle wheel 0.64 m, motorcycle handlebar top 1.1 m); bottom = exactly where it touches the floor, top = the point directly above it at that height. Only use things whose bottom is on that same main floor and whose top is inside the frame: skip doors raised on steps, landings or curbs, and anything cut off by the frame edge.",
   ].join("\n");
   const data = (await generate([{ text: prompt }, await jpegPart(o.plate, 1536)], 90_000)) as Record<string, unknown>;
   const pt = (v: unknown) => (Array.isArray(v) && v.length === 2 && v.every((n) => typeof n === "number") ? { x: (v[1] / 1000) * o.width, y: (v[0] / 1000) * o.height } : null);
@@ -195,7 +195,7 @@ export async function locateGeometry(o: { plate: Buffer; support: string; width:
   if (!wallBase) return null;
   const refs = (Array.isArray(data.refs) ? data.refs : [])
     .map((r: { name?: unknown; height_m?: unknown; top?: unknown; bottom?: unknown }) => ({ name: String(r.name ?? ""), heightM: Number(r.height_m), top: pt(r.top), bottom: pt(r.bottom) }))
-    .filter((r): r is { name: string; heightM: number; top: { x: number; y: number }; bottom: { x: number; y: number } } => !!r.top && !!r.bottom && r.heightM > 0.2 && r.heightM < 4);
+    .filter((r): r is { name: string; heightM: number; top: { x: number; y: number }; bottom: { x: number; y: number } } => !!r.top && !!r.bottom && r.heightM > 0.2 && r.heightM < 4 && r.top.y > 0.01 * o.height && r.bottom.y < 0.99 * o.height && r.bottom.y - r.top.y > 0.02 * o.height);
   return {
     horizonY: typeof data.horizon === "number" ? (data.horizon / 1000) * o.height : null,
     wallBase,

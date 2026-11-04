@@ -292,12 +292,20 @@ async function sceneMatchKeyframe(o: { projectId: string; shotId: string; p: Cad
   const pm = await sharp(plate).metadata();
   const PW = pm.width ?? 1600, PH = pm.height ?? 900;
   const spent = o.plateCalls ? `（已生成 ${o.plateCalls} 张空场景）` : "";
-  const geo = await locateGeometry({ plate, support: supportNoun(o.productNote) || o.support, width: PW, height: PH }).catch((e: unknown) => {
-    throw new Error(`场景几何定位没有完成：${e instanceof Error ? e.message : "未知错误"}。已停止${spent}，可勾选「复用上次空场景」重试`);
-  });
-  if (!geo) throw new Error(`空场景里没找到墙脚线，做不了 3D 场景匹配。已停止${spent}`);
-  if (!geo.refs.length && geo.horizonY == null) throw new Error(`空场景里没有已知高度的参照物，也看不出地平线，算不出相机。已停止${spent}`);
-  const cam = solveCamera(geo, PW, PH, p.lensMm);
+  // Gemini 每次读出的线有偏差：读三次、各自解相机，取相机高度的中位数，且至少两次互相吻合
+  const tries = await Promise.allSettled([0, 1, 2].map(() => locateGeometry({ plate, support: supportNoun(o.productNote) || o.support, width: PW, height: PH })));
+  const geos = tries.flatMap((t) => (t.status === "fulfilled" && t.value && (t.value.refs.length || t.value.horizonY != null) ? [t.value] : []));
+  if (!geos.length) {
+    const r = tries.find((t): t is PromiseRejectedResult => t.status === "rejected")?.reason;
+    if (r) throw new Error(`场景几何定位没有完成：${r instanceof Error ? r.message : "未知错误"}。已停止${spent}，可勾选「复用上次空场景」重试`);
+    throw new Error(`空场景里没找到墙脚线或已知高度的参照物，算不出相机。已停止${spent}`);
+  }
+  const heightHint = p.elevationDeg < 0 ? 0.6 : p.elevationDeg < 15 ? 1.3 : 1.7;
+  const solves = geos.map((g) => ({ g, cam: solveCamera(g, PW, PH, p.lensMm, heightHint) })).sort((a, b) => a.cam.heightM - b.cam.heightM);
+  const mid = solves[Math.floor(solves.length / 2)];
+  if (solves.filter((s) => Math.abs(s.cam.heightM - mid.cam.heightM) <= 0.25 * mid.cam.heightM).length < Math.min(2, solves.length))
+    throw new Error(`几次读空场景算出的相机互相矛盾（相机高 ${solves.map((s) => s.cam.heightM.toFixed(2)).join(" / ")} m），这张空场景的透视不可信。已停止${spent}`);
+  const { g: geo, cam } = mid;
   const wall = wallFrame(geo, PW, PH, cam);
   if (!wall) throw new Error(`墙脚线不在相机前方的地面上，相机解算失败。已停止${spent}`);
   const t0 = Date.now();

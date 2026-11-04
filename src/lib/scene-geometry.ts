@@ -66,14 +66,15 @@ function cost(g: SceneGeom, W: number, H: number, cam: SceneCamera): number {
   return e;
 }
 
-export function solveCamera(g: SceneGeom, W: number, H: number, lensHint = 35): SceneCamera {
+/** heightHint：分镜机位对应的相机高度。参照物少时只靠地平线解不出尺度，用它做弱先验，参照物够时不起作用 */
+export function solveCamera(g: SceneGeom, W: number, H: number, lensHint = 35, heightHint = 1.3): SceneCamera {
   const lenses = [...new Set([18, 24, 28, 35, 50, 65, lensHint])];
   let best: SceneCamera = { lensMm: lensHint, heightM: 1, pitchDeg: 5, err: Infinity };
   for (const lensMm of lenses)
     for (let pitchDeg = -15; pitchDeg <= 40; pitchDeg += 0.25)
       for (let heightM = 0.12; heightM <= 2.6; heightM += 0.02) {
         const cam = { lensMm, heightM, pitchDeg, err: 0 };
-        const e = cost(g, W, H, cam) + (g.sideBase ? 0 : 1e-4 * Math.abs(lensMm - lensHint) / 10);
+        const e = cost(g, W, H, cam) + 2e-3 * Math.log(heightM / heightHint) ** 2 + 2e-4 * (Math.log(lensMm / lensHint) ** 2);
         if (e < best.err) best = { ...cam, err: e };
       }
   return best;
