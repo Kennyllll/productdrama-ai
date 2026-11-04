@@ -2,7 +2,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { BlenderError, findBlender, renderProduct, renderSilhouettes, type SilhouetteView } from "@/lib/blender";
+import { BlenderError, findBlender, renderProduct, renderScene, renderSilhouettes, type SilhouetteView } from "@/lib/blender";
+import { solveCamera, wallFrame } from "@/lib/scene-geometry";
 import { CAD_KEYFRAME_MODEL, supportNoun, buildPeopleOnlyPrompt, buildInteractionPrompt, buildProductFirstPrompt, buildProductFirstPlatePrompt, clampCadParams, buildPlatePrompt, greenMaskPrompt, harmonizePrompt, removeProductPrompt, type CadParams } from "@/lib/cad-camera";
 import { anchorFit, composeProduct, contactShadow, estimateSun, fitMask, greenMask, groundRow, handFixMask,
   handPoints, lockScene, contactQa, relightLoss, occluderMask, type MaskFit, placedMask, productHoleImage, protectProduct, relightTransfer, replaceProduct, snapToGround } from "@/lib/cad-composite";
@@ -11,7 +12,7 @@ import { deleteRequest, estimate, HiggsfieldError, submit, uploadFile, waitFor }
 import { addKeyframe, toKeyframeView, type KeyframeView } from "@/lib/keyframe-repo";
 import { cadDir, getProductModel, modelPath } from "@/lib/model-repo";
 import { findLocalProject, getProduct } from "@/lib/repo";
-import { getVisionKey, locateSupport, reviewKeyframe } from "@/lib/vision-qa";
+import { getVisionKey, locateGeometry, locateSupport, reviewKeyframe } from "@/lib/vision-qa";
 import { getStoryboard } from "@/lib/storyboard-repo";
 
 type Result<T> = { error?: string; result?: T };
@@ -284,6 +285,110 @@ async function interactionKeyframe(projectId: string, shotId: string, p: CadPara
 }
 
 /** 接触镜头（产品先行）：AI 出无人空场景 → CAD 车按分镜机位 / 姿态放进去 → AI 在这张照片里加人（骑、扶、靠） → 标注遮挡 → CAD 像素贴回 + AI 光影迁移 */
+type ProductFirstResult = Omit<CadKeyframeResult, "keyframe"> & { bytes: Buffer; prompt: string; usd: number };
+
+async function sceneMatchKeyframe(o: { projectId: string; shotId: string; p: CadParams; basePrompt: string; dir: string; glb: string; aspect: string; productName: string; productNote: string; description: string; hasPeople: boolean; plate: Buffer; plateCalls: number; support: string; sizeHint: string; roll: number }): Promise<ProductFirstResult> {
+  const { p, dir, plate } = o;
+  const pm = await sharp(plate).metadata();
+  const PW = pm.width ?? 1600, PH = pm.height ?? 900;
+  const spent = o.plateCalls ? `（已生成 ${o.plateCalls} 张空场景）` : "";
+  const geo = await locateGeometry({ plate, support: supportNoun(o.productNote) || o.support, width: PW, height: PH }).catch((e: unknown) => {
+    throw new Error(`场景几何定位没有完成：${e instanceof Error ? e.message : "未知错误"}。已停止${spent}，可勾选「复用上次空场景」重试`);
+  });
+  if (!geo) throw new Error(`空场景里没找到墙脚线，做不了 3D 场景匹配。已停止${spent}`);
+  if (!geo.refs.length && geo.horizonY == null) throw new Error(`空场景里没有已知高度的参照物，也看不出地平线，算不出相机。已停止${spent}`);
+  const cam = solveCamera(geo, PW, PH, p.lensMm);
+  const wall = wallFrame(geo, PW, PH, cam);
+  if (!wall) throw new Error(`墙脚线不在相机前方的地面上，相机解算失败。已停止${spent}`);
+  const t0 = Date.now();
+  const rs = await renderScene({
+    glb: o.glb, out: path.join(dir, "scene.png"), width: PW, height: PH,
+    lens_mm: cam.lensMm, cam_height: cam.heightM, pitch_deg: cam.pitchDeg, wall, place: wall.place,
+    roll_deg: Math.min(18, Math.max(10, Math.abs(o.roll))), yaw_off_deg: -25,
+    env_image: path.join(dir, "plate.png"), env_strength: 1.6,
+    sun_az_deg: 180 - p.keyDirDeg, sun_elev_deg: p.keyElevDeg, sun_kelvin: p.keyKelvin, sun_strength: 4,
+    exposure: 0.6 + (p.exposure ?? 0), samples: 96,
+  });
+  const renderSeconds = Math.round((Date.now() - t0) / 1000);
+  const layer = (w: number, h: number) => sharp(rs.image).resize(w, h, { fit: "fill" }).png().toBuffer();
+  const over = async (img: Buffer) => {
+    const m = await sharp(img).metadata();
+    return sharp(img).composite([{ input: await layer(m.width ?? PW, m.height ?? PH) }]).png().toBuffer();
+  };
+  const ref = await over(plate);
+  fs.writeFileSync(path.join(dir, "product-ref.png"), ref);
+  const mk = await sharp(rs.mask).ensureAlpha().extractChannel("alpha").raw().toBuffer({ resolveWithObject: true });
+  let x0 = 1, x1 = 0, y0 = 1, y1 = 0;
+  for (let i = 0; i < mk.data.length; i++)
+    if (mk.data[i] > 128) {
+      const x = (i % mk.info.width) / mk.info.width, y = Math.floor(i / mk.info.width) / mk.info.height;
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+    }
+  if (x1 <= x0) throw new Error("3D 场景匹配后车不在画面里，相机解算可能不对");
+  const dist = Math.hypot(wall.place[0], wall.place[1]);
+  const qa: string[] = [`3D 场景匹配：相机高 ${cam.heightM.toFixed(2)} m、俯仰 ${cam.pitchDeg.toFixed(1)}°、${cam.lensMm} mm；车离相机 ${dist.toFixed(1)} m，向墙倾 ${Math.abs(rs.meta.roll_deg).toFixed(0)}°`];
+  if (y1 - y0 < 0.12) qa.push(`车只占画面高度的 ${Math.round((y1 - y0) * 100)}%，偏小`);
+  const meta0 = { mode: "scene-match", cam, wall, geo, render: rs.meta, box: { x0, y0, x1, y1 } };
+  const f = (name: string) => `/api/cad/${o.projectId}?f=${o.shotId.toLowerCase()}/${name}`;
+  if (!o.hasPeople) {
+    fs.writeFileSync(path.join(dir, "final.png"), ref);
+    fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...meta0, qa }));
+    return { bytes: ref, prompt: `[CAD scene-match] ${JSON.stringify(cam)}`, usd: 0, files: [["空场景 + 真车（3D 匹配）", f("product-ref.png")]], aiDrift: null, fit: { iou: 1, coverage: 1 }, qa, renderSeconds };
+  }
+  // 有人：AI 只在空场景上加人（看不到车），机位不变，所以同一张 3D 渲染直接叠上去
+  const prompt = buildPeopleOnlyPrompt(o.basePrompt, o.productName, o.support, (x0 + x1) / 2);
+  const refUrl = await uploadFile(plate, "image/png");
+  const unit = await estimate(PLATE_MODEL, plateInput(prompt, o.aspect, [refUrl])).then((r) => r.usd).catch(() => NaN);
+  let calls = o.plateCalls;
+  // 车位（外扩 15%）里画面变了多少 = 人或别的东西占了车位
+  const occupied = async (img: Buffer) => {
+    const [a, b] = await Promise.all([img, plate].map((x) => sharp(x).resize(PW, PH, { fit: "fill" }).removeAlpha().raw().toBuffer()));
+    const mx = (x1 - x0) * 0.15, my = (y1 - y0) * 0.15;
+    let n = 0, hit = 0;
+    for (let y = Math.max(0, Math.floor((y0 - my) * PH)); y < Math.min(PH, Math.ceil((y1 + my) * PH)); y++)
+      for (let x = Math.max(0, Math.floor((x0 - mx) * PW)); x < Math.min(PW, Math.ceil((x1 + mx) * PW)); x++) {
+        const i = (y * PW + x) * 3;
+        n++;
+        if ((Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2])) / 3 > 40) hit++;
+      }
+    return n ? hit / n : 1;
+  };
+  const tryOnce = async () => {
+    const raw = await runFlare(plateInput(prompt, o.aspect, [refUrl]));
+    calls++;
+    fs.writeFileSync(path.join(dir, "ai-raw.png"), raw);
+    const spot = await locateSupport({ plate: raw, productName: o.productName, productNote: o.productNote, description: o.description, sizeHint: o.sizeHint, cast: true });
+    return { raw, intruders: spot.intruders, occ: await occupied(raw) };
+  };
+  const bad = (t: { intruders: string[]; occ: number }) => t.intruders.length > 0 || t.occ > 0.25;
+  let t = await tryOnce();
+  if (bad(t)) {
+    const t2 = await tryOnce();
+    if (!bad(t2) || t2.occ < t.occ) t = t2;
+  }
+  fs.writeFileSync(path.join(dir, "ai.png"), t.raw);
+  const meta1 = { ...meta0, occupied: t.occ, intruders: t.intruders, calls };
+  if (bad(t)) {
+    fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...meta1, failed: true, qa }));
+    const cost = Number.isFinite(unit) ? `，已花约 $${(unit * calls).toFixed(2)}` : "";
+    const why = t.intruders.length ? `AI 加人时又画了不该有的：${t.intruders.join("、")}` : `AI 加的人或东西占了车位（${Math.round(t.occ * 100)}%）`;
+    throw new Error(`${why}，这张不合格，没有保存${cost}。中间图在该镜头的 cad 目录`);
+  }
+  const final = await over(t.raw);
+  fs.writeFileSync(path.join(dir, "final.png"), final);
+  fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...meta1, qa }));
+  return {
+    bytes: final,
+    prompt: `${prompt}\n\n[CAD scene-match] ${JSON.stringify({ cam, place: wall.place })}`,
+    usd: Number.isFinite(unit) ? unit * calls : 0,
+    files: [["空场景 + 真车（3D 匹配）", f("product-ref.png")], ["AI 加人后（没有车）", f("ai.png")]],
+    aiDrift: null,
+    fit: { iou: 1, coverage: 1 },
+    qa,
+    renderSeconds,
+  };
+}
+
 async function productFirstKeyframe(projectId: string, shotId: string, p: CadParams, basePrompt: string, dir: string, glb: string, aspect: string, productNote: string, hasPeople: boolean, description: string): Promise<Omit<CadKeyframeResult, "keyframe"> & { bytes: Buffer; prompt: string; usd: number }> {
   const product = getProduct(projectId);
   const productName = product?.name ?? "";
@@ -340,6 +445,9 @@ async function productFirstKeyframe(projectId: string, shotId: string, p: CadPar
     leanSide = sideOf(roll);
     place = { ...p, x: (b.x0 + b.x1) / 2, y: b.y1, scale: Math.min(0.9, Math.max(0.08, b.y1 - b.y0)) };
     support = spot.support;
+    // 靠墙：3D 场景匹配（相机 / 地面 / 墙面由几何解出，车把或座椅的碰墙点由 Blender 算出）
+    if (/wall|墙/i.test(`${support} ${supportNoun(productNote)}`))
+      return sceneMatchKeyframe({ projectId, shotId, p, basePrompt, dir, glb, aspect, productName, productNote, description, hasPeople, plate, plateCalls, support, sizeHint: geometry || "small two-wheel children's balance bike", roll });
   } else fs.writeFileSync(plateFile, plate);
   // 2) 用空场景当环境光渲染真车（含接触阴影），按分镜位置 / 大小放进去
   const t0 = Date.now();

@@ -115,3 +115,32 @@ export async function renderProduct(spec: RenderSpec): Promise<{ image: string; 
   if (!line || !fs.existsSync(spec.out)) throw new BlenderError("Blender 未输出渲染结果");
   return { image: spec.out, mask, reflection, meta: JSON.parse(line.slice("RENDER_OK".length)) as Record<string, unknown> };
 }
+
+export const SCENE_SCRIPT = path.join(process.cwd(), "scripts", "blender", "render_scene.py");
+
+export interface SceneRenderMeta {
+  grips: number[][];
+  contact: { part: string; px: number[]; world: number[] };
+  roll_deg: number;
+  yaw_deg: number;
+  wheel_z: number;
+}
+
+/** 3D 场景匹配渲染：按解出的相机出整幅 RGBA（车 + 地面 / 墙面阴影），可直接叠在空场景上 */
+export async function renderScene(spec: Record<string, unknown> & { out: string }): Promise<{ image: string; mask: string; meta: SceneRenderMeta }> {
+  const blender = findBlender();
+  if (!blender) throw new BlenderError("未找到 Blender。请安装 Blender 4.2 到 /Applications，或设置环境变量 BLENDER_PATH");
+  fs.mkdirSync(path.dirname(spec.out), { recursive: true });
+  const mask = spec.out.replace(/\.png$/, "-mask.png");
+  const specFile = spec.out.replace(/\.png$/, ".json");
+  fs.writeFileSync(specFile, JSON.stringify({ ...spec, out_mask: mask }));
+  const stdout = await new Promise<string>((resolve, reject) => {
+    execFile(blender, ["-b", "-noaudio", "--python", SCENE_SCRIPT, "--", specFile], { timeout: 10 * 60 * 1000, maxBuffer: 64 * 1024 * 1024 }, (err, out, errOut) => {
+      if (err) reject(new BlenderError(`Blender 场景渲染失败：${String(errOut || err.message).split("\n").filter(Boolean).slice(-3).join(" / ")}`));
+      else resolve(String(out));
+    });
+  });
+  const line = stdout.split("\n").find((l) => l.startsWith("SCENE_OK"));
+  if (!line || !fs.existsSync(spec.out)) throw new BlenderError("Blender 未输出场景渲染结果");
+  return { image: spec.out, mask, meta: JSON.parse(line.slice("SCENE_OK".length)) as SceneRenderMeta };
+}
