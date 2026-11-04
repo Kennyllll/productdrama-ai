@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { BlenderError, findBlender, renderProduct, renderSilhouettes, type SilhouetteView } from "@/lib/blender";
-import { CAD_KEYFRAME_MODEL, supportNoun, buildInteractionPrompt, buildProductFirstPrompt, buildProductFirstPlatePrompt, clampCadParams, buildPlatePrompt, greenMaskPrompt, harmonizePrompt, removeProductPrompt, type CadParams } from "@/lib/cad-camera";
+import { CAD_KEYFRAME_MODEL, supportNoun, buildPeopleOnlyPrompt, buildInteractionPrompt, buildProductFirstPrompt, buildProductFirstPlatePrompt, clampCadParams, buildPlatePrompt, greenMaskPrompt, harmonizePrompt, removeProductPrompt, type CadParams } from "@/lib/cad-camera";
 import { anchorFit, composeProduct, contactShadow, estimateSun, fitMask, greenMask, groundRow, handFixMask,
   handPoints, lockScene, contactQa, relightLoss, occluderMask, type MaskFit, placedMask, productHoleImage, protectProduct, relightTransfer, replaceProduct, snapToGround } from "@/lib/cad-composite";
 import sharp from "sharp";
@@ -297,7 +297,8 @@ async function productFirstKeyframe(projectId: string, shotId: string, p: CadPar
     roll = Math.cos(az) >= 0 ? -r : r;
   }
   // 画面左右：相机右方向 (cos az, sin az)，点积 = −sin az · sin r
-  const leanSide = leaning ? (-Math.sin(az) * Math.sin((roll * Math.PI) / 180) > 0 ? "right" : "left") : null;
+  const sideOf = (r: number) => (-Math.sin(az) * Math.sin((r * Math.PI) / 180) > 0 ? "right" : "left");
+  let leanSide: "left" | "right" | null = leaning ? sideOf(roll) : null;
   // 1) 空场景：同一镜头但没有人、没有车；靠物镜头必须包含支撑物
   const plateFile = path.join(dir, "plate.png");
   const reused = p.reusePlate && fs.existsSync(plateFile);
@@ -309,6 +310,7 @@ async function productFirstKeyframe(projectId: string, shotId: string, p: CadPar
   // 定位失败就停止：按默认位置放车必然「靠空气」，继续只会白花钱
   let place: CadParams = p;
   let support = "";
+  let plateBox: { x0: number; y0: number; x1: number; y1: number } | null = null;
   const preQa: string[] = [];
   if (leaning) {
     if (!getVisionKey()) throw new Error("靠物镜头需要看图定位支撑物，请先在设置页配置 Gemini Key");
@@ -332,6 +334,10 @@ async function productFirstKeyframe(projectId: string, shotId: string, p: CadPar
     if (spot.intruders.length) throw new Error(`空场景里出现了不该有的：${spot.intruders.join("、")}。已停止${spent()}`);
     if (!spot.box) throw new Error(`空场景里没找到分镜写的支撑物。已停止${spent()}`);
     const b = spot.box;
+    // 支撑物在车旁边（侧墙）时，车顶要朝它倾，而不是一律朝镜头后方倾
+    plateBox = b;
+    if (spot.lean !== "away" && sideOf(roll) !== spot.lean) roll = -roll;
+    leanSide = sideOf(roll);
     place = { ...p, x: (b.x0 + b.x1) / 2, y: b.y1, scale: Math.min(0.9, Math.max(0.08, b.y1 - b.y0)) };
     support = spot.support;
   } else fs.writeFileSync(plateFile, plate);
@@ -362,10 +368,101 @@ async function productFirstKeyframe(projectId: string, shotId: string, p: CadPar
   const alpha = await sharp(render.mask).ensureAlpha().extractChannel("alpha").toBuffer();
   await sharp(render.image).removeAlpha().joinChannel(alpha).png().toFile(productOnly);
   const renderW = (await sharp(render.image).metadata()).width ?? 1600;
-  const refUrl = await uploadFile(comp.composite, "image/png");
-  const prompt = buildProductFirstPrompt(basePrompt, productName, product?.bible ?? [], productNote, { leanDeg: leaning ? Math.abs(roll) : 0, leanSide, fallen, hasPeople, support });
+  // 靠物且没人碰车：AI 只加人、看不到车，就没法把车挪走或重画
+  const peopleFirst = leaning && !!support && !/握|扶|推|骑|坐|抱|拿|牵|hold|grip|ride|push/i.test(productNote);
+  const refUrl = await uploadFile(peopleFirst ? plate : comp.composite, "image/png");
+  const prompt = peopleFirst
+    ? buildPeopleOnlyPrompt(basePrompt, productName, support, place.x)
+    : buildProductFirstPrompt(basePrompt, productName, product?.bible ?? [], productNote, { leanDeg: leaning ? Math.abs(roll) : 0, leanSide, fallen, hasPeople, support });
   const unit = await estimate(PLATE_MODEL, plateInput(prompt, aspect, [refUrl])).then((r) => r.usd).catch(() => NaN);
   let calls = plateCalls;
+  if (peopleFirst) {
+    type Comp = Awaited<ReturnType<typeof composeProduct>>;
+    // 车的位置上画面变了多少 = 人站到了车要放的地方
+    const blocked = async (img: Buffer, o: Comp) => {
+      const [a, pl] = await Promise.all([img, plate].map((b) => sharp(b).resize(o.width, o.height, { fit: "fill" }).removeAlpha().raw().toBuffer()));
+      let n = 0, hit = 0;
+      for (let y = o.box.top; y < o.box.top + o.box.height; y++)
+        for (let x = o.box.left; x < o.box.left + o.box.width; x++) {
+          const i = (y * o.width + x) * 3;
+          n++;
+          if ((Math.abs(a[i] - pl[i]) + Math.abs(a[i + 1] - pl[i + 1]) + Math.abs(a[i + 2] - pl[i + 2])) / 3 > 40) hit++;
+        }
+      return n ? hit / n : 1;
+    };
+    const geometry = product?.bible?.find((b) => b.key === "geometry")?.value ?? "";
+    // 加人后再看图定位一次：车的大小以画面里的孩子为参照，并检查 AI 有没有自己画车
+    type Box = { x0: number; y0: number; x1: number; y1: number };
+    // AI 常常不听话在支撑物旁自己画一辆车：把车位周围还原成空场景像素（羽化边缘），再贴真车
+    const restore = async (img: Buffer, boxes: Box[]) => {
+      const m = await sharp(img).metadata();
+      const W = m.width ?? CW, H = m.height ?? CH;
+      const [a, pl] = await Promise.all([img, plate].map((b) => sharp(b).resize(W, H, { fit: "fill" }).removeAlpha().raw().toBuffer()));
+      const x0 = Math.min(...boxes.map((b) => b.x0)), x1 = Math.max(...boxes.map((b) => b.x1));
+      const y0 = Math.min(...boxes.map((b) => b.y0)), y1 = Math.max(...boxes.map((b) => b.y1));
+      const w = x1 - x0, h = y1 - y0;
+      const zx0 = (x0 - w * 0.4) * W, zx1 = (x1 + w * 0.4) * W, zy0 = (y0 - h * 0.2) * H, zy1 = (y1 + h * 0.08) * H;
+      const fe = Math.max(8, W * 0.006);
+      for (let y = Math.max(0, Math.floor(zy0)); y < Math.min(H, Math.ceil(zy1)); y++)
+        for (let x = Math.max(0, Math.floor(zx0)); x < Math.min(W, Math.ceil(zx1)); x++) {
+          const t = Math.min(1, Math.max(0, Math.min(x - zx0, zx1 - x, y - zy0, zy1 - y) / fe));
+          const i = (y * W + x) * 3;
+          for (let c = 0; c < 3; c++) a[i + c] = Math.round(a[i + c] * (1 - t) + pl[i + c] * t);
+        }
+      return sharp(a, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer();
+    };
+    const locateCast = (img: Buffer) => locateSupport({ plate: img, productName, productNote, description, sizeHint: geometry || "small two-wheel children's balance bike", cast: true });
+    const tryOnce = async () => {
+      const raw = await runFlare(plateInput(prompt, aspect, [refUrl]));
+      calls++;
+      fs.writeFileSync(path.join(dir, "ai-raw.png"), raw);
+      let spot = await locateCast(raw);
+      const boxes = [plateBox, spot.box].filter((b): b is Box => !!b);
+      const ai = boxes.length ? await restore(raw, boxes) : raw;
+      if (boxes.length && spot.intruders.length) {
+        const again = await locateCast(ai);
+        spot = again.box ? again : { ...spot, intruders: again.intruders };
+      }
+      if (!spot.box) return { ai, spot, out: null as Comp | null, pl: place, occupied: 1 };
+      const b = spot.box;
+      const pl: CadParams = { ...place, x: (b.x0 + b.x1) / 2, y: b.y1, scale: Math.min(0.9, Math.max(0.08, b.y1 - b.y0)) };
+      const out = await composeProduct(ai, render.image, render.mask, pl);
+      return { ai, spot, out: out as Comp | null, pl, occupied: await blocked(ai, out) };
+    };
+    const bad = (t: Awaited<ReturnType<typeof tryOnce>>) => !t.out || t.spot.intruders.length > 0 || t.occupied > 0.25;
+    let t = await tryOnce();
+    if (bad(t)) {
+      const t2 = await tryOnce();
+      if (!bad(t2) || (t2.out && !t.out)) t = t2;
+    }
+    const { ai, out, pl, occupied } = t;
+    fs.writeFileSync(path.join(dir, "ai.png"), ai);
+    const meta0 = { mode: "people-first", roll, leanSide, support: t.spot.support || support, place: { x: pl.x, y: pl.y, scale: pl.scale }, occupied, intruders: t.spot.intruders, calls };
+    if (bad(t) || !out) {
+      fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...meta0, failed: true, qa: preQa }));
+      const cost = Number.isFinite(unit) ? `，已花约 $${(unit * calls).toFixed(2)}` : "";
+      const why = t.spot.intruders.length
+        ? `AI 加人时又画了不该有的：${t.spot.intruders.join("、")}`
+        : !out
+          ? "加人后画面里找不到支撑物"
+          : `AI 加的人站到了车要放的位置（占 ${Math.round(occupied * 100)}%）`;
+      throw new Error(`${why}，这张不合格，没有保存${cost}。中间图在该镜头的 cad 目录`);
+    }
+    fs.writeFileSync(path.join(dir, "final.png"), out.composite);
+    const qa = [...preQa];
+    fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...meta0, qa }));
+    const f = (name: string) => `/api/cad/${projectId}?f=${shotId.toLowerCase()}/${name}`;
+    return {
+      bytes: out.composite,
+      prompt: `${prompt}\n\n[CAD people-first] ${JSON.stringify({ ...pl, roll })}`,
+      usd: Number.isFinite(unit) ? unit * calls : 0,
+      files: [["空场景 + 真车", f("product-ref.png")], ["AI 加人后（没有车）", f("ai.png")]],
+      aiDrift: null,
+      fit: { iou: 1, coverage: 1 },
+      qa,
+      renderSeconds,
+    };
+  }
   const attempt = async () => {
     const ai = await runFlare(plateInput(prompt, aspect, [refUrl]));
     calls++;
@@ -399,22 +496,37 @@ async function productFirstKeyframe(projectId: string, shotId: string, p: CadPar
   const { ai, green, occ, W, H, fit, placed } = r;
   fs.writeFileSync(path.join(dir, "ai.png"), ai);
   fs.writeFileSync(path.join(dir, "green.png"), green);
-  // AI 把车挪走或重画了：再贴 CAD 会出现两辆车，直接判不合格，不生成关键帧
-  if (r.keep < 0.5) {
+  // AI 把车挪到别处（原位附近之外又有一辆）：再贴 CAD 会出现两辆车，直接判不合格，不生成关键帧
+  // AI 只是在原位把车画大 / 画变形：把 AI 的车和 CAD 位置一起挖空交给 AI 补背景（AI 只看到一块绿色），再贴真车
+  const repair = r.keep < 0.6 && r.extra <= 0.15 && r.keep >= 0.15;
+  if (r.keep < 0.6 && !repair) {
     fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, mode: "product-first", failed: true, roll, leanSide, support, place: { x: place.x, y: place.y, scale: place.scale }, keep: r.keep, extra: r.extra, calls, qa: preQa }));
     const cost = Number.isFinite(unit) ? `，已花约 $${(unit * calls).toFixed(2)}` : "";
     throw new Error(`AI 把车挪走或重画了（与真车重合 ${Math.round(r.keep * 100)}%），这张不合格，没有保存${cost}。中间图在该镜头的 cad 目录`);
   }
+  let base = ai;
+  if (repair) {
+    const union = Buffer.alloc(W * H);
+    for (let i = 0; i < union.length; i++) if (r.gm[i] > 128 || placed[i] > 128) union[i] = 255;
+    const holeImg = await productHoleImage(ai, union, occ, W, H);
+    fs.writeFileSync(path.join(dir, "hole.png"), holeImg);
+    const clean = await runFlare(plateInput(removeProductPrompt(), aspect, [await uploadFile(holeImg, "image/png")]));
+    calls++;
+    base = await sharp(clean).resize(W, H, { fit: "fill" }).png().toBuffer();
+    fs.writeFileSync(path.join(dir, "clean.png"), base);
+    preQa.push(`AI 在原位重画了车（重合 ${Math.round(r.keep * 100)}%），已擦掉 AI 的车再贴真车；车身只做整体曝光 / 色温调整`);
+  }
   const visible = Buffer.from(placed);
   for (let i = 0; i < visible.length; i++) if (occ[i] > 128) visible[i] = 0;
   // 完整贴 CAD（只在人挡在车前处露出 AI 画的人），整车按 AI 画面里同位置的车统一调曝光 / 色温，再迁移 AI 的低频光影
-  const rep = await replaceProduct(ai, productOnly, render.mask, fit, visible, W, H, "grade", { occluder: occ, gradeRef: ai });
+  const rep = await replaceProduct(base, productOnly, render.mask, fit, visible, W, H, "grade", { occluder: occ, gradeRef: ai });
   fs.writeFileSync(path.join(dir, "replaced.png"), rep.final);
-  const finalPng = await relightTransfer(ai, rep.final, visible, W, H);
+  // 重画过的 AI 车和真车对不齐，光影迁移会把背景色混进车身，修复时跳过
+  const finalPng = repair ? rep.final : await relightTransfer(ai, rep.final, visible, W, H);
   fs.writeFileSync(path.join(dir, "final.png"), finalPng);
-  const lost = await relightLoss(ai, rep.final, visible, W, H);
+  const lost = repair ? 0 : await relightLoss(ai, rep.final, visible, W, H);
   const qa: string[] = [...preQa];
-  if (r.keep < 0.6) qa.push(`AI 没有把车留在原位（重合 ${Math.round(r.keep * 100)}%），可能改了车的位置或形状`);
+  if (r.keep < 0.6 && !repair) qa.push(`AI 没有把车留在原位（重合 ${Math.round(r.keep * 100)}%），可能改了车的位置或形状`);
   if (r.extra > 0.15) qa.push("AI 在画面别处又画了一辆车");
   if (lost > 0.5) qa.push(`AI 重画了大部分车身（${Math.round(lost * 100)}%），车身光影可能不准`);
   fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ ...fit, mode: "product-first", roll, leanSide, support, place: { x: place.x, y: place.y, scale: place.scale }, keep: r.keep, extra: r.extra, gain: rep.gain, relightLoss: lost, calls, qa }));

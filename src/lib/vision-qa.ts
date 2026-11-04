@@ -101,26 +101,31 @@ export interface SupportSpot {
   intruders: string[];
   /** 车应占的框（0–1，相对画面）：轮子落在支撑物前的地面上，车顶碰到支撑物 */
   box: { x0: number; y0: number; x1: number; y1: number };
+  /** 车顶在画面里应朝哪边倾才能靠到支撑物：away = 支撑物在车后面、正对镜头 */
+  lean: "left" | "right" | "away";
 }
 
 /** 靠物镜头：在空场景里找分镜写的支撑物（墙 / 台阶 / 门廊），返回车靠上去时应占的位置和大小；找不到返回 null */
-export async function locateSupport(o: { plate: Buffer; productName: string; productNote: string; description: string; sizeHint: string }): Promise<SupportSpot | { support: ""; intruders: string[]; box: null }> {
+export async function locateSupport(o: { plate: Buffer; productName: string; productNote: string; description: string; sizeHint: string; cast?: boolean }): Promise<SupportSpot | { support: ""; intruders: string[]; box: null; lean: "away" }> {
   const prompt = [
-    "You are a film set dresser. The image is an empty location plate (no people, no vehicles).",
+    o.cast
+      ? "You are a film set dresser. The image is a film still with the cast already in place; the product is NOT in it yet, so any bicycle or balance bike visible in it is an error and must be listed in intruders. Use the people in the photo as the scale reference: the product's size relative to the child must be realistic."
+      : "You are a film set dresser. The image is a location plate without the cast (no people).",
     `The ${o.productName || "product"} (${o.sizeHint}) will be placed leaning against a support, as described: ${o.productNote}`,
     `Shot description: ${o.description}`,
     "Find that support (e.g. a wall, step, porch post) in the image. Then decide where the product stands: both wheels on the floor directly in front of the support surface, viewed roughly from the side, its top touching the support, at the correct perspective scale for its distance from the camera (compare with doors, shelves, bins and floor lines). The product must not overlap the camera-facing area of other large objects.",
-    "Also list anything that should NOT be in an empty plate: any person, animal, bicycle, balance bike, scooter, motorcycle, car or other vehicle (even partly visible or in the background).",
-    'Return JSON only: {"intruders": string[], "found": boolean, "support": string, "box_2d": [ymin, xmin, ymax, xmax]} with intruders short Simplified Chinese names (e.g. "摩托车"), and box_2d the product\'s full bounding box (wheels bottom to handlebar top) in 0–1000 normalized image coordinates. found=false if the described support is not in the image.',
+    `Also list anything that should NOT be in this image: ${o.cast ? "any person not described in the shot, any repeated or duplicated person, and any" : "any person, animal,"} bicycle, balance bike, scooter or kids' ride-on toy (even partly visible); any larger vehicle (motorcycle, car) that the shot description does not name; and any vehicle that is deformed (wrong number of wheels, wheels not on axles, melted or impossible parts — a motorcycle has exactly 2 wheels). Count each vehicle's wheels before judging.`,
+    'Return JSON only: {"intruders": string[], "found": boolean, "support": string, "lean": "left" | "right" | "away", "box_2d": [ymin, xmin, ymax, xmax]} with lean the direction, in the image, the product\'s top must tilt to rest on the support ("away" if the support surface is behind the product facing the camera; "left"/"right" if it is a side wall or object beside the product), with intruders short Simplified Chinese phrases (e.g. "多了一辆自行车", "摩托车有三个轮子"), and box_2d the product\'s full bounding box (wheels bottom to handlebar top) in 0–1000 normalized image coordinates. found=false if the described support is not in the image.',
   ].join("\n");
-  const data = (await generate([{ text: prompt }, await jpegPart(o.plate, 1536)], 90_000)) as { intruders?: unknown; found?: unknown; support?: unknown; box_2d?: unknown };
+  const data = (await generate([{ text: prompt }, await jpegPart(o.plate, 1536)], 90_000)) as { intruders?: unknown; found?: unknown; support?: unknown; lean?: unknown; box_2d?: unknown };
   const intruders = Array.isArray(data.intruders) ? data.intruders.filter((x): x is string => typeof x === "string" && x.trim() !== "") : [];
-  const none = { support: "" as const, intruders, box: null };
+  const none = { support: "" as const, intruders, box: null, lean: "away" as const };
+  const lean = data.lean === "left" || data.lean === "right" ? data.lean : "away";
   const b = Array.isArray(data.box_2d) ? data.box_2d.map(Number) : [];
   if (data.found !== true || b.length !== 4 || b.some((v) => !Number.isFinite(v))) return none;
   const [y0, x0, y1, x1] = b.map((v) => Math.min(1, Math.max(0, v / 1000)));
   if (x1 - x0 < 0.02 || y1 - y0 < 0.03) return none;
-  return { support: typeof data.support === "string" && data.support ? data.support : "support", intruders, box: { x0, y0, x1, y1 } };
+  return { support: typeof data.support === "string" && data.support ? data.support : "support", intruders, box: { x0, y0, x1, y1 }, lean };
 }
 
 /** 按清单审一张关键帧；返回的问题是中文短句，pass=false 即不合格 */

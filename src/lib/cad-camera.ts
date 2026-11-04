@@ -110,7 +110,19 @@ export function supportNoun(productNote: string): string {
 /** 产品先行的空场景：没有人、没有任何车，之后先放真车再加人 */
 export function buildProductFirstPlatePrompt(base: string, p: CadParams, productName: string, support = ""): string {
   const s = support ? `\nThe plate MUST clearly show, with open empty floor directly in front of it: ${support}` : "";
-  return `${buildPlatePrompt(base, p, productName)}\nThis plate is the empty location only: no people, no animals, and no bikes, motorcycles, cars or other vehicles anywhere in the frame. People and the product are added later.${s}`;
+  return `${buildPlatePrompt(base, p, productName)}\nThis plate is the location without the cast: no people, no animals, and no bicycles, balance bikes, scooters or kids' ride-on toys anywhere in the frame. People and the product are added later. A larger vehicle (e.g. a parked motorcycle or car) may appear only if the shot description names it, away from the open floor, complete and mechanically correct (a motorcycle has exactly two wheels, front and rear).${s}`;
+}
+
+/** 靠物且没人碰车的镜头：AI 只在空场景里加人，看不到车；真车之后按程序算好的位置贴上 */
+export function buildPeopleOnlyPrompt(base: string, productName: string, support: string, x: number): string {
+  const where = x > 0.6 ? "right" : x < 0.4 ? "left" : "center";
+  // 场景描述里写到产品的句子要删掉，否则 AI 会照着描述自己画一辆
+  const productWords = new RegExp(`平衡车|童车|车把|座椅|轮子|balance bike|bike|handlebar|saddle${productName ? `|${productName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}` : ""}`, "i");
+  const scene = base.replace(/^Scene: (.*)$/m, (_, s: string) => `Scene: ${(s.match(/[^。！？.!?]+[。！？.!?]?/g) ?? [s]).filter((c) => !productWords.test(c)).join("")}`);
+  return [
+    scene.replace(/^Product:.*$/m, "").replace(/\n{2,}/g, "\n").trim(),
+    `Edit this film still: add only the people described above into the attached photo, matching its light, lens, perspective and scale. Add no objects at all: no bicycle, balance bike, scooter or toy anywhere. Keep the floor directly in front of the ${support} (${where} part of the frame) and the lower part of it completely clear and unchanged: nobody stands, kneels, reaches or casts a hard shadow there; people stay at least one step away from it. Keep everything else in the photo unchanged, including any vehicle. One single frozen moment: every person appears exactly once.`,
+  ].join("\n");
 }
 
 /** 接触镜头：让 AI 按 CAD 渲染图把产品画进完整画面（形状会有偏差，之后用 CAD 替换） */
