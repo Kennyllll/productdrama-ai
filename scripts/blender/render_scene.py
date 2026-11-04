@@ -74,9 +74,13 @@ shift = -(best[0] - 0.003)
 T2 = mathutils.Matrix.Translation(n * shift); apply(T2); grips = [T2 @ p for p in grips]
 contact = mathutils.Vector(best[2]) + n * shift
 
+# 轮毂外圈的黑塑料太光滑会反射亮墙，在轮胎内侧形成一圈假白边（真车是哑光黑）
+_mr = {"plastic_black": 0.75, "rubber": 0.9, **g("mat_rough", {})}
 for o in objs:
     for m in o.data.materials:
         if m and m.blend_method == "BLEND": m.blend_method = "HASHED"
+        _b = m.node_tree.nodes.get("Principled BSDF") if m and m.use_nodes else None
+        if _b and m.name in _mr: _b.inputs["Roughness"].default_value = _mr[m.name]
 
 def quad(name, pts):
     me = bpy.data.meshes.new(name); me.from_pydata(pts, [], [(0, 1, 2, 3)]); ob = bpy.data.objects.new(name, me)
