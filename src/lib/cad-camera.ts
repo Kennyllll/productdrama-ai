@@ -128,7 +128,7 @@ const productWords = (productName: string) =>
 /** 产品先行的空场景：没有人、没有任何车，之后先放真车再加人 */
 
 export function buildProductFirstPlatePrompt(base: string, p: CadParams, productName: string, support = ""): string {
-  const s = support ? `\nThe plate MUST clearly show, with open empty floor directly in front of it: ${support}` : "";
+  const s = support ? `\nThe plate MUST clearly show, with open empty floor directly in front of it: ${support}. The camera is close to it, about 2.5 m away, so its lower part and the floor in front fill the lower-middle of the frame.` : "";
   return `${buildPlatePrompt(stripCast(base, productName), p, productName)}\nThis plate is the location without the cast: no people, no animals, and no bicycles, balance bikes, scooters or kids' ride-on toys anywhere in the frame. People and the product are added later. A larger vehicle (e.g. a parked motorcycle or car) may appear only if the shot description names it, away from the open floor, complete and mechanically correct (a motorcycle has exactly two wheels, front and rear).${s}`;
 }
 
@@ -138,9 +138,14 @@ export function buildPeopleOnlyPrompt(base: string, productName: string, support
   // 场景描述里写到产品的句子要删掉，否则 AI 会照着描述自己画一辆
   const productWords = new RegExp(`平衡车|童车|车把|座椅|轮子|balance bike|bike|handlebar|saddle${productName ? `|${productName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}` : ""}`, "i");
   const scene = base.replace(/^Scene: (.*)$/m, (_, s: string) => `Scene: ${(s.match(/[^。！？.!?]+[。！？.!?]?/g) ?? [s]).filter((c) => !productWords.test(c)).join("")}`);
+  // 场景里提到别人的东西（「爸爸的摩托」）时 AI 会顺手把那个人也画进来：写死人数和名单
+  const cast = (base.match(/^Characters[^:]*: (.*)$/m)?.[1] ?? "").split(";").map((c) => c.split("—")[0].trim()).filter(Boolean);
+  const only = cast.length
+    ? ` Add exactly ${cast.length} ${cast.length === 1 ? "person" : "people"}: ${cast.join(", ")}. Nobody else: no other adult, parent, child or passer-by, even if the scene mentions someone's belongings. Do not cover or hide any vehicle in the photo.`
+    : "";
   return [
     scene.replace(/^Product:.*$/m, "").replace(/\n{2,}/g, "\n").trim(),
-    `Edit this film still: add only the people described above into the attached photo, matching its light, lens, perspective and scale. Add no objects at all: no bicycle, balance bike, scooter or toy anywhere. Keep the floor directly in front of the ${support} (${where} part of the frame) and the lower part of it completely clear and unchanged: nobody stands, kneels, reaches or casts a hard shadow there; people stay at least one step away from it. Keep everything else in the photo unchanged, including any vehicle. One single frozen moment: every person appears exactly once.`,
+    `Edit this film still: add only the people described above into the attached photo, matching its light, lens, perspective and scale. Add no objects at all: no bicycle, balance bike, scooter or toy anywhere. Keep the floor directly in front of the ${support} (${where} part of the frame) and the lower part of it completely clear and unchanged: nobody stands, kneels, reaches or casts a hard shadow there; people stay at least one step away from it. Keep everything else in the photo unchanged, including any vehicle. One single frozen moment: every person appears exactly once.${only}`,
   ].join("\n");
 }
 
