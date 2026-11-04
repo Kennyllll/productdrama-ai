@@ -85,6 +85,48 @@ floor = quad("floor", [(-40, -5, 0), (40, -5, 0), (40, 60, 0), (-40, 60, 0)])
 wa, wb = A - d * 30, A + d * 30
 wallo = quad("wall", [tuple(wa), tuple(wb), tuple(wb + mathutils.Vector((0, 0, 5))), tuple(wa + mathutils.Vector((0, 0, 5)))])
 
+# set：整个布景在 3D 里搭（相机看 +Y，后墙在 y=wall.a.y），不再从照片估透视。北美车库：石膏板墙 + 混凝土墙基 + 水泥地 + 左侧开着的车库门
+ST = g("set")
+setobjs = []
+if ST:
+    floor.hide_render = True; wallo.hide_render = True
+    def mat(name, col, rough, noise=0.0, scale=8.0):
+        m = bpy.data.materials.new(name); m.use_nodes = True; nt = m.node_tree; b = nt.nodes["Principled BSDF"]
+        b.inputs["Roughness"].default_value = rough
+        if noise:
+            tx = nt.nodes.new("ShaderNodeTexNoise"); tx.inputs["Scale"].default_value = scale; tx.inputs["Detail"].default_value = 8
+            mx = nt.nodes.new("ShaderNodeMix"); mx.data_type = "RGBA"
+            mx.inputs[6].default_value = (*[c * (1 - noise) for c in col], 1); mx.inputs[7].default_value = (*[min(1, c * (1 + noise)) for c in col], 1)
+            nt.links.new(tx.outputs["Fac"], mx.inputs[0]); nt.links.new(mx.outputs[2], b.inputs["Base Color"])
+        else:
+            b.inputs["Base Color"].default_value = (*col, 1)
+        return m
+    def box(name, lo, hi, m):
+        bpy.ops.mesh.primitive_cube_add(location=[(a + b) / 2 for a, b in zip(lo, hi)])
+        ob = bpy.context.active_object; ob.name = name; ob.scale = [(b - a) / 2 for a, b in zip(lo, hi)]
+        ob.data.materials.append(m); setobjs.append(ob); return ob
+    D = A.y; Wd = ST.get("width", 6.0); Hc = ST.get("ceiling", 2.7); Dp = ST.get("depth", 6.5); hx = Wd / 2
+    drywall = mat("drywall", ST.get("wall_rgb", (0.62, 0.58, 0.52)), 0.85, 0.04, 30)
+    concrete = mat("concrete", (0.42, 0.40, 0.37), 0.7, 0.18, 6)
+    stem = mat("stem", (0.48, 0.46, 0.42), 0.9, 0.22, 12)
+    trim = mat("trim", (0.8, 0.78, 0.74), 0.5)
+    box("floor_s", (-hx - 1, D - Dp - 3, -0.1), (hx + 1, D + 0.2, 0), concrete)
+    box("back", (-hx, D, 0), (hx, D + 0.12, Hc), drywall)
+    box("stemwall", (-hx, D - 0.002, 0), (hx, D, ST.get("stem_h", 0.4)), stem)
+    box("ceiling", (-hx - 0.2, D - Dp, Hc), (hx + 0.2, D + 0.12, Hc + 0.1), drywall)
+    box("right", (hx, D - Dp, 0), (hx + 0.12, D + 0.12, Hc), drywall)
+    # 左墙：中间开一个车库门洞（晨光从这里进来）
+    o0, o1, oh = D - ST.get("open_from", 4.8), D - ST.get("open_to", 0.9), ST.get("open_h", 2.1)
+    box("left_a", (-hx - 0.12, D - Dp, 0), (-hx, o0, Hc), drywall)
+    box("left_b", (-hx - 0.12, o1, 0), (-hx, D + 0.12, Hc), drywall)
+    box("left_top", (-hx - 0.12, o0, oh), (-hx, o1, Hc), drywall)
+    box("jamb", (-hx - 0.02, o1 - 0.1, 0), (-hx + 0.04, o1, oh), trim)
+    # 右墙边进屋的门（只是道具，保证北美车库的识别度）
+    box("door", (hx - 0.03, D - 1.6, 0), (hx, D - 0.75, 2.03), trim)
+    box("drive", (-hx - 12, D - Dp - 3, -0.1), (-hx - 1, D + 6, -0.02), concrete)
+    lawn = mat("lawn", (0.18, 0.26, 0.08), 0.9, 0.3, 3)
+    box("lawn", (-hx - 30, D - Dp - 10, -0.12), (-hx - 12, D + 20, -0.03), lawn)
+
 cam = bpy.data.cameras.new("cam"); cam.lens = g("lens_mm", 35); cam.sensor_width = 36; cam.sensor_fit = "HORIZONTAL"
 co = bpy.data.objects.new("cam", cam); bpy.context.collection.objects.link(co)
 co.location = (0, 0, g("cam_height", 0.8)); co.rotation_euler = (math.radians(90 - g("pitch_deg", 5)), 0, 0)
@@ -104,7 +146,9 @@ so.rotation_euler = (-to_sun).to_track_quat("-Z", "Y").to_euler()
 w = bpy.data.worlds.new("w"); bpy.context.scene.world = w; w.use_nodes = True
 bg = w.node_tree.nodes["Background"]; bg.inputs[0].default_value = (0.5, 0.5, 0.55, 1); bg.inputs[1].default_value = g("env_strength", 0.6)
 env = g("env_image")
-if env and os.path.exists(env):
+if ST:
+    bg.inputs[0].default_value = (*ST.get("sky_rgb", (0.55, 0.7, 1.0)), 1); bg.inputs[1].default_value = ST.get("sky_strength", 1.2)
+elif env and os.path.exists(env):
     tex = w.node_tree.nodes.new("ShaderNodeTexEnvironment"); tex.image = bpy.data.images.load(env); tex.projection = "EQUIRECTANGULAR"
     w.node_tree.links.new(tex.outputs["Color"], bg.inputs["Color"])
 # 顶部柔光：在地面和墙上投出车下方的柔和接触阴影（墙角的环境遮蔽）
@@ -118,10 +162,12 @@ s = bpy.context.scene
 s.render.engine = "CYCLES"; s.cycles.samples = g("samples", 128); s.cycles.device = "CPU"; s.cycles.use_denoising = True
 s.view_settings.view_transform = "AgX"; s.view_settings.exposure = g("exposure", 0.0)
 s.render.resolution_x = g("width", 1600); s.render.resolution_y = g("height", 900)
-s.render.film_transparent = True
+s.render.film_transparent = not ST
 s.render.image_settings.file_format = "PNG"; s.render.image_settings.color_mode = "RGBA"; s.render.image_settings.color_depth = "16"
 s.render.filepath = g("out"); bpy.ops.render.render(write_still=True)
 floor.hide_render = True; wallo.hide_render = True
+for ob in setobjs: ob.hide_render = True
+s.render.film_transparent = True
 s.cycles.samples = 16; s.render.filepath = g("out_mask", os.path.splitext(g("out"))[0] + "-mask.png"); bpy.ops.render.render(write_still=True)
 
 from bpy_extras.object_utils import world_to_camera_view
