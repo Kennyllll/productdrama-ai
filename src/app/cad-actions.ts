@@ -418,7 +418,8 @@ async function productFirstKeyframe(projectId: string, shotId: string, p: CadPar
       fs.writeFileSync(path.join(dir, "ai-raw.png"), raw);
       let spot = await locateCast(raw);
       const boxes = [plateBox, spot.box].filter((b): b is Box => !!b);
-      const ai = boxes.length ? await restore(raw, boxes) : raw;
+      // 只在 AI 自己画了车时还原（还原会擦掉站在附近的人）
+      const ai = boxes.length && spot.intruders.length ? await restore(raw, boxes) : raw;
       if (boxes.length && spot.intruders.length) {
         const again = await locateCast(ai);
         spot = again.box ? again : { ...spot, intruders: again.intruders };
@@ -563,9 +564,9 @@ export async function generateCadKeyframeAction(projectId: string, shotId: strin
     fs.mkdirSync(dir, { recursive: true });
 
     if (p.interaction) {
-      const runOnce = () =>
-        p.productFirst
-          ? productFirstKeyframe(projectId, shotId, p, basePrompt, dir, modelPath(m), board.visualSpec.aspectRatio, shot.productNote, shot.characterIds.length > 0, shot.description)
+      const runOnce = (q: CadParams = p) =>
+        q.productFirst
+          ? productFirstKeyframe(projectId, shotId, q, basePrompt, dir, modelPath(m), board.visualSpec.aspectRatio, shot.productNote, shot.characterIds.length > 0, shot.description)
           : interactionKeyframe(projectId, shotId, p, basePrompt, dir, modelPath(m), board.visualSpec.aspectRatio, shot.productNote);
       const save = (x: Awaited<ReturnType<typeof runOnce>>) => {
         const k = addKeyframe({ projectId, shotId, bytes: x.bytes, model: CAD_KEYFRAME_MODEL, prompt: x.prompt, usd: x.usd });
@@ -591,7 +592,12 @@ export async function generateCadKeyframeAction(projectId: string, shotId: strin
       let k = save(r);
       let files = r.files;
       if (seen.issues.length && !seen.failed) {
-        const r2 = await runOnce();
+        // 重跑复用刚才合格的空场景，空场景不再重抽；重跑失败就保留第一张和它的问题
+        const r2 = await runOnce({ ...p, reusePlate: true }).catch((e: unknown) => {
+          seen.issues.push(`自动重跑失败：${e instanceof Error ? e.message : "未知错误"}`);
+          return null;
+        });
+        if (!r2) return { result: { keyframe: toKeyframeView(k), files, aiDrift: r.aiDrift, fit: r.fit, qa: [...(r.qa ?? []), ...seen.issues], renderSeconds: r.renderSeconds } };
         const seen2 = await look(r2.bytes);
         const k2 = save(r2);
         if ((r2.qa?.length ?? 0) + seen2.issues.length < (r.qa?.length ?? 0) + seen.issues.length) {

@@ -90,6 +90,7 @@ export function buildPlatePrompt(base: string, p: CadParams, productName: string
 }
 
 const SUPPORTS: [RegExp, string][] = [
+  [/后墙|back wall/i, "a clear, uncluttered stretch of the back wall facing the camera, bare down to the floor, with no shelves, tools or objects in front of it"],
   [/墙|wall/i, "a clear, uncluttered stretch of wall reaching down to the floor"],
   [/台阶|阶梯|steps?\b/i, "front steps"],
   [/门廊|porch/i, "the porch edge"],
@@ -107,10 +108,28 @@ export function supportNoun(productNote: string): string {
   return `${hit[1]}${side}`;
 }
 
+/** 空场景不要人也不要车：删掉角色行和场景里写到人物或产品的句子，否则 AI 会照着描述画进来 */
+function stripCast(base: string, productName: string): string {
+  const names = (base.match(/^Characters[^:]*: (.*)$/m)?.[1] ?? "")
+    .split(";")
+    .map((c) => c.split("—")[0].trim())
+    .filter(Boolean)
+    .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const person = new RegExp(`${names.length ? `${names.join("|")}|` : ""}(爸爸|妈妈|父亲|母亲|孩子|女孩|男孩|小孩|他|她)(?!的)|\\b(man|woman|girl|boy|child|kid|dad|mom|people|person)\\b`, "i");
+  return base
+    .replace(/^Characters.*$/gm, "")
+    .replace(/^Characters are mid-conversation.*$/gm, "")
+    .replace(/^Scene: (.*)$/m, (_, s: string) => `Scene: ${(s.match(/[^。！？.!?]+[。！？.!?]?/g) ?? [s]).filter((c) => !person.test(c) && !productWords(productName).test(c)).join("")}`);
+}
+
+const productWords = (productName: string) =>
+  new RegExp(`平衡车|童车|车把|座椅|轮子|balance bike|bike|handlebar|saddle${productName ? `|${productName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}` : ""}`, "i");
+
 /** 产品先行的空场景：没有人、没有任何车，之后先放真车再加人 */
+
 export function buildProductFirstPlatePrompt(base: string, p: CadParams, productName: string, support = ""): string {
   const s = support ? `\nThe plate MUST clearly show, with open empty floor directly in front of it: ${support}` : "";
-  return `${buildPlatePrompt(base, p, productName)}\nThis plate is the location without the cast: no people, no animals, and no bicycles, balance bikes, scooters or kids' ride-on toys anywhere in the frame. People and the product are added later. A larger vehicle (e.g. a parked motorcycle or car) may appear only if the shot description names it, away from the open floor, complete and mechanically correct (a motorcycle has exactly two wheels, front and rear).${s}`;
+  return `${buildPlatePrompt(stripCast(base, productName), p, productName)}\nThis plate is the location without the cast: no people, no animals, and no bicycles, balance bikes, scooters or kids' ride-on toys anywhere in the frame. People and the product are added later. A larger vehicle (e.g. a parked motorcycle or car) may appear only if the shot description names it, away from the open floor, complete and mechanically correct (a motorcycle has exactly two wheels, front and rear).${s}`;
 }
 
 /** 靠物且没人碰车的镜头：AI 只在空场景里加人，看不到车；真车之后按程序算好的位置贴上 */
