@@ -2,7 +2,8 @@
 import sharp from "sharp";
 import { getDb } from "@/lib/db";
 
-export const VISION_MODEL = "gemini-2.5-flash";
+/** 按顺序尝试：Google 下线旧模型时返回 404，繁忙时 503，换下一个 */
+export const VISION_MODELS = ["gemini-3.5-flash", "gemini-3.8-flash"];
 const BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 const STATUS_MESSAGES: Record<number, string> = {
@@ -40,21 +41,35 @@ type Part = { text: string } | { inline_data: { mime_type: string; data: string 
 async function generate(parts: Part[], timeoutMs: number): Promise<unknown> {
   const key = getVisionKey();
   if (!key) throw new Error("尚未配置视觉质检 Key");
-  let res: Response;
-  try {
-    res = await fetch(`${BASE}/${VISION_MODEL}:generateContent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: { responseMimeType: "application/json", temperature: 0 } }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch (e) {
-    const timedOut = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
-    throw new Error(timedOut ? "Gemini 响应超时" : "网络错误，无法连接 Gemini");
+  let res: Response | null = null;
+  let lastErr = "";
+  // Gemini 高峰期经常 503：每轮把模型都试一遍，最多 3 轮，轮间等待
+  outer: for (let round = 0; round < 3; round++) {
+    if (round) await new Promise((r) => setTimeout(r, round * 8_000));
+    for (const model of VISION_MODELS) {
+      try {
+        res = await fetch(`${BASE}/${model}:generateContent`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+          body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: { responseMimeType: "application/json", temperature: 0 } }),
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+      } catch (e) {
+        const timedOut = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
+        lastErr = timedOut ? "Gemini 响应超时" : "网络错误，无法连接 Gemini";
+        res = null;
+        if (timedOut) continue;
+        break;
+      }
+      if (res.ok) break;
+      lastErr = STATUS_MESSAGES[res.status] ?? `Gemini 返回错误（HTTP ${res.status}）`;
+      if (res.status !== 404 && res.status !== 503) break;
+    }
+    if (res?.ok || (res && res.status !== 503)) break outer;
   }
-  if (!res.ok) throw new Error(STATUS_MESSAGES[res.status] ?? `Gemini 返回错误（HTTP ${res.status}）`);
-  const body = (await res.json().catch(() => null)) as { candidates?: { content?: { parts?: { text?: string }[] } }[] } | null;
-  const text = body?.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("").trim();
+  if (!res?.ok) throw new Error(res?.status === 404 ? "Gemini 模型已下线，请更新 VISION_MODELS" : lastErr || "Gemini 请求失败");
+  const body = (await res.json().catch(() => null)) as { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[] } | null;
+  const text = body?.candidates?.[0]?.content?.parts?.filter((p) => !p.thought).map((p) => p.text ?? "").join("").trim();
   if (!text) throw new Error("Gemini 没有返回内容");
   try {
     return JSON.parse(text);
@@ -64,7 +79,7 @@ async function generate(parts: Part[], timeoutMs: number): Promise<unknown> {
 }
 
 export async function testVision(): Promise<void> {
-  await generate([{ text: 'Reply with this JSON only: {"ok": true}' }], 30_000);
+  await generate([{ text: 'Reply with this JSON only: {"ok": true}' }], 45_000);
 }
 
 const jpegPart = async (img: Buffer, max: number): Promise<Part> => ({
@@ -93,11 +108,15 @@ export async function reviewKeyframe(o: { image: Buffer; productRef?: Buffer; pr
     "6. Human anatomy is correct (hands, fingers, limbs, faces), and adults and children are scaled correctly to each other and to the scene.",
     "7. The location reads as a real North American suburban setting consistent with the description.",
     "8. No garbled text, watermarks or extra logos.",
-    'Return JSON only: {"pass": boolean, "issues": string[]}. Each issue is ONE short sentence in Simplified Chinese naming the object and the problem (e.g. "摩托车有三个轮子"). pass must be false if there is any issue.',
+    "Before judging, look closely at every vehicle: count its visible wheels and check each wheel is a separate round wheel on its own axle (a motorcycle has exactly 2 wheels, front and rear; watch for an extra wheel hidden behind people or other objects).",
+    'Return JSON only: {"vehicles": [{"name": string, "wheels": number, "ok": boolean, "problem": string}], "pass": boolean, "issues": string[]}. Each issue is ONE short sentence in Simplified Chinese naming the object and the problem (e.g. "摩托车有三个轮子"); include every vehicle problem in issues too. pass must be false if there is any issue.',
   ].join("\n");
   const parts: Part[] = [{ text: prompt }, await jpegPart(o.image, 1536)];
   if (o.productRef) parts.push(await jpegPart(o.productRef, 768));
-  const data = (await generate(parts, 120_000)) as { pass?: unknown; issues?: unknown };
+  const data = (await generate(parts, 120_000)) as { pass?: unknown; issues?: unknown; vehicles?: unknown };
   const issues = Array.isArray(data.issues) ? data.issues.filter((x): x is string => typeof x === "string" && x.trim() !== "").map((x) => x.trim()) : [];
+  if (Array.isArray(data.vehicles))
+    for (const v of data.vehicles as { name?: unknown; ok?: unknown; problem?: unknown }[])
+      if (v?.ok === false && !issues.length) issues.push(`${typeof v.name === "string" ? v.name : "车辆"}结构有问题${typeof v.problem === "string" && v.problem ? `：${v.problem}` : ""}`);
   return { pass: data.pass === true && issues.length === 0, issues };
 }

@@ -66,7 +66,7 @@ export async function saveVisionKeyAction(input: { apiKey: string; clear: boolea
 export async function testVisionAction(): Promise<FormState> {
   try {
     await testVision();
-    return { ok: "连接成功（gemini-2.5-flash）" };
+    return { ok: "连接成功" };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "连接失败" };
   }
