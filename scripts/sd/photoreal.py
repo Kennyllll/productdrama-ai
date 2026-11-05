@@ -40,9 +40,19 @@ g = cv2.cvtColor(np.array(plate), cv2.COLOR_RGB2GRAY)
 canny = Image.fromarray(cv2.cvtColor(cv2.Canny(g, S.get("canny_lo", 60), S.get("canny_hi", 150)), cv2.COLOR_GRAY2RGB))
 canny.save(S["out"].rsplit(".", 1)[0] + "-canny.png")
 
+# CLIP 一次只读 77 个 token，长提示词后半段（布景细节）会被静默截掉：用 compel 分段编码再拼接
+from compel import Compel, ReturnedEmbeddingsType
+cp = Compel(tokenizer=[pipe.tokenizer, pipe.tokenizer_2], text_encoder=[pipe.text_encoder, pipe.text_encoder_2],
+            returned_embeddings_type=ReturnedEmbeddingsType.PENULTIMATE_HIDDEN_STATES_NON_NORMALIZED,
+            requires_pooled=[False, True], truncate_long_prompts=False)
+with torch.no_grad():
+    pe, pp = cp(S["prompt"])
+    ne, np_ = cp(S.get("negative", ""))
+    pe, ne = cp.pad_conditioning_tensors_to_same_length([pe, ne])
+
 t0 = time.time()
 lat = pipe(
-    prompt=S["prompt"], negative_prompt=S.get("negative", ""),
+    prompt_embeds=pe, pooled_prompt_embeds=pp, negative_prompt_embeds=ne, negative_pooled_prompt_embeds=np_,
     image=plate, control_image=[depth, canny], control_mode=[1, 3],
     strength=S.get("strength", 0.6), num_inference_steps=S.get("steps", 28),
     guidance_scale=S.get("cfg", 5.0), controlnet_conditioning_scale=S.get("cn_scale", 0.8),
