@@ -132,6 +132,13 @@ if MQ:
         sh = W(f"upperarm01.{s_}")
         ik(f"lowerarm02.{s_}", t, MQ.get("chain", 4), pole=sh - fwd * 0.25 + left * sg * 0.25 - V3((0, 0, 0.15)), pole_deg=MQ.get("pole_deg", -90))
         targets[f"lowerarm02.{s_}"] = t
+    # 手指弯过来包住握把（拇指弯得少一点）
+    curl = math.radians(MQ.get("curl_deg", 55)) * MQ.get("curl_sign", 1)
+    for s_ in ("L", "R"):
+        for f in range(1, 6):
+            for j in (1, 2, 3):
+                fb = pb.get(f"finger{f}-{j}.{s_}")
+                if fb: fb.rotation_mode = "XYZ"; fb.rotation_euler.x = curl * (0.4 if f == 1 else 1)
     bpy.context.view_layer.update()
     print("MQ_REACH_MM", {k: round((W(k, True) - t).length * 1000) for k, t in targets.items()})
 
