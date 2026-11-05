@@ -8,6 +8,7 @@ Writes out (RGBA：车 + 地面 / 墙面阴影), out_mask（只有车）; prints
 import bpy, json, math, sys, os, mathutils
 import numpy as np
 spec = json.load(open(sys.argv[sys.argv.index("--") + 1]))
+sys.stdout.reconfigure(line_buffering=True)
 g = lambda k, d=None: spec.get(k, d)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -70,9 +71,69 @@ for o, v in verts():
     w = (v[:, :2] - np.array(A[:2])) @ np.array(n[:2])
     i = int(w.argmin())
     if best is None or w[i] < best[0]: best = (float(w[i]), o.name, v[i].copy())
-shift = -(best[0] - 0.003)
+shift = 0 if g("free") else -(best[0] - 0.003)
 T2 = mathutils.Matrix.Translation(n * shift); apply(T2); grips = [T2 @ p for p in grips]
 contact = mathutils.Vector(best[2]) + n * shift
+
+# 3D 人偶（MPFB / MakeHuman CC0）：IK 把手腕对到握把、脚对到地面、臀部对到座椅；AI 只照着它画人的外观
+MQ = g("mannequin"); mq = []
+if MQ:
+    with bpy.data.libraries.load(MQ["blend"]) as (src, dst): dst.objects = list(src.objects)
+    for o in dst.objects: bpy.context.collection.objects.link(o)
+    mq = [o for o in dst.objects if o.type == "MESH"]
+    mrig = next(o for o in dst.objects if o.type == "ARMATURE"); pb = mrig.pose.bones; V3 = mathutils.Vector
+    W = lambda b_, tail=False: mrig.matrix_world @ (pb[b_].tail if tail else pb[b_].head)
+    def ik(bone, tgt, chain, pole=None, pole_deg=-90):
+        e = bpy.data.objects.new("ik_" + bone, None); bpy.context.collection.objects.link(e); e.location = tgt
+        c = pb[bone].constraints.new("IK"); c.target = e; c.chain_count = chain
+        if pole is not None:
+            q = bpy.data.objects.new("pole_" + bone, None); bpy.context.collection.objects.link(q); q.location = pole
+            c.pole_target = q; c.pole_angle = math.radians(pole_deg)
+    gm = (grips[0] + grips[1]) / 2
+    Vb = np.concatenate([v for _, v in verts()]); cen = V3(Vb.mean(0))
+    # 车头方向：握把在车头一侧
+    bf = bd if (gm - cen).dot(bd) > 0 else -bd
+    pose = MQ.get("pose", "stand")
+    fwd = -n if MQ.get("face_wall") else bf
+    # MPFB 人体正面朝 -Y
+    mrig.location = (0, 0, 0); mrig.rotation_euler = (0, 0, math.atan2(fwd.y, fwd.x) + math.pi / 2)
+    bpy.context.view_layer.update()
+    left = mrig.matrix_world.to_3x3() @ V3((1, 0, 0))
+    if pose == "ride":
+        # 骑姿：臀部坐在座椅顶，两脚分开踩在车两侧地面，上身前倾，双手握把
+        rear = Vb[((Vb[:, :2] - np.array(cen[:2])) @ np.array(bf[:2])) < 0]
+        st = V3(rear[rear[:, 2].argmax()])
+        hip0 = (W("upperleg01.L") + W("upperleg01.R")) / 2; ank0 = W("foot.L").z
+        hip = st - bf * MQ.get("seat_back", 0.02) + V3((0, 0, MQ.get("hip_above_seat", 0.07)))
+        mrig.location = hip - hip0; bpy.context.view_layer.update()
+        neck0 = W("neck01").dot(fwd); lean = math.radians(MQ.get("lean_deg", 20)) / 3
+        for b_ in ("spine01", "spine02", "spine03"): pb[b_].rotation_mode = "XYZ"; pb[b_].rotation_euler.x = lean
+        bpy.context.view_layer.update()
+        if W("neck01").dot(fwd) < neck0:
+            for b_ in ("spine01", "spine02", "spine03"): pb[b_].rotation_euler.x = -lean
+            bpy.context.view_layer.update()
+        targets = {}
+        for s_, sg in (("L", 1), ("R", -1)):
+            ft = V3((hip.x, hip.y, ank0)) + left * sg * MQ.get("stance", 0.13) + bf * MQ.get("foot_fwd", 0.1)
+            ik(f"lowerleg02.{s_}", ft, 4, pole=hip + fwd * 0.6 + left * sg * 0.15, pole_deg=MQ.get("knee_pole_deg", -90)); targets[f"lowerleg02.{s_}"] = ft
+    else:
+        # 站姿：站在车把后面、紧贴车架外侧（离墙那侧）
+        off = MQ.get("offset", [-0.18, 0.11])
+        al = (Vb[:, :2] - np.array(gm[:2])) @ np.array(bf[:2])
+        near = Vb[np.abs(al - off[0]) < 0.08]
+        edge = float(((near[:, :2] - np.array(gm[:2])) @ np.array(n[:2])).max())
+        mrig.location = V3((gm.x, gm.y, 0)) + bf * off[0] + n * (edge + off[1]); bpy.context.view_layer.update()
+        targets = {}
+    base = mrig.location.copy()
+    gl, gr = sorted(grips, key=lambda p_: -(p_ - base).dot(left))
+    for s_, gp, sg in (("L", gl, 1), ("R", gr, -1)):
+        # 手腕在握把后上方一点，手掌才包住握把
+        t = gp - fwd * MQ.get("wrist_back", 0.04) + V3((0, 0, 0.02))
+        sh = W(f"upperarm01.{s_}")
+        ik(f"lowerarm02.{s_}", t, MQ.get("chain", 4), pole=sh - fwd * 0.25 + left * sg * 0.25 - V3((0, 0, 0.15)), pole_deg=MQ.get("pole_deg", -90))
+        targets[f"lowerarm02.{s_}"] = t
+    bpy.context.view_layer.update()
+    print("MQ_REACH_MM", {k: round((W(k, True) - t).length * 1000) for k, t in targets.items()})
 
 # 轮毂外圈的黑塑料太光滑会反射亮墙，在轮胎内侧形成一圈假白边（真车是哑光黑）
 _mr = {"plastic_black": 0.75, "rubber": 0.9, **g("mat_rough", {})}
@@ -205,7 +266,14 @@ if ST and g("out_plate"):
 floor.hide_render = True; wallo.hide_render = True
 for ob in setobjs: ob.hide_render = True
 s.render.film_transparent = True
+# 车的遮罩扣掉人偶挡住的部分（手在握把前面）
+for o in mq: o.is_holdout = True
 s.cycles.samples = 16; s.render.filepath = g("out_mask", os.path.splitext(g("out"))[0] + "-mask.png"); bpy.ops.render.render(write_still=True)
+if mq and g("out_mq_mask"):
+    for o in objs: o.hide_render = True
+    for o in mq: o.is_holdout = False
+    s.render.filepath = g("out_mq_mask"); bpy.ops.render.render(write_still=True)
+    for o in objs: o.hide_render = False
 
 from bpy_extras.object_utils import world_to_camera_view
 rw, rh = s.render.resolution_x, s.render.resolution_y
