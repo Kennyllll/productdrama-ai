@@ -51,7 +51,7 @@ async function rgb8(input: Buffer | string, w: number, h: number): Promise<Buffe
   return sharp(input).resize(w, h, { fit: "fill" }).removeAlpha().toColourspace("srgb").raw({ depth: "uchar" }).toBuffer();
 }
 
-export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: string; mask: string; deghost?: boolean; maskFull?: string; ghostReach?: number }): Promise<{ image: Buffer; ghostPx: number; box: { x0: number; y0: number; x1: number; y1: number } }> {
+export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: string; mask: string; deghost?: boolean; maskFull?: string; ghostReach?: number; tint?: number }): Promise<{ image: Buffer; ghostPx: number; box: { x0: number; y0: number; x1: number; y1: number } }> {
   const meta = await sharp(o.cad).metadata();
   const W = meta.width ?? 0, H = meta.height ?? 0, N = W * H;
   if (!W || !H) throw new Error("Blender 布景渲染图无效");
@@ -127,17 +127,33 @@ export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: strin
     const a = alpha[i] / 255, f = gf[i] / 255;
     const lum = (cad[i * 3] + cad[i * 3 + 1] + cad[i * 3 + 2]) / 3;
     const gMax = lum < 50 ? 1.3 + (lum / 50) * 1.2 : 2.5;
+    // 亮度全量迁移，色偏只迁移一部分：墙面的暖色比例直接乘到白车身上会发粉
+    const L = (rt[i * 3] + rt[i * 3 + 1] + rt[i * 3 + 2]) / 3;
     for (let c = 0; c < 3; c++) {
       const j = i * 3 + c;
       const bg = ai[j] * (1 - f) + pf[j] * f;
       let v = bg;
       if (a > 0) {
-        const g = Math.max(0.35, Math.min(gMax, rt[j]));
+        const g = Math.max(0.35, Math.min(gMax, L * Math.pow(rt[j] / L, o.tint ?? 0.25)));
         v = Math.min(255, cad[j] * g) * a + bg * (1 - a);
       }
       out[j] = Math.round(v);
     }
   }
+  // 曝光对齐：车身最亮的白色部分对齐 AI 画面里同一位置的亮度（只取整体统计，不用 AI 车的形状），避免白车发灰
+  const p90 = (buf: Buffer) => {
+    const v: number[] = [];
+    for (let i = 0; i < N; i++) if (mb[i]) v.push((buf[i * 3] + buf[i * 3 + 1] + buf[i * 3 + 2]) / 3);
+    v.sort((a, b) => a - b);
+    return v.length ? v[Math.floor(v.length * 0.9)] : 0;
+  };
+  const pOut = p90(out), pAi = p90(ai);
+  const ex = pOut > 0 ? Math.max(1, Math.min(1.3, pAi / pOut)) : 1;
+  if (ex > 1.01)
+    for (let i = 0; i < N; i++) {
+      const a = alpha[i] / 255;
+      if (a > 0) for (let c = 0; c < 3; c++) out[i * 3 + c] = Math.min(255, Math.round(out[i * 3 + c] * (1 + (ex - 1) * a)));
+    }
   const image = await sharp(out, raw3(W, H)).png().toBuffer();
   return { image, ghostPx, box: { x0: x0 / W, y0: y0 / H, x1: x1 / W, y1: y1 / H } };
 }
