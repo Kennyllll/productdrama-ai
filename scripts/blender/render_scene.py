@@ -141,6 +141,25 @@ if MQ:
                 if fb: fb.rotation_mode = "XYZ"; fb.rotation_euler.x = curl * (0.4 if f == 1 else 1)
     bpy.context.view_layer.update()
     print("MQ_REACH_MM", {k: round((W(k, True) - t).length * 1000) for k, t in targets.items()})
+    # 穿模检查：人偶顶点有多少落在车的实体里面（按身体部位统计）
+    from mathutils.bvhtree import BVHTree
+    dg = bpy.context.evaluated_depsgraph_get()
+    trees = [BVHTree.FromObject(o, dg) for o in objs if o.type == "MESH"]
+    clip = {}
+    for o in mq:
+        ev = o.evaluated_get(dg); me = ev.to_mesh(); M = ev.matrix_world; Mi = {}
+        vg = {g_.index: g_.name for g_ in o.vertex_groups}
+        for v in me.vertices:
+            p_ = M @ v.co
+            for o2, tr in zip([o for o in objs if o.type == "MESH"], trees):
+                Mi.setdefault(o2.name, o2.matrix_world.inverted())
+                hit = tr.find_nearest(Mi[o2.name] @ p_)
+                if hit[0] is not None and hit[3] < 0.03 and (Mi[o2.name] @ p_ - hit[0]).dot(hit[1]) < 0:
+                    gs = [(vg.get(x.group, ""), x.weight) for x in o.data.vertices[v.index].groups if vg.get(x.group, "").split(".")[0] not in ("HelperGeometry", "JointCubes", "Left", "Mid", "Right", "body")]
+                    k = max(gs, key=lambda t: t[1])[0] if gs else "?"
+                    clip[k] = clip.get(k, 0) + 1; break
+        ev.to_mesh_clear()
+    print("MQ_CLIP", dict(sorted(clip.items(), key=lambda t: -t[1])[:10]))
 
 # 轮毂外圈的黑塑料太光滑会反射亮墙，在轮胎内侧形成一圈假白边（真车是哑光黑）
 _mr = {"plastic_black": 0.75, "rubber": 0.9, **g("mat_rough", {})}

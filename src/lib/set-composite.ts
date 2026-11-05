@@ -51,7 +51,7 @@ async function rgb8(input: Buffer | string, w: number, h: number): Promise<Buffe
   return sharp(input).resize(w, h, { fit: "fill" }).removeAlpha().toColourspace("srgb").raw({ depth: "uchar" }).toBuffer();
 }
 
-export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: string; mask: string; deghost?: boolean }): Promise<{ image: Buffer; ghostPx: number; box: { x0: number; y0: number; x1: number; y1: number } }> {
+export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: string; mask: string; deghost?: boolean; occluder?: string; ghostReach?: number }): Promise<{ image: Buffer; ghostPx: number; box: { x0: number; y0: number; x1: number; y1: number } }> {
   const meta = await sharp(o.cad).metadata();
   const W = meta.width ?? 0, H = meta.height ?? 0, N = W * H;
   if (!W || !H) throw new Error("Blender 布景渲染图无效");
@@ -61,6 +61,10 @@ export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: strin
     rgb8(o.plate, W, H),
     sharp(o.mask).ensureAlpha().extractChannel(3).raw({ depth: "uchar" }).toBuffer(),
   ]);
+  // 人偶轮廓：车的 mask 已经按 3D 遮挡扣掉了人在车前面的部分；这里只保证人（腿、手）不被当成 AI 车的重影填掉
+  const occ = o.occluder
+    ? await sharp(o.occluder).resize(W, H, { fit: "fill" }).ensureAlpha().extractChannel(3).raw({ depth: "uchar" }).toBuffer()
+    : Buffer.alloc(N);
   const mb = Buffer.alloc(N);
   let x0 = W, x1 = 0, y0 = H, y1 = 0;
   for (let i = 0; i < N; i++)
@@ -76,7 +80,7 @@ export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: strin
   const r45 = Math.round(W * 0.017);
   const solid = fillHoles(await erode(await dilate(mb, W, H, r45), W, H, r45), W, H);
   for (let i = 0; i < N; i++) if (mb[i]) solid[i] = 255;
-  const reg = await dilate(solid, W, H, W * 0.008);
+  const reg = await dilate(solid, W, H, W * (o.ghostReach ?? 0.008));
 
   // 底图按 AI 色调匹配：用车附近以外的像素算低频比例，两个尺度，车内部用大尺度
   const keep = await dilate(solid, W, H, W * 0.004);
@@ -108,7 +112,8 @@ export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: strin
   if (o.deghost !== false) for (let i = 0; i < N; i++) ghost[i] = reg[i] && !mb[i] && db[i] > 28 ? 255 : 0;
   ghost = await dilate(ghost, W, H, 4);
   let ghostPx = 0;
-  for (let i = 0; i < N; i++) if (mb[i]) ghost[i] = 0; else if (ghost[i]) ghostPx++;
+  const occD = await dilate(occ, W, H, 3);
+  for (let i = 0; i < N; i++) if (mb[i] || occD[i]) ghost[i] = 0; else if (ghost[i]) ghostPx++;
   const gf = await blur1(ghost, W, H, 1.5);
 
   // 真车光影：用车周围环境的「AI / Blender 底图」低频比例（只在车外取样），
