@@ -257,7 +257,10 @@ if ST and g("out_plate"):
     for o in objs: o.visible_camera = False
     s.render.filepath = g("out_plate"); bpy.ops.render.render(write_still=True)
     if g("out_depth"):
-        # 无车布景的深度图（近白远黑）：给 ControlNet 锁墙、地面和透视，不用从图里估
+        # 布景深度图（近白远黑）：给 ControlNet 锁墙、地面和透视，不用从图里估。
+        # 有人偶时默认带车：AI 要看到车才知道人是骑在车上、手握着车把
+        if g("depth_with_product", bool(mq)):
+            for o in objs: o.visible_camera = True
         bpy.context.view_layer.use_pass_z = True
         s.use_nodes = True; nt = s.node_tree
         for nd in list(nt.nodes): nt.nodes.remove(nd)
