@@ -303,6 +303,11 @@ if mq and g("out_mq_mask"):
     for o in mq: o.is_holdout = False
     s.render.filepath = g("out_mq_mask"); bpy.ops.render.render(write_still=True)
     for o in objs: o.hide_render = False
+if mq and g("out_mask_full"):
+    # 不扣人偶的车 mask：和扣过的相减，就是「人挡在车前面」的像素
+    for o in mq: o.hide_render = True
+    s.render.filepath = g("out_mask_full"); bpy.ops.render.render(write_still=True)
+    for o in mq: o.hide_render = False
 
 from bpy_extras.object_utils import world_to_camera_view
 rw, rh = s.render.resolution_x, s.render.resolution_y

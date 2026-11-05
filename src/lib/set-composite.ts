@@ -51,7 +51,7 @@ async function rgb8(input: Buffer | string, w: number, h: number): Promise<Buffe
   return sharp(input).resize(w, h, { fit: "fill" }).removeAlpha().toColourspace("srgb").raw({ depth: "uchar" }).toBuffer();
 }
 
-export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: string; mask: string; deghost?: boolean; occluder?: string; ghostReach?: number }): Promise<{ image: Buffer; ghostPx: number; box: { x0: number; y0: number; x1: number; y1: number } }> {
+export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: string; mask: string; deghost?: boolean; maskFull?: string; ghostReach?: number }): Promise<{ image: Buffer; ghostPx: number; box: { x0: number; y0: number; x1: number; y1: number } }> {
   const meta = await sharp(o.cad).metadata();
   const W = meta.width ?? 0, H = meta.height ?? 0, N = W * H;
   if (!W || !H) throw new Error("Blender 布景渲染图无效");
@@ -61,10 +61,13 @@ export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: strin
     rgb8(o.plate, W, H),
     sharp(o.mask).ensureAlpha().extractChannel(3).raw({ depth: "uchar" }).toBuffer(),
   ]);
-  // 人偶轮廓：车的 mask 已经按 3D 遮挡扣掉了人在车前面的部分；这里只保证人（腿、手）不被当成 AI 车的重影填掉
-  const occ = o.occluder
-    ? await sharp(o.occluder).resize(W, H, { fit: "fill" }).ensureAlpha().extractChannel(3).raw({ depth: "uchar" }).toBuffer()
-    : Buffer.alloc(N);
+  // 人挡在车前面的像素（不扣人偶的车 mask − 扣过的）：保留 AI 画的人（腿、手），不当重影填。
+  // 人在车后面 / 车架空洞里的部分照常去重影
+  const occ = Buffer.alloc(N);
+  if (o.maskFull) {
+    const full = await sharp(o.maskFull).resize(W, H, { fit: "fill" }).ensureAlpha().extractChannel(3).raw({ depth: "uchar" }).toBuffer();
+    for (let i = 0; i < N; i++) if (full[i] > 128 && mRaw[i] <= 128) occ[i] = 255;
+  }
   const mb = Buffer.alloc(N);
   let x0 = W, x1 = 0, y0 = H, y1 = 0;
   for (let i = 0; i < N; i++)
