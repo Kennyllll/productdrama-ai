@@ -134,6 +134,9 @@ if ST:
 cam = bpy.data.cameras.new("cam"); cam.lens = g("lens_mm", 35); cam.sensor_width = 36; cam.sensor_fit = "HORIZONTAL"
 co = bpy.data.objects.new("cam", cam); bpy.context.collection.objects.link(co)
 co.location = (0, 0, g("cam_height", 0.8)); co.rotation_euler = (math.radians(90 - g("pitch_deg", 5)), 0, 0)
+# 斜 45° 左右看墙（cam_pos + look_at）：只有沿墙方向斜看，车向墙的侧倾和车把碰墙才看得出来
+if g("cam_pos") and g("look_at"):
+    co.location = g("cam_pos"); co.rotation_euler = (mathutils.Vector(g("look_at")) - co.location).to_track_quat("-Z", "Y").to_euler()
 bpy.context.scene.camera = co
 
 def kelvin_rgb(k):

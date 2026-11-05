@@ -439,8 +439,9 @@ async function setFirstKeyframe(o: { projectId: string; shotId: string; p: CadPa
   const t0 = Date.now();
   const rs = await renderScene({
     glb: o.glb, out: path.join(dir, "set.png"), out_plate: path.join(dir, "set-plate.png"), width: W, height: H,
-    lens_mm: Math.min(50, Math.max(24, p.lensMm)), cam_height: 0.6, pitch_deg: 3,
-    wall: { a: [-3, D], dir: [1, 0], normal: [0, -1] }, place: [x, D], roll_deg: 14, yaw_off_deg: -25, set: { garage: true },
+    // 相机在车前左侧约 45° 斜看墙：正对墙拍时，车向墙的侧倾和车把碰墙在画面里看不出来，像自己立着
+    lens_mm: 40, cam_height: 0.6, pitch_deg: 3, cam_pos: [x - 1.55, D - 1.5, 0.9], look_at: [x - 0.07, D - 0.15, 0.32],
+    wall: { a: [-3, D], dir: [1, 0], normal: [0, -1] }, place: [x, D], roll_deg: 14, yaw_off_deg: -10, set: { garage: true },
     sun_az_deg: -115, sun_elev_deg: 14, sun_kelvin: p.keyKelvin, sun_strength: 5, exposure: p.exposure ?? 0, samples: 96,
   });
   const renderSeconds = Math.round((Date.now() - t0) / 1000);
@@ -457,7 +458,7 @@ async function setFirstKeyframe(o: { projectId: string; shotId: string; p: CadPa
   const scene = (o.basePrompt.match(/^Scene: (.*)$/m)?.[1] ?? "").split(/(?<=[。！？.!?])/).filter((s) => !/平衡车|童车|车把|座椅|轮子|balance bike|bike|handlebar|saddle/i.test(s)).join("");
   const cast = (o.basePrompt.match(/^Characters[^:]*: (.*)$/m)?.[1] ?? "").split(";").map((c) => c.trim()).filter(Boolean);
   const prompt = [
-    "The first attached image is a 3D layout render of the inside of a suburban North American garage; the camera, the walls, the floor, the open garage door, the sunlight pattern and every shadow are final.",
+    "The first attached image is a 3D layout render of the inside of a suburban North American garage; the camera, the walls, the floor, the sunlight pattern and every shadow are final.",
     "Turn it into a photorealistic cinematic film still shot on a cinema camera, fine film grain.",
     scene ? `Story context: ${scene}` : "",
     "Keep the exact camera, perspective and layout: the back wall, the low concrete stem wall along its base, the floor line, the sunlight pattern and every shadow stay where they are.",

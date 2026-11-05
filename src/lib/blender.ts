@@ -17,6 +17,8 @@ export interface RenderSpec {
   pitch_deg?: number;
   lens_mm: number;
   distance_m?: number | null;
+  cam_pos?: [number, number, number];
+  look_at?: [number, number, number];
   target_height_frac?: number;
   key_dir_deg: number;
   key_elev_deg: number;
