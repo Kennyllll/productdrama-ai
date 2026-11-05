@@ -188,6 +188,19 @@ if ST and g("out_plate"):
     # 同一布景、车对相机不可见但保留投影和反射：用来填掉 AI 图里露在真车外的 AI 车（重影）
     for o in objs: o.visible_camera = False
     s.render.filepath = g("out_plate"); bpy.ops.render.render(write_still=True)
+    if g("out_depth"):
+        # 无车布景的深度图（近白远黑）：给 ControlNet 锁墙、地面和透视，不用从图里估
+        bpy.context.view_layer.use_pass_z = True
+        s.use_nodes = True; nt = s.node_tree
+        for nd in list(nt.nodes): nt.nodes.remove(nd)
+        rl = nt.nodes.new("CompositorNodeRLayers"); nz = nt.nodes.new("CompositorNodeNormalize")
+        iv = nt.nodes.new("CompositorNodeInvert"); oc = nt.nodes.new("CompositorNodeComposite")
+        nt.links.new(rl.outputs["Depth"], nz.inputs[0]); nt.links.new(nz.outputs[0], iv.inputs["Color"]); nt.links.new(iv.outputs[0], oc.inputs["Image"])
+        vt, ex, sp = s.view_settings.view_transform, s.view_settings.exposure, s.cycles.samples
+        s.view_settings.view_transform = "Standard"; s.view_settings.exposure = 0; s.cycles.samples = 1
+        s.render.filepath = g("out_depth"); bpy.ops.render.render(write_still=True)
+        s.view_settings.view_transform, s.view_settings.exposure, s.cycles.samples = vt, ex, sp
+        s.use_nodes = False
     for o in objs: o.visible_camera = True
 floor.hide_render = True; wallo.hide_render = True
 for ob in setobjs: ob.hide_render = True
