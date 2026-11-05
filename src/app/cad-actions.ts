@@ -15,6 +15,7 @@ import { findLocalProject, getProduct } from "@/lib/repo";
 import { getVisionKey, locateGeometry, locateSupport, reviewKeyframe } from "@/lib/vision-qa";
 import { getStoryboard } from "@/lib/storyboard-repo";
 import { composeSetFirst } from "@/lib/set-composite";
+import { layoutRecall } from "@/lib/layout-check";
 import { findPhoto, listCharacters, photoPath } from "@/lib/cast-repo";
 
 type Result<T> = { error?: string; result?: T };
@@ -461,7 +462,7 @@ async function setFirstKeyframe(o: { projectId: string; shotId: string; p: CadPa
     "The first attached image is a 3D layout render of the inside of a suburban North American garage; the camera, the walls, the floor, the sunlight pattern and every shadow are final.",
     "Turn it into a photorealistic cinematic film still shot on a cinema camera, fine film grain.",
     scene ? `Story context: ${scene}` : "",
-    "Keep the exact camera, perspective and layout: the back wall, the low concrete stem wall along its base, the floor line, the sunlight pattern and every shadow stay where they are.",
+    "Keep the exact camera, perspective and layout: the camera looks at the back wall at an angle, so the wall and the low concrete stem wall along its base recede diagonally toward the right; the drywall seams, the metal shelf, the floor line, the sunlight pattern and every shadow stay exactly where they are. Do not turn the camera to face the wall, and do not add doors or openings that are not in the render.",
     `The shadow on the back wall and floor belongs to a ${product} that will be composited in later: keep that shadow exactly, keep the floor and wall in front of it empty, and do not draw any bike, balance bike, scooter, toy or vehicle anywhere.`,
     "Give the drywall, the concrete stem wall and the concrete floor real-world texture: slight scuffs, a faint oil stain, fine dust in the sunbeam.",
     cast.length ? `Add exactly ${cast.length} ${cast.length === 1 ? "person" : "people"}: ${cast.join("; ")}. Nobody else. ${o.productNote.match(/[^。]*(?:站|看|抱|holding|stand)[^。]*/)?.[0] ?? ""} Every person stands with both feet on the floor at least two steps away from that shadow. Every prop appears exactly once: a helmet held in the hands is not also worn.` : "Add no people.",
@@ -473,9 +474,12 @@ async function setFirstKeyframe(o: { projectId: string; shotId: string; p: CadPa
   const unit = await estimate(PLATE_MODEL, input).then((r) => r.usd).catch(() => NaN);
   const ai = await runFlare(input);
   fs.writeFileSync(path.join(dir, "ai.png"), ai);
+  // AI 换了机位：真车按原机位贴回会悬空、比例错，直接判失败，不贴车、不进看图质检
+  const layout = await layoutRecall(path.join(dir, "set-plate.png"), ai, rs.mask);
+  if (layout < 0.6) throw new Error(`AI 写实化改了机位（布景结构线只对上 ${(layout * 100).toFixed(0)}%），没有贴车`);
   const comp = await composeSetFirst({ ai, cad: rs.image, plate: path.join(dir, "set-plate.png"), mask: rs.mask });
   fs.writeFileSync(path.join(dir, "final.png"), comp.image);
-  const qa = [`3D 布景先行：车库布景、相机高 0.6 m、${Math.min(50, Math.max(24, p.lensMm))} mm；车向墙倾 ${Math.abs(rs.meta.roll_deg).toFixed(0)}°，${rs.meta.contact.part ? "车把碰墙" : "接触点未知"}`, refs.length ? `角色照：${refs.map((r) => r.name).join("、")}` : "没有角色照，人物只按文字描述"];
+  const qa = [`3D 布景先行：车库布景、相机斜看墙、40 mm、机位一致 ${(layout * 100).toFixed(0)}%；车向墙倾 ${Math.abs(rs.meta.roll_deg).toFixed(0)}°，${rs.meta.contact.part ? "车把碰墙" : "接触点未知"}`, refs.length ? `角色照：${refs.map((r) => r.name).join("、")}` : "没有角色照，人物只按文字描述"];
   fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ mode: "set-first", render: rs.meta, ghostPx: comp.ghostPx, refs: refs.map((r) => r.name), qa }));
   const f = (name: string) => `/api/cad/${o.projectId}?f=${o.shotId.toLowerCase()}/${name}`;
   return {

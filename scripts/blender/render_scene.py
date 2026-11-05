@@ -125,6 +125,18 @@ if ST:
     box("left_b", (-hx - 0.12, o1, 0), (-hx, D + 0.12, Hc), drywall)
     box("left_top", (-hx - 0.12, o0, oh), (-hx, o1, Hc), drywall)
     box("jamb", (-hx - 0.02, o1 - 0.1, 0), (-hx + 0.04, o1, oh), trim)
+    # 透视参照：石膏板接缝（每 1.22 m 一条竖缝）+ 后墙上的金属架。斜看时墙面只剩一片光墙，AI 会按熟悉构图重画、改掉机位
+    seam = mat("seam", (0.5, 0.47, 0.42), 0.9)
+    for sx in ST.get("seams", [-2.44, -1.22, 1.22, 2.44]):
+        box(f"seam{sx}", (sx - 0.015, D - 0.004, ST.get("stem_h", 0.4)), (sx + 0.015, D, Hc), seam)
+    if ST.get("shelf", True):
+        metal = mat("metal", (0.25, 0.26, 0.27), 0.45)
+        s0, s1 = ST.get("shelf_x", (1.1, 2.3))
+        for px_ in (s0, s1):
+            for py_ in (D - 0.45, D - 0.03):
+                box(f"post{px_}{py_}", (px_ - 0.02, py_ - 0.02, 0), (px_ + 0.02, py_ + 0.02, 1.8), metal)
+        for hz in (0.15, 0.75, 1.3, 1.78):
+            box(f"shelf{hz}", (s0, D - 0.47, hz), (s1, D - 0.01, hz + 0.025), metal)
     # 右墙边进屋的门（只是道具，保证北美车库的识别度）
     box("door", (hx - 0.03, D - 1.6, 0), (hx, D - 0.75, 2.03), trim)
     box("drive", (-hx - 12, D - Dp - 3, -0.1), (-hx - 1, D + 6, -0.02), concrete)
