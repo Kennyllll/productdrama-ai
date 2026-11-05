@@ -477,7 +477,7 @@ async function setFirstKeyframe(o: { projectId: string; shotId: string; p: CadPa
   // AI 换了机位：真车按原机位贴回会悬空、比例错，直接判失败，不贴车、不进看图质检
   const layout = await layoutRecall(path.join(dir, "set-plate.png"), ai, rs.mask);
   if (layout < 0.6) throw new Error(`AI 写实化改了机位（布景结构线只对上 ${(layout * 100).toFixed(0)}%），没有贴车`);
-  const comp = await composeSetFirst({ ai, cad: rs.image, plate: path.join(dir, "set-plate.png"), mask: rs.mask });
+  const comp = await composeSetFirst({ ai, cad: rs.image, plate: path.join(dir, "set-plate.png"), mask: rs.mask, deghost: false });
   fs.writeFileSync(path.join(dir, "final.png"), comp.image);
   const qa = [`3D 布景先行：车库布景、相机斜看墙、40 mm、机位一致 ${(layout * 100).toFixed(0)}%；车向墙倾 ${Math.abs(rs.meta.roll_deg).toFixed(0)}°，${rs.meta.contact.part ? "车把碰墙" : "接触点未知"}`, refs.length ? `角色照：${refs.map((r) => r.name).join("、")}` : "没有角色照，人物只按文字描述"];
   fs.writeFileSync(path.join(dir, "fit.json"), JSON.stringify({ mode: "set-first", render: rs.meta, ghostPx: comp.ghostPx, refs: refs.map((r) => r.name), qa }));

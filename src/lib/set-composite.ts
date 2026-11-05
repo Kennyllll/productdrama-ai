@@ -51,7 +51,7 @@ async function rgb8(input: Buffer | string, w: number, h: number): Promise<Buffe
   return sharp(input).resize(w, h, { fit: "fill" }).removeAlpha().toColourspace("srgb").raw({ depth: "uchar" }).toBuffer();
 }
 
-export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: string; mask: string }): Promise<{ image: Buffer; ghostPx: number; box: { x0: number; y0: number; x1: number; y1: number } }> {
+export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: string; mask: string; deghost?: boolean }): Promise<{ image: Buffer; ghostPx: number; box: { x0: number; y0: number; x1: number; y1: number } }> {
   const meta = await sharp(o.cad).metadata();
   const W = meta.width ?? 0, H = meta.height ?? 0, N = W * H;
   if (!W || !H) throw new Error("Blender 布景渲染图无效");
@@ -104,7 +104,8 @@ export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: strin
   for (let i = 0; i < N; i++) d[i] = Math.min(255, (Math.abs(ai[i * 3] - pm[i * 3]) + Math.abs(ai[i * 3 + 1] - pm[i * 3 + 1]) + Math.abs(ai[i * 3 + 2] - pm[i * 3 + 2])) / 3);
   const db = await blur1(d, W, H, 2);
   let ghost: Buffer = Buffer.alloc(N);
-  for (let i = 0; i < N; i++) ghost[i] = reg[i] && !mb[i] && db[i] > 28 ? 255 : 0;
+  // AI 只看无车底图时不该有重影；AI 改了墙面 / 影子时这里的差异是布景差异，用 CG 底图填反而出彩虹色斑和半透明轮影
+  if (o.deghost !== false) for (let i = 0; i < N; i++) ghost[i] = reg[i] && !mb[i] && db[i] > 28 ? 255 : 0;
   ghost = await dilate(ghost, W, H, 4);
   let ghostPx = 0;
   for (let i = 0; i < N; i++) if (mb[i]) ghost[i] = 0; else if (ghost[i]) ghostPx++;
