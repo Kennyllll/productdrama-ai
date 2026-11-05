@@ -7,7 +7,7 @@ from diffusers import AutoencoderKL, ControlNetUnionModel, DPMSolverMultistepSch
 from huggingface_hub import snapshot_download
 
 S = json.load(open(sys.argv[1]))
-dt = torch.float16
+dt = {"fp16": torch.float16, "bf16": torch.bfloat16, "fp32": torch.float32}[S.get("dtype", "fp16")]
 dev = "mps" if torch.backends.mps.is_available() else "cpu"
 
 # promax 权重文件名不是 diffusers 默认名：建一个标准命名的本地目录
@@ -21,9 +21,9 @@ t0 = time.time()
 cn = ControlNetUnionModel.from_pretrained(cn_dir, torch_dtype=dt)
 vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=dt)
 pipe = StableDiffusionXLControlNetUnionImg2ImgPipeline.from_pretrained("SG161222/RealVisXL_V5.0", controlnet=cn, vae=vae, torch_dtype=dt, variant="fp16")
+if S.get("slicing", False): pipe.enable_attention_slicing()
 pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config, use_karras_sigmas=True)
 pipe.to(dev)
-pipe.enable_attention_slicing()
 print("load_s", round(time.time() - t0), flush=True)
 
 plate = Image.open(S["plate"]).convert("RGB")
@@ -41,13 +41,20 @@ canny = Image.fromarray(cv2.cvtColor(cv2.Canny(g, S.get("canny_lo", 60), S.get("
 canny.save(S["out"].rsplit(".", 1)[0] + "-canny.png")
 
 t0 = time.time()
-img = pipe(
+lat = pipe(
     prompt=S["prompt"], negative_prompt=S.get("negative", ""),
     image=plate, control_image=[depth, canny], control_mode=[1, 3],
     strength=S.get("strength", 0.6), num_inference_steps=S.get("steps", 28),
     guidance_scale=S.get("cfg", 5.0), controlnet_conditioning_scale=S.get("cn_scale", 0.8),
     control_guidance_end=S.get("cn_end", 1.0),
-    generator=torch.Generator("cpu").manual_seed(S.get("seed", 7)), height=H, width=W,
-).images[0]
+    generator=torch.Generator("cpu").manual_seed(S.get("seed", 7)), height=H, width=W, output_type="latent",
+).images
+print("latent_nan", bool(torch.isnan(lat).any()), "gen_s", round(time.time() - t0), flush=True)
+if torch.isnan(lat).any(): sys.exit("去噪结果是 NaN（MPS 半精度溢出）")
+# VAE 用 fp32 解码：MPS 上半精度解码会溢出成全黑
+vae.to(dtype=torch.float32)
+with torch.no_grad():
+    x = vae.decode(lat.to(torch.float32) / vae.config.scaling_factor).sample
+img = pipe.image_processor.postprocess(x, output_type="pil")[0]
 img.save(S["out"])
 print("gen_s", round(time.time() - t0), "PHOTOREAL_OK", S["out"], flush=True)
