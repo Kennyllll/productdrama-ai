@@ -89,6 +89,7 @@ if MQ:
         if pole is not None:
             q = bpy.data.objects.new("pole_" + bone, None); bpy.context.collection.objects.link(q); q.location = pole
             c.pole_target = q; c.pole_angle = math.radians(pole_deg)
+        return e
     gm = (grips[0] + grips[1]) / 2
     Vb = np.concatenate([v for _, v in verts()]); cen = V3(Vb.mean(0))
     # 车头方向：握把在车头一侧
@@ -126,15 +127,16 @@ if MQ:
         targets = {}
     base = mrig.location.copy()
     gl, gr = sorted(grips, key=lambda p_: -(p_ - base).dot(left))
+    ek, gpa = {}, {}
     for s_, gp, sg in (("L", gl, 1), ("R", gr, -1)):
         # 手握在握把中段，不要卡在外端堵头上；手腕在握把后上方一点，手掌才包住握把
-        gp = gp + (gm - gp).normalized() * MQ.get("grip_in", 0.015)
+        gp = gp + (gm - gp).normalized() * MQ.get("grip_in", 0.015); gpa[s_] = gp
         t = gp - fwd * MQ.get("wrist_back", 0.04) + V3((0, 0, MQ.get("wrist_up", 0.02)))
         sh = W(f"upperarm01.{s_}")
-        ik(f"lowerarm02.{s_}", t, MQ.get("chain", 4), pole=sh - fwd * 0.25 + left * sg * 0.25 - V3((0, 0, 0.15)), pole_deg=MQ.get("pole_deg", -90))
+        ek[s_] = ik(f"lowerarm02.{s_}", t, MQ.get("chain", 4), pole=sh - fwd * 0.25 + left * sg * 0.25 - V3((0, 0, 0.15)), pole_deg=MQ.get("pole_deg", -90))
         targets[f"lowerarm02.{s_}"] = t
         # 手掌朝前下方压在握把上：IK 只管手腕位置，手的朝向要单独定，否则手指会藏在握把后面
-        if MQ.get("hand_aim", True) and f"wrist.{s_}" in pb:
+        if MQ.get("hand_aim", False) and f"wrist.{s_}" in pb:
             e2 = bpy.data.objects.new("aim_" + s_, None); bpy.context.collection.objects.link(e2)
             e2.location = gp + fwd * MQ.get("aim_fwd", 0.05) - V3((0, 0, MQ.get("aim_down", 0.04)))
             c2 = pb[f"wrist.{s_}"].constraints.new("DAMPED_TRACK"); c2.target = e2; c2.track_axis = "TRACK_Y"
@@ -144,15 +146,71 @@ if MQ:
             if pa:
                 e3 = bpy.data.objects.new("palm_" + s_, None); bpy.context.collection.objects.link(e3); e3.location = gp - V3((0, 0, 0.3))
                 c3 = pb[f"wrist.{s_}"].constraints.new("LOCKED_TRACK"); c3.target = e3; c3.lock_axis = "LOCK_Y"; c3.track_axis = pa
-    # 手指弯过来包住握把。MPFB 手指骨骼绕 X 轴负方向才是向掌心弯；拇指单独给角度，避免翘起来
-    curl = math.radians(MQ.get("curl_deg", 80)) * MQ.get("curl_sign", -1)
-    thumb = math.radians(MQ.get("thumb_deg", -25)) * MQ.get("curl_sign", -1)
+    # 手指弯过来包住握把。MPFB 手指骨骼绕 X 轴正方向才是向掌心弯（侧面、正面特写确认过）；拇指单独给角度，避免翘起来
+    curl = math.radians(MQ.get("curl_deg", 85)) * MQ.get("curl_sign", 1)
+    thumb = math.radians(MQ.get("thumb_deg", 60)) * MQ.get("curl_sign", 1)
     for s_ in ("L", "R"):
         for f in range(1, 6):
             for j in (1, 2, 3):
                 fb = pb.get(f"finger{f}-{j}.{s_}")
-                if fb: fb.rotation_mode = "XYZ"; fb.rotation_euler.x = thumb if f == 1 else curl
+                if fb: fb.rotation_mode = "XYZ"; fb.rotation_euler.x = thumb if f == 1 else curl * MQ.get("curl_j", (0.9, 1.1, 1.0))[j - 1]
     bpy.context.view_layer.update()
+    # 握把要在手心里：把手掌（手腕到指根之间）移到握把轴正上方「半径 + 半个手掌厚」处；手腕一动手的朝向也变，迭代几次
+    if MQ.get("palm_fit", True):
+        # 握把半径从 CAD 顶点量：握把中段附近顶点到握把轴的距离
+        # 握把点原本取的是顶面顶点的平均，不在轴上：先把它收到轴心（一圈顶点的平均），再量半径
+        ga = (gpa["L"] - gpa["R"]).normalized(); rr = []
+        for s_ in list(gpa):
+            for _ in range(3):
+                dv = Vb - np.array(gpa[s_]); al_ = dv @ np.array(ga); rad = np.linalg.norm(dv - np.outer(al_, ga), axis=1)
+                sel_ = (np.abs(al_) < 0.012) & (rad < 0.035)
+                if sel_.sum() < 10: break
+                c_ = Vb[sel_].mean(0); gpa[s_] = V3(c_) - ga * float((np.array(c_) - np.array(gpa[s_])) @ np.array(ga))
+            rr += list(rad[sel_])
+        gr_r = float(np.median(rr)) if rr else 0.015
+        print("MQ_GRIP_R_MM", round(gr_r * 1000, 1))
+        fr, lift = MQ.get("palm_frac", 1.0), gr_r + MQ.get("palm_thick", 0.004)
+        up0 = V3((0, 0, 1)); fv0 = fwd - ga * fwd.dot(ga); fv0 = (fv0 - up0 * fv0.dot(up0)).normalized()
+
+        def orient_hand(s_):
+            # 正手握：四个指根沿握把排开（食指在内、小指在外），手指朝前下方，掌心自然朝下
+            hw, k3 = W(f"wrist.{s_}"), W(f"finger3-1.{s_}")
+            y0 = (k3 - hw).normalized(); w0 = W(f"finger5-1.{s_}") - W(f"finger2-1.{s_}"); w0 = (w0 - y0 * w0.dot(y0)).normalized()
+            out = gpa[s_] - gm; out = (out - up0 * out.dot(up0)).normalized()
+            dn = math.radians(MQ.get("hand_down_deg", 30))
+            y1 = fv0 * math.cos(dn) - up0 * math.sin(dn); y1 = (y1 - out * y1.dot(out)).normalized()
+            w1 = (out - y1 * out.dot(y1)).normalized() * (-1 if MQ.get("hand_flip") else 1)
+            F0 = mathutils.Matrix((y0, w0, y0.cross(w0))).transposed(); F1 = mathutils.Matrix((y1, w1, y1.cross(w1))).transposed()
+            Mw = mrig.matrix_world.to_3x3(); Ra = Mw.inverted() @ (F1 @ F0.inverted()) @ Mw
+            m = pb[f"wrist.{s_}"].matrix.copy(); m4 = (Ra @ m.to_3x3()).to_4x4(); m4.translation = m.translation
+            pb[f"wrist.{s_}"].matrix = m4
+
+        for _ in range(6):
+            for s_ in ek:
+                if f"finger3-1.{s_}" not in pb: continue
+                pc = W(f"wrist.{s_}").lerp(W(f"finger3-1.{s_}"), fr)
+                d = gpa[s_] + V3((0, 0, lift)) + fv0 * MQ.get("palm_fwd", 0.012) - pc
+                ek[s_].location += d; targets[f"lowerarm02.{s_}"] = ek[s_].location.copy()
+            bpy.context.view_layer.update()
+            if MQ.get("hand_orient", True):
+                for s_ in ek: orient_hand(s_)
+                bpy.context.view_layer.update()
+        # 手指用 IK 绕到握把前下方（只许绕骨骼 X 轴弯），拇指从后下方扣住：握把才真的握在手里
+        if MQ.get("finger_ik", False):
+            up_ = V3((0, 0, 1)); fv = fwd - ga * fwd.dot(ga); fv = (fv - up_ * fv.dot(up_)).normalized()
+            for s_ in ek:
+                for f in range(1, 6):
+                    b3 = f"finger{f}-3.{s_}"
+                    if b3 not in pb: continue
+                    a_ = (W(f"finger{f}-1.{s_}") - gpa[s_]).dot(ga)
+                    th = math.radians(MQ.get("thumb_tip_deg", -150) if f == 1 else MQ.get("tip_deg", 160))
+                    tgt = gpa[s_] + ga * a_ + (up_ * math.cos(th) + fv * math.sin(th)) * (gr_r + 0.005)
+                    for j in (1, 2, 3):
+                        b_ = pb.get(f"finger{f}-{j}.{s_}")
+                        if b_ and f > 1: b_.lock_ik_y = True; b_.lock_ik_z = True
+                    ik(b3, tgt, 3); targets[b3] = tgt
+            bpy.context.view_layer.update()
+        print("MQ_PALM_GAP_MM", {s_: round((W(f"wrist.{s_}").lerp(W(f"finger3-1.{s_}"), fr) - gpa[s_] - V3((0, 0, lift))).length * 1000) for s_ in ek})
     print("MQ_REACH_MM", {k: round((W(k, True) - t).length * 1000) for k, t in targets.items()})
     # 掌心朝向：弯曲的指尖在掌心一侧；z 越接近 -1 越是掌心朝下
     palm = {}
@@ -269,6 +327,12 @@ co.location = (0, 0, g("cam_height", 0.8)); co.rotation_euler = (math.radians(90
 if g("cam_pos") and g("look_at"):
     co.location = g("cam_pos"); co.rotation_euler = (mathutils.Vector(g("look_at")) - co.location).to_track_quat("-Z", "Y").to_euler()
 bpy.context.scene.camera = co
+# 调试：顺着握把方向从车外侧看手（侧面特写），确认握把在手心里
+if MQ and g("grip_cam"):
+    # "R"/"L"：从车外侧顺着握把看；"Rf"/"Lf"：从车头正前方看
+    gc_ = g("grip_cam"); gp_ = gpa[gc_[0]]; ax_ = fwd.normalized() if gc_.endswith("f") else (gp_ - gm).normalized()
+    co.location = gp_ + ax_ * 0.22 + V3((0, 0, 0.04)); cam.lens = 50
+    co.rotation_euler = (gp_ - co.location).to_track_quat("-Z", "Y").to_euler()
 
 def kelvin_rgb(k):
     t = k / 100
