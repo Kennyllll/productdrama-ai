@@ -51,7 +51,7 @@ async function rgb8(input: Buffer | string, w: number, h: number): Promise<Buffe
   return sharp(input).resize(w, h, { fit: "fill" }).removeAlpha().toColourspace("srgb").raw({ depth: "uchar" }).toBuffer();
 }
 
-export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: string; mask: string; deghost?: boolean; maskFull?: string; ghostReach?: number; tint?: number }): Promise<{ image: Buffer; ghostPx: number; box: { x0: number; y0: number; x1: number; y1: number } }> {
+export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: string; mask: string; deghost?: boolean; maskFull?: string; ghostReach?: number; tint?: number; hands?: number[][]; handR?: number }): Promise<{ image: Buffer; ghostPx: number; box: { x0: number; y0: number; x1: number; y1: number } }> {
   const meta = await sharp(o.cad).metadata();
   const W = meta.width ?? 0, H = meta.height ?? 0, N = W * H;
   if (!W || !H) throw new Error("Blender 布景渲染图无效");
@@ -121,7 +121,24 @@ export async function composeSetFirst(o: { ai: Buffer; cad: string; plate: strin
 
   // 真车光影：用车周围环境的「AI / Blender 底图」低频比例（只在车外取样），
   // 不用 AI 车自己的像素：AI 车和真车错位时，会把 AI 车的座椅 / 轮子形状「打光」到真车上
-  const alpha = await blur1(mRaw, W, H, 1.2);
+  let mPaste = mRaw;
+  if (o.hands?.length) {
+    // 手握车把：AI 画的手指包在握把前面，真车不能盖住。只在握把附近、车的遮罩内按肤色找手
+    const R = o.handR ?? W * 0.035;
+    const skin = Buffer.alloc(N);
+    for (const [hx, hy] of o.hands)
+      for (let y = Math.max(0, Math.floor(hy - R)); y < Math.min(H, hy + R); y++)
+        for (let x = Math.max(0, Math.floor(hx - R)); x < Math.min(W, hx + R); x++) {
+          const i = y * W + x;
+          if (mRaw[i] <= 128 || (x - hx) ** 2 + (y - hy) ** 2 > R * R) continue;
+          const r = ai[i * 3], g = ai[i * 3 + 1], b = ai[i * 3 + 2];
+          if (r > 95 && g > 40 && b > 20 && r > g && r > b && r - g > 12 && Math.max(r, g, b) - Math.min(r, g, b) > 15) skin[i] = 255;
+        }
+    const sk = await dilate(skin, W, H, 1.5);
+    mPaste = Buffer.from(mRaw);
+    for (let i = 0; i < N; i++) if (sk[i]) mPaste[i] = 0;
+  }
+  const alpha = await blur1(mPaste, W, H, 1.2);
   const out = Buffer.alloc(N * 3);
   for (let i = 0; i < N; i++) {
     const a = alpha[i] / 255, f = gf[i] / 255;
