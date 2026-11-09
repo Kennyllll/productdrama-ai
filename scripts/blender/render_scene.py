@@ -178,7 +178,11 @@ if MQ:
             y0 = (k3 - hw).normalized(); w0 = W(f"finger5-1.{s_}") - W(f"finger2-1.{s_}"); w0 = (w0 - y0 * w0.dot(y0)).normalized()
             out = gpa[s_] - gm; out = (out - up0 * out.dot(up0)).normalized()
             dn = math.radians(MQ.get("hand_down_deg", 30))
-            y1 = fv0 * math.cos(dn) - up0 * math.sin(dn); y1 = (y1 - out * y1.dot(out)).normalized()
+            y1 = fv0 * math.cos(dn) - up0 * math.sin(dn)
+            if MQ.get("hand_straight", True):
+                # 手腕不弯：手背和前臂成一条直线（只保留沿握把方向的指根排布）
+                y1 = hw - W(f"lowerarm01.{s_}")
+            y1 = (y1 - out * y1.dot(out)).normalized()
             w1 = (out - y1 * out.dot(y1)).normalized() * (-1 if MQ.get("hand_flip") else 1)
             F0 = mathutils.Matrix((y0, w0, y0.cross(w0))).transposed(); F1 = mathutils.Matrix((y1, w1, y1.cross(w1))).transposed()
             Mw = mrig.matrix_world.to_3x3(); Ra = Mw.inverted() @ (F1 @ F0.inverted()) @ Mw
@@ -255,6 +259,7 @@ if MQ:
                         k = f"{o.name[:10]}:{k}"; gcl[k] = gcl.get(k, 0) + 1
                     gcl[f"min_r_{s_}"] = round(float(rad[ins].min()) * 1000, 1)
         print("MQ_GRIP_CLIP", gcl)
+        print("MQ_WRIST_DEG", {s_: round(math.degrees((W(f"wrist.{s_}") - W(f"lowerarm01.{s_}")).angle(W(f"finger3-1.{s_}") - W(f"wrist.{s_}")))) for s_ in ek})
         # 手指用 IK 绕到握把前下方（只许绕骨骼 X 轴弯），拇指从后下方扣住：握把才真的握在手里
         if MQ.get("finger_ik", False):
             up_ = V3((0, 0, 1)); fv = fwd - ga * fwd.dot(ga); fv = (fv - up_ * fv.dot(up_)).normalized()
