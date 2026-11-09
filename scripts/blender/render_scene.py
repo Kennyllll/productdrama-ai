@@ -448,10 +448,16 @@ if AN:
         c_, R_ = ctr(t_), max(t_.dimensions) / 2
         pv = bpy.data.objects.new("wheel_" + t_.name, None); bpy.context.collection.objects.link(pv); pv.location = c_
         bpy.context.view_layer.update()
-        for o in objs:
-            d_ = ctr(o) - c_
-            if o.parent is None and abs(d_.dot(wax)) < 0.06 and (d_ - wax * d_.dot(wax)).length < R_ * 0.85 and max(o.dimensions) <= 2 * R_ + 0.01:
+        # 只转绕轮轴对称的零件（轮胎、轮毂、轮辐、轴）：在轮面内两个方向的范围相同且中心在轴上；前叉、后叉不对称，不转
+        for o, P_ in verts():
+            if o.parent is not None: continue
+            rel = P_ - np.array(c_); ex = []
+            for ax_ in (fw, up):
+                pr = rel @ np.array(ax_); ex.append((pr.max() - pr.min(), (pr.max() + pr.min()) / 2))
+            (ra, ma), (rb, mb) = ex
+            if abs((rel @ np.array(wax)).mean()) < 0.06 and abs(ma) < 0.015 and abs(mb) < 0.015 and min(ra, rb) > 0.8 * max(ra, rb) and max(ra, rb) <= 2 * R_ + 0.01:
                 reparent(o, pv)
+        print("WHEEL_PARTS", pv.name, sorted(c.name for c in pv.children))
         wheels.append((pv, R_))
     mov = [o for o in objs if o.parent is None] + [pv for pv, _ in wheels] + ([mrig] if mq else []) + \
         [o for o in bpy.data.objects if o.type == "EMPTY" and o.name.split("_")[0] in ("ik", "pole", "aim", "palm")]
