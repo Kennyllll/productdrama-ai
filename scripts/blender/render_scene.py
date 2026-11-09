@@ -224,6 +224,16 @@ if ST:
                 box(f"post{px_}{py_}", (px_ - 0.02, py_ - 0.02, 0), (px_ + 0.02, py_ + 0.02, 1.8), metal)
         for hz in (0.15, 0.75, 1.3, 1.78):
             box(f"shelf{hz}", (s0, D - 0.47, hz), (s1, D - 0.01, hz + 0.025), metal)
+        # 收纳箱：架子空着时 AI 会把它画成柜子或别的家具，放上箱子它才认得是车库储物架
+        if ST.get("bins", True):
+            lids = [mat(f"bin{k}", c_, 0.6) for k, c_ in enumerate(((0.75, 0.74, 0.7), (0.12, 0.2, 0.4), (0.55, 0.12, 0.1)))]
+            n_ = max(1, int((s1 - s0) / 0.42))
+            for li, hz in enumerate((0.175, 0.775, 1.325)):
+                for k in range(n_):
+                    if (li + k) % 4 == 3: continue
+                    x0_ = s0 + 0.04 + k * (s1 - s0 - 0.08) / n_
+                    h_ = (0.3, 0.32, 0.26)[li]
+                    box(f"bin{li}{k}", (x0_, D - 0.43, hz), (x0_ + (s1 - s0 - 0.08) / n_ - 0.04, D - 0.05, hz + h_), lids[(li + k) % 3])
     # 右墙边进屋的门（只是道具，保证北美车库的识别度）
     box("door", (hx - 0.03, D - 1.6, 0), (hx, D - 0.75, 2.03), trim)
     box("drive", (-hx - 12, D - Dp - 3, -0.1), (-hx - 1, D + 6, -0.02), concrete)
