@@ -465,20 +465,56 @@ if AN:
         if o.parent is None: reparent(o, root)
     feet = [o for o in bpy.data.objects if o.name.startswith("ik_lowerleg")]
     f0 = {o.name: o.location.copy() for o in feet}
+    # 机位相对车定（cam_rel：[沿车头, 朝屋内, 离地高度]，以两握把中点在地面的投影为原点），换镜头不用手算世界坐标
+    cr = AN.get("cam_rel")
+    if cr and MQ:
+        sd_ = n.copy(); sd_.z = 0; sd_.normalize(); o_ = Vc((gm.x, gm.y, 0))
+        rel = lambda v: o_ + fw * v[0] + sd_ * v[1] + up * v[2]
+        co.location = rel(cr["pos"]); cam.lens = cr.get("lens", cam.lens)
+        spec["look_at"] = list(rel(cr["look"]))
+    print("ANIM_GEOM fw", [round(v, 3) for v in fw], "grips", [round(v, 3) for v in gm] if MQ else None, "cam", [round(v, 3) for v in co.location])
     c0 = co.location.copy(); la0 = Vc(g("look_at")) if g("look_at") else c0 + co.matrix_world.to_3x3() @ Vc((0, 0, -3))
     ease = lambda t: t * t * (3 - 2 * t)
+    xs = lambda t: AN.get("dist", 0.5) * ease(min(1.0, max(0.0, t)))
+    PU = AN.get("push")
+
+    def push_foot(k_, t):
+        # 蹬地：两脚交替，着地时脚在地面上不动（相对车往后走），离地时抬起往前收；蹬完两脚抬起滑行。返回（沿车头偏移，抬起高度）
+        K, T1, LF, SM = PU.get("strides", 4), PU.get("until", 0.55), PU.get("lift", 0.04), PU.get("stride_max", 0.22)
+        w_ = T1 / K; st = [(j * w_, (j + 1) * w_) for j in range(K) if j % 2 == k_]
+        a_ = lambda s_: min(SM, xs(s_[1]) - xs(s_[0])) / 2
+        for s_ in st:
+            if s_[0] <= t <= s_[1]:
+                return a_(s_) - (xs(t) - xs(s_[0])), 0.0
+        pv_ = [s_ for s_ in st if s_[1] < t]; nx_ = [s_ for s_ in st if s_[0] > t]
+        p0, t0 = (a_(pv_[-1]) - (xs(pv_[-1][1]) - xs(pv_[-1][0])), pv_[-1][1]) if pv_ else (0.0, 0.0)
+        t1 = nx_[0][0] if nx_ else T1 + w_
+        u = min(1.0, (t - t0) / max(1e-6, t1 - t0))
+        if nx_:
+            return p0 + (a_(nx_[0]) - p0) * ease(u), LF * math.sin(math.pi * u)
+        return p0 * (1 - ease(u)), AN.get("feet_up", 0.05) * ease(u)
     for f in range(1, N + 1):
-        t = (f - 1) / max(1, N - 1); x = AN.get("dist", 0.5) * ease(t)
+        t = (f - 1) / max(1, N - 1); x = xs(t)
         root.location = fw * x; root.keyframe_insert("location", frame=f)
         for pv, R_ in wheels:
             pv.rotation_mode = "QUATERNION"; pv.rotation_quaternion = mathutils.Quaternion(wax, x / R_); pv.keyframe_insert("rotation_quaternion", frame=f)
         for o in feet:
-            o.location = f0[o.name] + up * AN.get("feet_up", 0.05) * ease(min(1.0, t / 0.25)); o.keyframe_insert("location", frame=f)
+            if PU:
+                d_, l_ = push_foot(0 if o.name.endswith("L") else 1, t); o.location = f0[o.name] + fw * d_ + up * l_
+            else:
+                o.location = f0[o.name] + up * AN.get("feet_up", 0.05) * ease(min(1.0, t / 0.25))
+            o.keyframe_insert("location", frame=f)
         la = la0 + fw * x * AN.get("cam_follow", 0.7)
-        co.location = c0 + (la0 - c0).normalized() * AN.get("cam_push", 0.3) * ease(t)
+        # cam_track：相机跟着车平移（跟拍），不只是转头
+        co.location = c0 + (la0 - c0).normalized() * AN.get("cam_push", 0.3) * ease(t) + fw * x * AN.get("cam_track", 0.0)
         co.rotation_euler = (la - co.location).to_track_quat("-Z", "Y").to_euler(); co.keyframe_insert("location", frame=f); co.keyframe_insert("rotation_euler", frame=f)
     od = AN["out_dir"]; os.makedirs(od, exist_ok=True)
     s.render.image_settings.color_mode = "RGB"; s.render.image_settings.color_depth = "8"
+    if AN.get("preview"):
+        # 只渲几帧预览，先看构图和蹬地姿势，再渲整段
+        for f in AN["preview"]:
+            s.frame_set(f); s.render.filepath = od + f"/pv_{f:03d}.png"; bpy.ops.render.render(write_still=True)
+        print("PREVIEW_OK", AN["preview"], od); raise SystemExit(0)
     if not AN.get("depth_only") and not AN.get("product_only"):
         s.render.filepath = od + "/rgb_"; bpy.ops.render.render(animation=True)
     if AN.get("product"):
