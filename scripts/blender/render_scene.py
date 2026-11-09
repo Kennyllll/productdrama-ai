@@ -139,7 +139,8 @@ if MQ:
             e2.location = gp + fwd * MQ.get("aim_fwd", 0.05) - V3((0, 0, MQ.get("aim_down", 0.04)))
             c2 = pb[f"wrist.{s_}"].constraints.new("DAMPED_TRACK"); c2.target = e2; c2.track_axis = "TRACK_Y"
             # 手掌朝下（手背在上、从上面扣住握把）：绕手的长轴转，让掌心轴对准握把正下方
-            pa = MQ.get(f"palm_axis_{s_}", MQ.get("palm_axis"))
+            # MPFB 手骨 -Z 是掌心方向（实测掌心朝下 z=-0.78；±X 只有 ±0.54，左右还相反）
+            pa = MQ.get(f"palm_axis_{s_}", MQ.get("palm_axis", "TRACK_NEGATIVE_Z"))
             if pa:
                 e3 = bpy.data.objects.new("palm_" + s_, None); bpy.context.collection.objects.link(e3); e3.location = gp - V3((0, 0, 0.3))
                 c3 = pb[f"wrist.{s_}"].constraints.new("LOCKED_TRACK"); c3.target = e3; c3.lock_axis = "LOCK_Y"; c3.track_axis = pa
@@ -153,6 +154,15 @@ if MQ:
                 if fb: fb.rotation_mode = "XYZ"; fb.rotation_euler.x = thumb if f == 1 else curl
     bpy.context.view_layer.update()
     print("MQ_REACH_MM", {k: round((W(k, True) - t).length * 1000) for k, t in targets.items()})
+    # 掌心朝向：弯曲的指尖在掌心一侧；z 越接近 -1 越是掌心朝下
+    palm = {}
+    for s_ in ("L", "R"):
+        if f"wrist.{s_}" not in pb: continue
+        hy = (W(f"wrist.{s_}", True) - W(f"wrist.{s_}")).normalized()
+        tip = sum((W(f"finger{f}-3.{s_}", True) for f in range(2, 6)), V3()) / 4 - W(f"wrist.{s_}", True)
+        pv = (tip - hy * tip.dot(hy)).normalized(); palm[s_] = round(pv.z, 2)
+    print("MQ_PALM_Z", palm)
+    if MQ.get("pose_only"): raise SystemExit(0)
     # 穿模检查：人偶顶点有多少落在车的实体里面（按身体部位统计）
     from mathutils.bvhtree import BVHTree
     dg = bpy.context.evaluated_depsgraph_get()
