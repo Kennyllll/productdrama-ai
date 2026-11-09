@@ -169,7 +169,7 @@ if MQ:
             rr += list(rad[sel_])
         gr_r = float(np.median(rr)) if rr else 0.015
         print("MQ_GRIP_R_MM", round(gr_r * 1000, 1))
-        fr, lift = MQ.get("palm_frac", 1.0), gr_r + MQ.get("palm_thick", 0.004)
+        fr, lift = MQ.get("palm_frac", 1.0), gr_r + MQ.get("palm_thick", 0.013)
         up0 = V3((0, 0, 1)); fv0 = fwd - ga * fwd.dot(ga); fv0 = (fv0 - up0 * fv0.dot(up0)).normalized()
 
         def orient_hand(s_):
@@ -195,6 +195,66 @@ if MQ:
             if MQ.get("hand_orient", True):
                 for s_ in ek: orient_hand(s_)
                 bpy.context.view_layer.update()
+
+        def gdist(p, s_):
+            dv = p - gpa[s_]; return (dv - ga * dv.dot(ga)).length
+
+        # 手指逐节往掌心弯，这一节以下任何一段碰到握把表面（半径 + 手指粗细）就停：手指贴着握把外面包住，不穿进去
+        if MQ.get("grasp", True):
+            frad, step, sgn = MQ.get("finger_r", 0.012), math.radians(3), MQ.get("curl_sign", 1)
+            for s_ in ek:
+                for f in range(1, 6):
+                    bs = [pb.get(f"finger{f}-{j}.{s_}") for j in (1, 2, 3)]
+                    if not all(bs): continue
+                    for b_ in bs: b_.rotation_mode = "XYZ"; b_.rotation_euler = (0, 0, 0)
+
+                    def clear(j):
+                        bpy.context.view_layer.update()
+                        return min(gdist(W(c_.name).lerp(W(c_.name, True), k), s_) for c_ in bs[j:] for k in (0.25, 0.5, 0.75, 1.0)) - gr_r - frad
+                    if f == 1:
+                        # 拇指从握把后下方扣住：网格搜索拇指根部两个方向的转角，不碰握把、指尖最靠近后下方
+                        th = math.radians(MQ.get("thumb_tgt_deg", -135))
+                        tgt = gpa[s_] + (up0 * math.cos(th) + fv0 * math.sin(th)) * (gr_r + frad)
+                        bs[1].rotation_euler.x = bs[2].rotation_euler.x = math.radians(20) * sgn
+                        best = None
+                        for ax in range(-90, 91, 10):
+                            for az in range(-90, 91, 10):
+                                bs[0].rotation_euler = (math.radians(ax), 0, math.radians(az))
+                                c = clear(0); sc = (W(bs[2].name, True) - tgt).length + (1 if c < 0 else 0)
+                                if best is None or sc < best[0]: best = (sc, ax, az)
+                        bs[0].rotation_euler = (math.radians(best[1]), 0, math.radians(best[2]))
+                    else:
+                        # 每节从 -30° 往掌心方向扫，取第一次碰到握把之前的最大角度；一开始就穿模的先往外张开
+                        lim = math.radians(MQ.get("grasp_max", 100))
+                        for j, b_ in enumerate(bs):
+                            a, ok, bestc = -math.radians(30), None, (-9, 0)
+                            while a <= lim:
+                                b_.rotation_euler.x = a * sgn; c = clear(j)
+                                if c >= 0: ok = a
+                                elif ok is not None: break
+                                if c > bestc[0]: bestc = (c, a)
+                                a += step
+                            b_.rotation_euler.x = (ok if ok is not None else bestc[1]) * sgn
+                    bpy.context.view_layer.update()
+                    if MQ.get("clip_detail"):
+                        print("MQ_GRASP", s_, f, [round(math.degrees(b_.rotation_euler.x)) for b_ in bs],
+                              [round(gdist(W(b_.name, t_), s_) * 1000) for b_ in bs for t_ in (False, True)])
+        # 握把穿模检查：人偶顶点落在握把圆柱里面的个数（应为 0）
+        dg_, gcl = bpy.context.evaluated_depsgraph_get(), {}
+        for o in mq:
+            ev = o.evaluated_get(dg_); me = ev.to_mesh(); M = ev.matrix_world
+            P = np.array([tuple(M @ v.co) for v in me.vertices]); ev.to_mesh_clear()
+            for s_ in gpa:
+                dv = P - np.array(gpa[s_]); al_ = dv @ np.array(ga); rad = np.linalg.norm(dv - np.outer(al_, ga), axis=1)
+                ins = np.nonzero((np.abs(al_) < 0.05) & (rad < gr_r - 0.001))[0]
+                gcl[s_] = gcl.get(s_, 0) + len(ins)
+                if MQ.get("clip_detail") and len(ins):
+                    hb = [b_.name for b_ in pb if b_.name.endswith("." + s_) and ("finger" in b_.name or "metacarpal" in b_.name or "wrist" in b_.name)]
+                    for i in ins:
+                        p_ = V3(P[i]); k = min(hb, key=lambda n: min((W(n).lerp(W(n, True), t) - p_).length for t in (0, 0.5, 1)))
+                        k = f"{o.name[:10]}:{k}"; gcl[k] = gcl.get(k, 0) + 1
+                    gcl[f"min_r_{s_}"] = round(float(rad[ins].min()) * 1000, 1)
+        print("MQ_GRIP_CLIP", gcl)
         # 手指用 IK 绕到握把前下方（只许绕骨骼 X 轴弯），拇指从后下方扣住：握把才真的握在手里
         if MQ.get("finger_ik", False):
             up_ = V3((0, 0, 1)); fv = fwd - ga * fwd.dot(ga); fv = (fv - up_ * fv.dot(up_)).normalized()
