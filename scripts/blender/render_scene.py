@@ -127,18 +127,30 @@ if MQ:
     base = mrig.location.copy()
     gl, gr = sorted(grips, key=lambda p_: -(p_ - base).dot(left))
     for s_, gp, sg in (("L", gl, 1), ("R", gr, -1)):
-        # 手腕在握把后上方一点，手掌才包住握把
-        t = gp - fwd * MQ.get("wrist_back", 0.04) + V3((0, 0, 0.02))
+        # 手握在握把中段，不要卡在外端堵头上；手腕在握把后上方一点，手掌才包住握把
+        gp = gp + (gm - gp).normalized() * MQ.get("grip_in", 0.015)
+        t = gp - fwd * MQ.get("wrist_back", 0.04) + V3((0, 0, MQ.get("wrist_up", 0.02)))
         sh = W(f"upperarm01.{s_}")
         ik(f"lowerarm02.{s_}", t, MQ.get("chain", 4), pole=sh - fwd * 0.25 + left * sg * 0.25 - V3((0, 0, 0.15)), pole_deg=MQ.get("pole_deg", -90))
         targets[f"lowerarm02.{s_}"] = t
-    # 手指弯过来包住握把（拇指弯得少一点）
-    curl = math.radians(MQ.get("curl_deg", 55)) * MQ.get("curl_sign", 1)
+        # 手掌朝前下方压在握把上：IK 只管手腕位置，手的朝向要单独定，否则手指会藏在握把后面
+        if MQ.get("hand_aim", True) and f"wrist.{s_}" in pb:
+            e2 = bpy.data.objects.new("aim_" + s_, None); bpy.context.collection.objects.link(e2)
+            e2.location = gp + fwd * MQ.get("aim_fwd", 0.05) - V3((0, 0, MQ.get("aim_down", 0.04)))
+            c2 = pb[f"wrist.{s_}"].constraints.new("DAMPED_TRACK"); c2.target = e2; c2.track_axis = "TRACK_Y"
+            # 手掌朝下（手背在上、从上面扣住握把）：绕手的长轴转，让掌心轴对准握把正下方
+            pa = MQ.get(f"palm_axis_{s_}", MQ.get("palm_axis"))
+            if pa:
+                e3 = bpy.data.objects.new("palm_" + s_, None); bpy.context.collection.objects.link(e3); e3.location = gp - V3((0, 0, 0.3))
+                c3 = pb[f"wrist.{s_}"].constraints.new("LOCKED_TRACK"); c3.target = e3; c3.lock_axis = "LOCK_Y"; c3.track_axis = pa
+    # 手指弯过来包住握把。MPFB 手指骨骼绕 X 轴负方向才是向掌心弯；拇指单独给角度，避免翘起来
+    curl = math.radians(MQ.get("curl_deg", 80)) * MQ.get("curl_sign", -1)
+    thumb = math.radians(MQ.get("thumb_deg", -25)) * MQ.get("curl_sign", -1)
     for s_ in ("L", "R"):
         for f in range(1, 6):
             for j in (1, 2, 3):
                 fb = pb.get(f"finger{f}-{j}.{s_}")
-                if fb: fb.rotation_mode = "XYZ"; fb.rotation_euler.x = curl * (0.4 if f == 1 else 1)
+                if fb: fb.rotation_mode = "XYZ"; fb.rotation_euler.x = thumb if f == 1 else curl
     bpy.context.view_layer.update()
     print("MQ_REACH_MM", {k: round((W(k, True) - t).length * 1000) for k, t in targets.items()})
     # 穿模检查：人偶顶点有多少落在车的实体里面（按身体部位统计）
