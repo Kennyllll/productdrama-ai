@@ -431,6 +431,52 @@ s.view_settings.view_transform = "AgX"; s.view_settings.exposure = g("exposure",
 s.render.resolution_x = g("width", 1600); s.render.resolution_y = g("height", 900)
 s.render.film_transparent = not ST
 s.render.image_settings.file_format = "PNG"; s.render.image_settings.color_mode = "RGBA"; s.render.image_settings.color_depth = "16"
+
+# 动画：车和人偶整体往前滑，轮子按滑行距离滚动（不打滑），脚抬离地面，相机慢慢推近并跟着车
+AN = g("anim")
+if AN:
+    Vc = mathutils.Vector; up = Vc((0, 0, 1))
+    fps = AN.get("fps", 16); N = int(AN.get("seconds", 4) * fps)
+    s.render.fps = fps; s.frame_start = 1; s.frame_end = N; s.cycles.samples = AN.get("samples", 12)
+    fw = (fwd if MQ else bd).copy(); fw.z = 0; fw.normalize(); wax = up.cross(fw)
+    ctr = lambda o: sum((o.matrix_world @ Vc(b) for b in o.bound_box), Vc()) / 8
+    root = bpy.data.objects.new("rider_root", None); bpy.context.collection.objects.link(root)
+    def reparent(o, p):
+        mw = o.matrix_world.copy(); o.parent = p; o.matrix_world = mw
+    wheels = []
+    for t_ in [o for o in objs if any(m and m.name == "rubber" for m in o.data.materials)]:
+        c_, R_ = ctr(t_), max(t_.dimensions) / 2
+        pv = bpy.data.objects.new("wheel_" + t_.name, None); bpy.context.collection.objects.link(pv); pv.location = c_
+        bpy.context.view_layer.update()
+        for o in objs:
+            d_ = ctr(o) - c_
+            if o.parent is None and abs(d_.dot(wax)) < 0.06 and (d_ - wax * d_.dot(wax)).length < R_ * 0.85 and max(o.dimensions) <= 2 * R_ + 0.01:
+                reparent(o, pv)
+        wheels.append((pv, R_))
+    mov = [o for o in objs if o.parent is None] + [pv for pv, _ in wheels] + ([mrig] if mq else []) + \
+        [o for o in bpy.data.objects if o.type == "EMPTY" and o.name.split("_")[0] in ("ik", "pole", "aim", "palm")]
+    for o in mov:
+        if o.parent is None: reparent(o, root)
+    feet = [o for o in bpy.data.objects if o.name.startswith("ik_lowerleg")]
+    f0 = {o.name: o.location.copy() for o in feet}
+    c0 = co.location.copy(); la0 = Vc(g("look_at")) if g("look_at") else c0 + co.matrix_world.to_3x3() @ Vc((0, 0, -3))
+    ease = lambda t: t * t * (3 - 2 * t)
+    for f in range(1, N + 1):
+        t = (f - 1) / max(1, N - 1); x = AN.get("dist", 0.5) * ease(t)
+        root.location = fw * x; root.keyframe_insert("location", frame=f)
+        for pv, R_ in wheels:
+            pv.rotation_mode = "QUATERNION"; pv.rotation_quaternion = mathutils.Quaternion(wax, x / R_); pv.keyframe_insert("rotation_quaternion", frame=f)
+        for o in feet:
+            o.location = f0[o.name] + up * AN.get("feet_up", 0.05) * ease(min(1.0, t / 0.25)); o.keyframe_insert("location", frame=f)
+        la = la0 + fw * x * AN.get("cam_follow", 0.7)
+        co.location = c0 + (la0 - c0).normalized() * AN.get("cam_push", 0.3) * ease(t)
+        co.rotation_euler = (la - co.location).to_track_quat("-Z", "Y").to_euler(); co.keyframe_insert("location", frame=f); co.keyframe_insert("rotation_euler", frame=f)
+    od = AN["out_dir"]; os.makedirs(od, exist_ok=True)
+    s.render.image_settings.color_mode = "RGB"; s.render.image_settings.color_depth = "8"
+    s.render.filepath = od + "/rgb_"; bpy.ops.render.render(animation=True)
+    print("ANIM_OK", N, "frames", od, "wheels", [(pv.name, len(pv.children), round(R_, 3)) for pv, R_ in wheels])
+    raise SystemExit(0)
+
 s.render.filepath = g("out"); bpy.ops.render.render(write_still=True)
 if ST and g("out_plate"):
     # 同一布景、车对相机不可见但保留投影和反射：用来填掉 AI 图里露在真车外的 AI 车（重影）
