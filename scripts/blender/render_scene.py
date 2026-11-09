@@ -479,7 +479,26 @@ if AN:
         co.rotation_euler = (la - co.location).to_track_quat("-Z", "Y").to_euler(); co.keyframe_insert("location", frame=f); co.keyframe_insert("rotation_euler", frame=f)
     od = AN["out_dir"]; os.makedirs(od, exist_ok=True)
     s.render.image_settings.color_mode = "RGB"; s.render.image_settings.color_depth = "8"
-    s.render.filepath = od + "/rgb_"; bpy.ops.render.render(animation=True)
+    if not AN.get("depth_only") and not AN.get("product_only"):
+        s.render.filepath = od + "/rgb_"; bpy.ops.render.render(animation=True)
+    if AN.get("product"):
+        # 逐帧真车图层（RGBA）：布景和人偶设为 holdout，仍参与光照和遮挡，人偶在车前的地方（手、腿）透明
+        s.render.film_transparent = True; s.render.image_settings.color_mode = "RGBA"
+        for o in setobjs + mq: o.is_holdout = True
+        s.render.filepath = od + "/prod_"; bpy.ops.render.render(animation=True)
+        for o in setobjs + mq: o.is_holdout = False
+        s.render.film_transparent = not ST; s.render.image_settings.color_mode = "RGB"
+    if AN.get("depth"):
+        # 逐帧深度（近白远黑）：所有物体换成按相机距离发光的材质，给可控视频模型锁墙、地面和机位
+        dm = bpy.data.materials.new("depth_ov"); dm.use_nodes = True; nt = dm.node_tree; nt.nodes.clear()
+        cd = nt.nodes.new("ShaderNodeCameraData"); mr = nt.nodes.new("ShaderNodeMapRange")
+        mr.inputs["From Min"].default_value, mr.inputs["From Max"].default_value = AN.get("depth_near", 0.5), AN.get("depth_far", 8.0)
+        mr.inputs["To Min"].default_value, mr.inputs["To Max"].default_value = 1.0, 0.0
+        em = nt.nodes.new("ShaderNodeEmission"); oo = nt.nodes.new("ShaderNodeOutputMaterial")
+        nt.links.new(cd.outputs["View Z Depth"], mr.inputs["Value"]); nt.links.new(mr.outputs["Result"], em.inputs["Color"]); nt.links.new(em.outputs[0], oo.inputs[0])
+        bpy.context.view_layer.material_override = dm; s.world = None
+        s.view_settings.view_transform = "Standard"; s.view_settings.exposure = 0; s.cycles.samples = 1; s.cycles.use_denoising = False
+        s.render.filepath = od + "/depth_"; bpy.ops.render.render(animation=True)
     print("ANIM_OK", N, "frames", od, "wheels", [(pv.name, len(pv.children), round(R_, 3)) for pv, R_ in wheels])
     raise SystemExit(0)
 
