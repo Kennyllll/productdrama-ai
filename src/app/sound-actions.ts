@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import type { AiResult } from "@/app/ai-actions";
 import { AiError, chatJson } from "@/lib/ai/client";
+import { elevenLabsPublicInfo, saveElevenLabsKey, testElevenLabs } from "@/lib/elevenlabs";
 import { soundPlanPrompt } from "@/lib/ai/prompts";
 import { findLocalProject, getCreative, getScript } from "@/lib/repo";
 import { sanitizeSoundPlan } from "@/lib/sound";
@@ -17,6 +18,28 @@ export async function saveSoundPlanAction(projectId: string, data: unknown): Pro
   saveSoundPlan(projectId, plan);
   revalidatePath(`/projects/${projectId}`, "layout");
   return { ok: "已保存到本机" };
+}
+
+const KEY_RE = /^[\x21-\x7e]{6,300}$/;
+
+export async function saveElevenLabsKeyAction(input: { apiKey: string; clear: boolean }): Promise<FormState & { info?: { configured: boolean; keyHint: string } }> {
+  if (input.clear) saveElevenLabsKey("");
+  else {
+    const k = (input.apiKey ?? "").trim();
+    if (!KEY_RE.test(k)) return { error: "Key 格式不正确" };
+    saveElevenLabsKey(k);
+  }
+  revalidatePath("/settings");
+  return { ok: input.clear ? "已清除 ElevenLabs Key" : "已保存到本机", info: elevenLabsPublicInfo() };
+}
+
+export async function testElevenLabsAction(): Promise<FormState> {
+  try {
+    const { used, limit, tier } = await testElevenLabs();
+    return { ok: `连接成功${tier ? `（${tier}）` : ""}：本期已用 ${used.toLocaleString()} / ${limit.toLocaleString()} 字符额度` };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "连接失败" };
+  }
 }
 
 export async function aiSoundPlanAction(projectId: string): Promise<AiResult<SoundPlan>> {

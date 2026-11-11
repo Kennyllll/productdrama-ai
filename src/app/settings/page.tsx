@@ -1,8 +1,10 @@
 import { Card, PageHeader } from "@/components/ui";
 import { AiSettingsForm } from "@/components/workbench/AiSettingsForm";
+import { ElevenLabsSettingsForm } from "@/components/workbench/ElevenLabsSettingsForm";
 import { HiggsfieldSettingsForm } from "@/components/workbench/HiggsfieldSettingsForm";
 import { VisionSettingsForm } from "@/components/workbench/VisionSettingsForm";
 import { aiPublicInfo } from "@/lib/ai/settings";
+import { elevenLabsPublicInfo } from "@/lib/elevenlabs";
 import { hfPublicInfo } from "@/lib/higgsfield";
 import { visionPublicInfo } from "@/lib/vision-qa";
 
@@ -11,12 +13,13 @@ export const dynamic = "force-dynamic";
 export default function SettingsPage() {
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
-      <PageHeader title="模型设置" description="工具级设置：文字模型（故事、剧本、分镜、声音设计）与画面生成平台（Higgsfield）。凭证只保存在本机。" />
+      <PageHeader title="模型设置" description="工具级设置：文字模型（故事、剧本、分镜、声音设计）、画面生成平台（Higgsfield）与声音（ElevenLabs）。凭证只保存在本机。" />
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <AiSettingsForm initial={aiPublicInfo()} />
           <HiggsfieldSettingsForm initial={hfPublicInfo()} />
           <VisionSettingsForm initial={visionPublicInfo()} />
+          <ElevenLabsSettingsForm initial={elevenLabsPublicInfo()} />
         </div>
         <Card title="数据与费用">
           <ul className="list-inside list-disc space-y-1 text-sm text-neutral-300">
