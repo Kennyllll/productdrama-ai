@@ -35,7 +35,9 @@ export async function saveElevenLabsKeyAction(input: { apiKey: string; clear: bo
 
 export async function testElevenLabsAction(): Promise<FormState> {
   try {
-    const { used, limit, tier } = await testElevenLabs();
+    const q = await testElevenLabs();
+    if (!q) return { ok: "连接成功（这个 Key 没有 User: Read 权限，看不到额度，不影响生成）" };
+    const { used, limit, tier } = q;
     return { ok: `连接成功${tier ? `（${tier}）` : ""}：本期已用 ${used.toLocaleString()} / ${limit.toLocaleString()} 字符额度` };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "连接失败" };

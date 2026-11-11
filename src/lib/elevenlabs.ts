@@ -31,13 +31,15 @@ export function elevenLabsPublicInfo(): { configured: boolean; keyHint: string }
   return { configured: k !== "", keyHint: k ? `••••${k.slice(-4)}` : "" };
 }
 
-/** 读取账户信息测试连接，不产生费用；返回本月已用 / 总字符额度 */
-export async function testElevenLabs(): Promise<{ used: number; limit: number; tier: string }> {
+/** 读取模型列表测试 Key（不需要 user_read 权限），再尽量读额度；都不产生费用 */
+export async function testElevenLabs(): Promise<{ used: number; limit: number; tier: string } | null> {
   const key = getElevenLabsKey();
   if (!key) throw new Error("尚未配置 ElevenLabs Key");
-  const res = await fetch(`${BASE}/user`, { headers: { "xi-api-key": key }, signal: AbortSignal.timeout(20_000) });
-  if (!res.ok) throw new Error(STATUS_MESSAGES[res.status] ?? `ElevenLabs 返回 ${res.status}`);
-  const j = (await res.json()) as { subscription?: { character_count?: number; character_limit?: number; tier?: string } };
-  const s = j.subscription ?? {};
+  const get = (path: string) => fetch(`${BASE}/${path}`, { headers: { "xi-api-key": key }, signal: AbortSignal.timeout(20_000) });
+  const res = await get("models");
+  if (!res.ok) throw new Error(res.status === 401 ? "ElevenLabs Key 无效" : (STATUS_MESSAGES[res.status] ?? `ElevenLabs 返回 ${res.status}`));
+  const sub = await get("user/subscription");
+  if (!sub.ok) return null;
+  const s = (await sub.json()) as { character_count?: number; character_limit?: number; tier?: string };
   return { used: s.character_count ?? 0, limit: s.character_limit ?? 0, tier: s.tier ?? "" };
 }
