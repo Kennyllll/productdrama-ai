@@ -132,6 +132,87 @@ CREATE TABLE IF NOT EXISTS sound_stems (
   volume_db REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS shot_cards (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  episode INTEGER NOT NULL,
+  code TEXT NOT NULL,
+  sort INTEGER NOT NULL DEFAULT 0,
+  data TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS shot_cards_project ON shot_cards(project_id, episode, sort);
+CREATE TABLE IF NOT EXISTS library_files (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  episode INTEGER NOT NULL,
+  shot_code TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL,
+  label TEXT NOT NULL DEFAULT '',
+  rel_path TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS library_files_project ON library_files(project_id, episode, shot_code);
+CREATE TABLE IF NOT EXISTS ledger (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  episode INTEGER NOT NULL,
+  shot_code TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL,
+  model TEXT NOT NULL DEFAULT '',
+  usd REAL NOT NULL DEFAULT 0,
+  exact INTEGER NOT NULL DEFAULT 0,
+  used INTEGER NOT NULL DEFAULT 0,
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ledger_project ON ledger(project_id, episode);
+CREATE TABLE IF NOT EXISTS rules (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  scope TEXT NOT NULL DEFAULT 'project',
+  layer TEXT NOT NULL,
+  level TEXT NOT NULL DEFAULT 'must',
+  text TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT '',
+  origin TEXT NOT NULL DEFAULT 'user',
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS decisions (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  text TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  origin TEXT NOT NULL DEFAULT 'user',
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS guide_messages (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  role TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  text TEXT NOT NULL,
+  origin TEXT NOT NULL DEFAULT 'user',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS guide_messages_project ON guide_messages(project_id, created_at);
+CREATE TABLE IF NOT EXISTS timelines (
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  episode INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  PRIMARY KEY (project_id, episode)
+);
+CREATE TABLE IF NOT EXISTS set_layouts (
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  episode INTEGER NOT NULL,
+  shot_code TEXT NOT NULL,
+  data TEXT NOT NULL,
+  edited TEXT,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, episode, shot_code)
+);
 `;
 
 const globalForDb = globalThis as unknown as { __productDramaDb?: Database.Database };

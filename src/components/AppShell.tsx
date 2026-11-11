@@ -12,6 +12,14 @@ const statusDot = {
   todo: "bg-neutral-600",
 } as const;
 
+const productionTools = [
+  ["shots", "镜头卡"],
+  ["timeline", "时间线"],
+  ["set", "3D 布景"],
+  ["ledger", "费用账本"],
+  ["rules", "规则库"],
+] as const;
+
 function NavLink({ href, active, children }: { href: string; active: boolean; children: ReactNode }) {
   return (
     <Link
@@ -69,6 +77,19 @@ export function AppShell({ children }: { children: ReactNode }) {
               </NavLink>
             );
           })}
+          {!isDemo ? (
+            <>
+              <p className="hidden px-3 pb-1 pt-4 text-[11px] uppercase tracking-wider text-neutral-500 lg:block">制作工具</p>
+              {productionTools.map(([key, label]) => {
+                const href = `/projects/${project.id}/${key}`;
+                return (
+                  <NavLink key={key} href={href} active={pathname === href}>
+                    {label}
+                  </NavLink>
+                );
+              })}
+            </>
+          ) : null}
         </nav>
         <div className="hidden px-5 pt-6 text-[11px] leading-relaxed text-neutral-500 lg:block">
           <p><span className="text-emerald-400">●</span> 已完成（示例）</p>
