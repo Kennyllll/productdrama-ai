@@ -7,6 +7,7 @@ import { getProductModel, modelFor } from "@/lib/model-repo";
 import { getRig } from "@/lib/product-rig-repo";
 import { findLocalProject } from "@/lib/repo";
 import { getShortVideo, listJobs, listShortVideos } from "@/lib/shorts-repo";
+import { videoTheme } from "@/lib/shorts";
 import { autoLayout } from "@/lib/shorts-set";
 import { activeItems, findTheme, type SceneItem } from "@/lib/shorts-scenes";
 import { ensureScenes, legacyShotScene, versionOf } from "@/lib/shorts-scenes-repo";
@@ -44,7 +45,7 @@ export default async function ShortSetPage({ params, searchParams }: { params: P
   const sceneItems: Record<string, SceneItem[]> = {};
   const stage: Record<string, StageProps> = {};
   const bindings: ShotBinding[] = v.shots.map((s, i) => {
-    const sh = s.scene ?? legacyShotScene(scenes, v.room);
+    const sh = s.scene ?? legacyShotScene(scenes, v.room, videoTheme(v).theme);
     const sc = scenes.find((x) => x.id === sh.id) ?? scenes[0];
     const ver = versionOf(sc, sh.v);
     sceneItems[s.id] = activeItems(ver.items, sh.theme);

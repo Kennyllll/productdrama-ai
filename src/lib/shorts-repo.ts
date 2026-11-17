@@ -44,12 +44,12 @@ export function getShortVideo(id: string): ShortVideo | null {
   return r ? toVideo(r) : null;
 }
 
-export function createShortVideo(projectId: string, title: string, templateId: string): string {
+export function createShortVideo(projectId: string, title: string, templateId: string, theme?: { theme: string; themeText?: string }): string {
   const id = randomUUID();
   const t = now();
   getDb()
     .prepare("INSERT INTO short_videos (id, project_id, title, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
-    .run(id, projectId, title, JSON.stringify(emptyShortData(templateId)), t, t);
+    .run(id, projectId, title, JSON.stringify(emptyShortData(templateId, theme)), t, t);
   getDb().prepare("UPDATE projects SET updated_at = ? WHERE id = ?").run(t, projectId);
   return id;
 }

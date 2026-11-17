@@ -26,16 +26,19 @@ import {
   type ShortVideo,
   type VideoResolution,
   operatorPrompt,
+  videoTheme,
   waitingFor,
   type ShotHook,
 } from "@/lib/shorts";
 import { lastFrame, renderShort } from "@/lib/shorts-render";
 import { cleanLayout, guessRoom, layoutText, moveText, PRODUCT_REF_VIEWS } from "@/lib/shorts-set";
-import { sceneText } from "@/lib/shorts-scenes";
-import { ensureScenes, getScene, legacyShotScene, saveScene, versionOf } from "@/lib/shorts-scenes-repo";
+import { findTheme, sceneText } from "@/lib/shorts-scenes";
+import { createScene, ensureScenes, getScene, legacyShotScene, saveScene, themedScene, versionOf } from "@/lib/shorts-scenes-repo";
+import { createTemplate, deleteTemplate, getTemplate, saveTemplate, type TemplateScene, type TemplateShot } from "@/lib/shorts-templates-repo";
+import type { Scene } from "@/lib/shorts-scenes";
 import { cadDir, getColor, getProductModel, modelFor, modelPath } from "@/lib/model-repo";
 import { addRule, type SetLayout } from "@/lib/production-repo";
-import { figuresOf, KB002_RIG } from "@/lib/figures";
+import { figuresOf, KB002_RIG, RIDE_KINDS, rideKindOf } from "@/lib/figures";
 import { basisOf, shotChecks, shotSync, TEXT_FIELDS, type ShotSync, type TextField } from "@/lib/shorts-sync";
 import { placeOf, syncOf } from "@/lib/shorts-sync-state";
 import { opCompKey, operatorShows, opMissing, parseOp } from "@/lib/shorts-operator";
@@ -106,12 +109,15 @@ function requirePackaging(projectId: string, templateId: string) {
   if (findTemplate(templateId).needsPackaging && !hasPackaging(projectId)) throw new Error("开箱视频要先在产品页上传真实包装照片，包装不让 AI 编");
 }
 
-export async function createShortVideoAction(projectId: string, title: string, templateId: string): Promise<Result<string>> {
+export async function createShortVideoAction(projectId: string, title: string, templateId: string, theme = "none", themeText = ""): Promise<Result<string>> {
   try {
     if (!findLocalProject(projectId)) throw new Error("项目不存在");
     requirePackaging(projectId, templateId);
+    const th = findTheme(theme).id;
+    const text = th === "custom" ? themeText.trim().slice(0, 300) : "";
+    if (th === "custom" && !text) throw new Error("自定义节日要写清楚是什么节日");
     const t = title.trim().slice(0, 60) || `${findTemplate(templateId).label} · ${listShortVideos(projectId).length + 1}`;
-    const id = createShortVideo(projectId, t, findTemplate(templateId).id);
+    const id = createShortVideo(projectId, t, findTemplate(templateId).id, { theme: th, themeText: text || undefined });
     revalidatePath(`/projects/${projectId}/shorts`);
     return { result: id };
   } catch (e) {
@@ -206,6 +212,7 @@ export async function saveShortVideoAction(
         if (!p?.textBasis || TEXT_FIELDS.some((k) => p[k] !== s[k])) s.textBasis = basisOf(s, placeOf(v, s));
       }
     }
+    bindScenes(v);
     if (patch.exportHooks) v.exportHooks = patch.exportHooks.filter((id) => v.shots.some((s) => s.hook && s.id === id));
     saveShortVideo(v);
     refresh(v);
@@ -229,12 +236,75 @@ export async function addHookAction(videoId: string): Promise<Result<StudioState
     s.scene = link?.scene ? { ...link.scene } : undefined;
     s.family = link?.family;
     s.special = base?.special;
-    s.textBasis = basisOf(s, placeOf(v, s));
     v.shots = [...hooks, s, ...body];
+    bindScenes(v);
+    s.textBasis = basisOf(s, placeOf(v, s));
     v.hooksReady = true;
     saveShortVideo(v);
     refresh(v);
     return { result: state(videoId) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 没绑场地的镜头：按 room 绑到场地库最新版本，节日跟整条视频 */
+function bindScenes(v: ShortVideo) {
+  if (v.shots.every((s) => s.scene)) return;
+  const { theme, themeText } = videoTheme(v);
+  const scenes = ensureScenes(v.projectId, listShortVideos(v.projectId));
+  const sc = getScene(legacyShotScene(scenes, v.room).id);
+  if (!sc) return;
+  for (const s of v.shots) if (!s.scene) s.scene = themedScene(sc, sc.versions[sc.versions.length - 1].v, theme, themeText);
+}
+
+/** 换整条视频的节日：做过的镜头先列出来让用户确认（退回构图重做），已采用的镜头不自动改 */
+export async function setVideoThemeAction(videoId: string, theme: string, themeText = "", confirmed = false): Promise<Result<{ confirm?: string; state?: StudioState }>> {
+  try {
+    const v = load(videoId);
+    const t = findTheme(theme).id;
+    const text = t === "custom" ? themeText.trim().slice(0, 300) : "";
+    if (t === "custom" && !text) throw new Error("自定义节日要写清楚是什么节日，例如：中秋节，挂灯笼、桌上有月饼");
+    if (listJobs(videoId).some((j) => j.status === "submitting" || j.status === "submitted")) throw new Error("有镜头正在生成，等生成完再换节日");
+    const scenes = ensureScenes(v.projectId, listShortVideos(v.projectId));
+    const cur = videoTheme(v);
+    const label = (s: ShortShot) => (s.hook ? `开头「${s.hook.name}」` : `#${v.shots.indexOf(s) + 1}`);
+    const shOf = (s: ShortShot) => s.scene ?? legacyShotScene(scenes, v.room, cur.theme);
+    const changed = v.shots.filter((s) => {
+      const sh = shOf(s);
+      return sh.theme !== t || (t === "custom" && (sh.themeText ?? "") !== text);
+    });
+    const accepted = changed.filter((s) => s.stage === "accepted");
+    if (accepted.length) throw new Error(`已采用的镜头 ${accepted.map(label).join("、")} 不会被自动改：要换节日，先在这些镜头点“退回返工”`);
+    const redo = changed.filter((s) => s.stage !== "draft" || s.frameJobId || s.videoJobId);
+    if (redo.length && !confirmed) {
+      const usd = redo.reduce((a, s) => a + FRAME_USD_FALLBACK + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * VIDEO_USD_PER_SEC[v.resolution] : 0), 0);
+      return {
+        result: {
+          confirm: `换成「${findTheme(t).label}」以后，这些已经做过的镜头画面里还是旧节日，要退回构图重做：\n${redo.map(label).join("、")}\n\n重做大约 $${usd.toFixed(2)}（每次生成照样先审批）。已经生成的图和视频会留在历史里。\n\n确定要换吗？`,
+        },
+      };
+    }
+    const memo = new Map<string, ReturnType<typeof themedScene>>();
+    for (const s of changed) {
+      const sh = shOf(s);
+      const key = `${sh.id}:${sh.v}`;
+      let next = memo.get(key);
+      if (!next) {
+        const sc = getScene(sh.id);
+        if (!sc) continue;
+        next = themedScene(sc, sh.v, t, text);
+        memo.set(key, next);
+      }
+      s.scene = { ...next };
+      s.compFile = null;
+      s.stage = "draft";
+    }
+    v.theme = t;
+    v.themeText = text || undefined;
+    saveShortVideo(v);
+    refresh(v);
+    return { result: { state: state(videoId) } };
   } catch (e) {
     return fail(e);
   }
@@ -334,6 +404,7 @@ export async function aiShotsAction(videoId: string): Promise<Result<StudioState
     const caps = await ensureEnglish(v.shots.map((s) => s.caption));
     v.shots.forEach((s, i) => (s.caption = caps[i]));
     v.room = guessRoom(c.setting);
+    bindScenes(v);
     v.budgetUsd = null;
     saveShortVideo(v);
     refresh(v);
@@ -444,7 +515,7 @@ const FRAME_STYLE: Record<string, string> = {
 /** 本镜场地（旧数据没有就按 video.room 迁移到场地库 v1） */
 function shotScene(v: ShortVideo, s: ShortShot) {
   const scenes = ensureScenes(v.projectId, listShortVideos(v.projectId));
-  const sh = s.scene ?? legacyShotScene(scenes, v.room);
+  const sh = s.scene ?? legacyShotScene(scenes, v.room, videoTheme(v).theme);
   const sc = getScene(sh.id);
   return sc ? { sc, ver: versionOf(sc, sh.v), sh } : null;
 }
@@ -1143,4 +1214,187 @@ export async function brainShotInputs(videoId: string, shotId: string) {
       .filter((j) => j.shotId === s.id)
       .map((j) => ({ kind: j.kind, status: j.status, reason: j.reason, usd: j.actualUsd ?? j.estUsd, at: j.createdAt })),
   };
+}
+
+/** 3D 摆位换到另一台车：摄影机离看点的距离、看点高度（第 3 位是高度）、人偶离车的距离按握把高度比例缩放；产品姿势放平 */
+function scaleLayout(l: NonNullable<ShortShot["layout"]>, k: number): NonNullable<ShortShot["layout"]> {
+  const look: [number, number, number] = [l.lookAt[0], l.lookAt[1], l.lookAt[2] * k];
+  const cam = [0, 1, 2].map((i) => look[i] + (l.camPos[i] - l.lookAt[i]) * k) as [number, number, number];
+  return { ...l, camPos: cam, lookAt: look, bikeLift: 0, bikePitch: 0, bikeRoll: 0, bikeGround: 0, props: undefined, figures: l.figures?.map((f) => (f.onProduct ? f : { ...f, dx: f.dx * k, dy: f.dy * k })) };
+}
+
+/** 存为模板：正文 + 第一个开头的文字、机位、场地内容、家庭位、节日；整条视频级的返工问题并进每镜特殊要求。不存生成结果和花费 */
+export async function saveTemplateAction(videoId: string, name: string): Promise<Result<string>> {
+  try {
+    const v = load(videoId);
+    const nm = name.trim().slice(0, 40);
+    if (!nm) throw new Error("给模板起个名字");
+    const body = v.shots.filter((s) => !s.hook);
+    if (!body.length) throw new Error("还没有正文镜头，先出分镜再存模板");
+    const hook = v.shots.find((s) => s.hook);
+    const pick = hook ? [hook, ...body] : body;
+    const lessons = [...new Set(v.shots.flatMap((s) => (s.issues ?? []).filter((i) => i.scope === "video").map((i) => i.text.trim())).filter(Boolean))];
+    const scenes: TemplateScene[] = [];
+    const keys = new Map<string, string>();
+    const keyOf = (s: ShortShot) => {
+      const sh = s.scene;
+      if (!sh) return null;
+      const id = `${sh.id}:${sh.v}`;
+      if (!keys.has(id)) {
+        const sc = getScene(sh.id);
+        if (!sc) return null;
+        const key = String(scenes.length + 1);
+        scenes.push({ key, name: sc.name, description: sc.description, special: sc.special, outdoor: sc.outdoor, items: versionOf(sc, sh.v).items.filter((i) => !i.theme) });
+        keys.set(id, key);
+      }
+      return keys.get(id)!;
+    };
+    const vt = videoTheme(v);
+    const shots: TemplateShot[] = pick.map((s) => ({
+      beat: s.beat,
+      useSeconds: s.useSeconds,
+      trimStart: s.trimStart,
+      genSeconds: s.genSeconds,
+      description: s.description,
+      camera: s.camera,
+      caption: s.caption,
+      productNote: s.productNote,
+      compositeNote: s.compositeNote,
+      operator: s.operator,
+      framePrompt: s.framePrompt,
+      motionPrompt: s.motionPrompt,
+      layout: s.layout,
+      family: s.family,
+      special: [s.special, ...lessons].filter(Boolean).join("；").slice(0, 600),
+      hook: s.hook ? { ...s.hook, name: "原版" } : undefined,
+      sceneKey: keyOf(s),
+    }));
+    const id = createTemplate({ name: nm, v: 1, baseTemplateId: v.templateId, theme: vt.theme, themeText: vt.themeText, resolution: v.resolution, room: v.room, fromProduct: getProduct(v.projectId)?.name || "", fromKind: rideKindOf(getProduct(v.projectId)?.rideKind, getProduct(v.projectId)?.category), gripY: rigOf(v).gripY, scenes, shots });
+    revalidatePath("/projects/[id]/shorts", "page");
+    return { result: id };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 模板里一键换节日：还没生成任何画面，不花钱；存成新版本，已经套用过的视频不受影响 */
+export async function setTemplateThemeAction(templateId: string, theme: string, themeText = ""): Promise<Result<true>> {
+  try {
+    const tp = getTemplate(templateId);
+    if (!tp) throw new Error("模板不存在");
+    const t = findTheme(theme).id;
+    const text = t === "custom" ? themeText.trim().slice(0, 300) : "";
+    if (t === "custom" && !text) throw new Error("自定义节日要写清楚是什么节日");
+    tp.theme = t;
+    tp.themeText = text || undefined;
+    tp.v += 1;
+    saveTemplate(tp);
+    revalidatePath("/projects/[id]/shorts", "page");
+    return { result: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function deleteTemplateAction(templateId: string): Promise<Result<true>> {
+  try {
+    deleteTemplate(templateId);
+    revalidatePath("/projects/[id]/shorts", "page");
+    return { result: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 从模板新建：场地复制到这个产品下、3D 按车的握把高度缩放、全部回到构图草案（每镜要重新存 3D 构图），节日按这次选的 */
+export async function createFromTemplateAction(projectId: string, templateId: string, title: string, theme: string, themeText = ""): Promise<Result<string>> {
+  try {
+    if (!findLocalProject(projectId)) throw new Error("项目不存在");
+    const tp = getTemplate(templateId);
+    if (!tp) throw new Error("模板不存在");
+    requirePackaging(projectId, tp.baseTemplateId);
+    const th = findTheme(theme).id;
+    const text = th === "custom" ? themeText.trim().slice(0, 300) : "";
+    if (th === "custom" && !text) throw new Error("自定义节日要写清楚是什么节日");
+    const nm = title.trim().slice(0, 60) || `${tp.name} · ${listShortVideos(projectId).length + 1}`;
+    const id = createShortVideo(projectId, nm, tp.baseTemplateId, { theme: th, themeText: text || undefined });
+    const v = load(id);
+    const m = getProductModel(projectId);
+    const rig = (m && getRig(m.id)) || KB002_RIG;
+    const k = Math.max(0.3, Math.min(3, rig.gripY / (tp.gripY || rig.gripY)));
+    const scenes = new Map<string, Scene>();
+    for (const t of tp.scenes) {
+      scenes.set(t.key, createScene(projectId, { name: `${t.name}（${tp.name}）`.slice(0, 40), description: t.description, special: t.special, outdoor: t.outdoor, items: t.items, note: `从模板「${tp.name}」v${tp.v} 复制` }, []));
+    }
+    v.shots = tp.shots.map((t) => {
+      const { sceneKey, layout, family, special, ...txt } = t;
+      const s = cleanShot({ ...txt, id: undefined });
+      s.layout = layout ? scaleLayout(layout, k) : null;
+      const sc = sceneKey ? scenes.get(sceneKey) : undefined;
+      if (sc) s.scene = themedScene(sc, sc.versions[sc.versions.length - 1].v, th, text);
+      s.family = family;
+      s.special = special;
+      return s;
+    });
+    v.room = tp.room;
+    v.resolution = tp.resolution;
+    v.hooksReady = true;
+    v.fromTemplate = { id: tp.id, v: tp.v, name: tp.name, fromProduct: tp.fromProduct, fromKind: tp.fromKind ?? rideKindOf(undefined, tp.fromProduct) };
+    bindScenes(v);
+    v.shots.forEach((s) => (s.textBasis = basisOf(s, placeOf(v, s))));
+    saveShortVideo(v);
+    refresh(v);
+    return { result: id };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 套模板以后按这个产品改写全部镜头的文字（DeepSeek 文字调用 1 次，约 $0.01，不出图）；只在全部还是构图草案、没生成过时能用 */
+export async function retargetTextAction(videoId: string): Promise<Result<{ notes: string[]; state: StudioState }>> {
+  try {
+    const v = load(videoId);
+    const ft = v.fromTemplate;
+    if (!ft) throw new Error("这条视频不是从模板套来的");
+    if (ft.rewritten) throw new Error("已经改写过了；还要改就在镜头里逐镜改写");
+    if (v.shots.some((s) => s.stage !== "draft")) throw new Error("有镜头已经确认构图，先退回构图再改写");
+    if (listJobs(videoId).some((j) => j.status !== "failed")) throw new Error("这条视频已经生成过画面，不能整条改写");
+    const p = getProduct(v.projectId);
+    const kind = (k: string) => RIDE_KINDS.find((x) => x.k === k)?.label ?? k;
+    const from = kind(rideKindOf(ft.fromKind, ft.fromProduct));
+    const to = kind(rideKindOf(p?.rideKind, p?.category));
+    const shots = v.shots.map((s) => ({ id: s.id, caption: s.caption, ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, s[k]])) }));
+    const { data } = await chatJson({
+      system:
+        "You adapt the text of a TikTok-style product video that was written for one product (sourceProduct) to a different product (targetProduct). Change only what depends on the product: its name, type, parts, colors, materials, features, and how a child rides or uses it (a balance bike is pushed along with both feet on the ground and has no pedals; a tricycle is pedaled with the feet on the pedals and steered with the handlebars). Use only facts from targetProduct.facts; never invent features, logos, colors, stickers or accessories. Keep everything else as it is: story beats, people, wardrobe, location, holiday decorations, camera and framing, mood, the casual phone-footage style and roughly the same length. A sentence that does not mention the product stays word for word. Keep each field's scope: framePrompt must not gain positions, poses, distances or camera details. Fields description, camera and productNote are in Simplified Chinese; framePrompt, motionPrompt and caption are in English (caption: short casual American English, keep any 'POV:' prefix). Output json: {\"shots\":[{\"id\":\"\",\"description\":\"\",\"camera\":\"\",\"productNote\":\"\",\"framePrompt\":\"\",\"motionPrompt\":\"\",\"caption\":\"\",\"notes\":[\"one short Simplified Chinese line per change\"]}]} with every input shot, same ids, same order.",
+      user: JSON.stringify({ sourceProduct: { name: ft.fromProduct, type: from }, targetProduct: { facts: productText(v.projectId), type: to }, shots }),
+      maxTokens: 12_000,
+      thinking: false,
+      timeoutMs: 240_000,
+    });
+    const out = (data as { shots?: unknown[] } | null)?.shots;
+    if (!Array.isArray(out) || !out.length) throw new AiError("AI 没有返回改写结果，请重试");
+    const lim: Record<TextField, number> = { description: 600, camera: 200, productNote: 300, framePrompt: 2000, motionPrompt: 1000 };
+    const notes: string[] = [];
+    const caps = v.shots.map((s, i) => {
+      const d = ((out.find((x) => (x as { id?: unknown })?.id === s.id) ?? out[i]) ?? {}) as Record<string, unknown>;
+      for (const k of TEXT_FIELDS) {
+        const x = d[k];
+        if (typeof x === "string" && x.trim()) s[k] = x.trim().slice(0, lim[k]);
+      }
+      if (Array.isArray(d.notes)) d.notes.filter((n): n is string => typeof n === "string" && !!n.trim()).slice(0, 3).forEach((n) => notes.push(`#${i + 1} ${n.trim().slice(0, 120)}`));
+      return typeof d.caption === "string" && d.caption.trim() ? d.caption.trim().slice(0, 160) : s.caption;
+    });
+    const en = await ensureEnglish(caps);
+    v.shots.forEach((s, i) => {
+      s.caption = en[i];
+      s.textBasis = basisOf(s, placeOf(v, s));
+    });
+    v.fromTemplate = { ...ft, rewritten: true };
+    saveShortVideo(v);
+    refresh(v);
+    return { result: { notes, state: state(videoId) } };
+  } catch (e) {
+    return fail(e);
+  }
 }

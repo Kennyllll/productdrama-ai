@@ -15,9 +15,12 @@ import {
   studioStateAction,
   clearRunErrorAction,
   resumeJobAction,
+  retargetTextAction,
   runJobAction,
   saveShortVideoAction,
   setBudgetAction,
+  saveTemplateAction,
+  setVideoThemeAction,
   shotStageAction,
   type StageAction,
   type StudioState,
@@ -40,8 +43,10 @@ import {
   type Quote,
   type ShortShot,
   type VideoResolution,
+  videoTheme,
   waitingFor,
 } from "@/lib/shorts";
+import { THEMES } from "@/lib/shorts-scenes";
 import { TEXT_FIELDS, TEXT_LABELS, type TextField } from "@/lib/shorts-sync";
 import { DraftFeedback } from "@/components/shorts/DraftFeedback";
 import type { Conflict } from "@/lib/shorts";
@@ -135,6 +140,20 @@ export function ShortStudio({
     fn: () => Promise<{ error?: string; result?: StudioState }>,
     ok?: string,
   ) => start(async () => apply(await fn(), ok));
+  const vt = videoTheme(v);
+  const themeLabel = `${THEMES.find((t) => t.id === vt.theme)?.label ?? "无节日"}${vt.theme === "custom" && vt.themeText ? `（${vt.themeText}）` : ""}`;
+  const changeTheme = (theme: string) => {
+    const text = theme === "custom" ? window.prompt("自定义节日是什么？例如：中秋节，挂灯笼、桌上有月饼", vt.themeText ?? "") : "";
+    if (text === null) return;
+    start(async () => {
+      let r = await setVideoThemeAction(v.id, theme, text);
+      if (r.result?.confirm) {
+        if (!window.confirm(r.result.confirm)) return;
+        r = await setVideoThemeAction(v.id, theme, text, true);
+      }
+      apply({ error: r.error, result: r.result?.state }, "已换节日");
+    });
+  };
 
   const live = useMemo(() => ({ ...v, shots }), [v, shots]);
   const secs = finalSeconds(live);
@@ -298,10 +317,63 @@ export function ShortStudio({
           />
           <details className="text-xs text-neutral-400">
             <summary className="cursor-pointer select-none">
-              视频设定 · {templates.find((t) => t.id === v.templateId)?.label ?? v.templateId} · {v.resolution} · 颜色：
+              视频设定 · 节日：{themeLabel} · {templates.find((t) => t.id === v.templateId)?.label ?? v.templateId} · {v.resolution} · 颜色：
               {kit?.colors.find((c) => c.id === v.colorId)?.name ?? "原色"}
             </summary>
+          {v.fromTemplate ? (
+            <div className="mt-2 space-y-1 text-amber-200/80">
+              <p>
+                从模板「{v.fromTemplate.name}」v{v.fromTemplate.v} 套用{v.fromTemplate.fromProduct ? `（原来是 ${v.fromTemplate.fromProduct} 做的）` : ""}：每镜要重新打开 3D 看一眼、点保存。
+                {v.fromTemplate.rewritten ? "文字已经按这个产品改写过。" : "产品相关的文字还是原产品的。"}
+              </p>
+              {!v.fromTemplate.rewritten ? (
+                <button
+                  type="button"
+                  className={btn}
+                  disabled={busy}
+                  onClick={() => {
+                    if (!window.confirm("用 DeepSeek 按这个产品的资料，改写所有镜头的画面、机位、产品备注、提示词和字幕。\n\n调用文字模型 1 次，大约 $0.01，不出图。\n\n确定吗？")) return;
+                    start(async () => {
+                      setMsg({ tone: "ok", text: "改写中…（半分钟左右）" });
+                      const r = await retargetTextAction(v.id);
+                      apply({ error: r.error, result: r.result?.state }, r.result ? `已按这个产品改写：${r.result.notes.slice(0, 8).join("；") || "没有要改的地方"}` : undefined);
+                    });
+                  }}
+                >
+                  按这个产品改写全部镜头文字（DeepSeek，约 $0.01）
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className={btn}
+              disabled={busy || !v.shots.some((s) => !s.hook)}
+              title="存正文和第一个开头的文字、机位、场地和节日；不存首帧、视频和花费"
+              onClick={() => {
+                const name = window.prompt("模板名字", v.title);
+                if (!name?.trim()) return;
+                start(async () => {
+                  const r = await saveTemplateAction(v.id, name);
+                  apply({ error: r.error }, `已存为模板「${name.trim()}」，新建视频时可以选`);
+                });
+              }}
+            >
+              存为模板
+            </button>
+            <select
+              value={vt.theme}
+              disabled={busy}
+              onChange={(e) => changeTheme(e.target.value)}
+              className={`${input} w-auto py-1 text-xs`}
+            >
+              {THEMES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  节日：{t.label}
+                </option>
+              ))}
+            </select>
             <select
               value={v.templateId}
               disabled={busy || st.jobs.length > 0}
@@ -322,6 +394,10 @@ export function ShortStudio({
               value={v.resolution}
               disabled={busy}
               onChange={(e) =>
+                (!st.jobs.length ||
+                  window.confirm(
+                    "已经生成过的镜头保持原来的分辨率，之后生成的用新的分辨率，前后画质会不一样。确定要换吗？",
+                  )) &&
                 act(() =>
                   saveShortVideoAction(v.id, {
                     resolution: e.target.value as VideoResolution,

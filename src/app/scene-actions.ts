@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { AiError, chatJson } from "@/lib/ai/client";
 import { findLocalProject } from "@/lib/repo";
-import { cleanItems, findTheme, ITEM_TYPES, themeDecor, visibleChanges, type SceneItem } from "@/lib/shorts-scenes";
-import { addVersion, createScene, ensureScenes, getScene, latest, legacyShotScene, versionOf } from "@/lib/shorts-scenes-repo";
+import { cleanItems, ITEM_TYPES, visibleChanges, type SceneItem } from "@/lib/shorts-scenes";
+import { addVersion, createScene, ensureScenes, getScene, latest, legacyShotScene, themedScene, versionOf } from "@/lib/shorts-scenes-repo";
+import { videoTheme } from "@/lib/shorts";
 import { getShortVideo, listShortVideos, saveShortVideo } from "@/lib/shorts-repo";
 import { cleanRig } from "@/lib/figures";
 import { saveRig } from "@/lib/product-rig-repo";
@@ -20,15 +21,15 @@ function loadVideo(videoId: string) {
   const v = getShortVideo(videoId);
   if (!v || !findLocalProject(v.projectId)) throw new Error("短视频不存在");
   const scenes = ensureScenes(v.projectId, listShortVideos(v.projectId));
-  for (const s of v.shots) if (!s.scene) s.scene = legacyShotScene(scenes, v.room);
+  for (const s of v.shots) if (!s.scene) s.scene = legacyShotScene(scenes, v.room, videoTheme(v).theme);
   return { v, scenes };
 }
 
-/** 本镜换场地 / 版本 / 主题 / 家庭 / 特殊要求：只有构图草案能改；换了场地作废本镜 3D 构图 */
+/** 本镜换场地 / 版本 / 家庭 / 特殊要求：只有构图草案能改；换了场地作废本镜 3D 构图。节日跟整条视频走，不在镜头里改 */
 export async function setShotSceneAction(
   videoId: string,
   shotId: string,
-  patch: { sceneId?: string; v?: number; theme?: string; themeText?: string; family?: number; special?: string },
+  patch: { sceneId?: string; v?: number; family?: number; special?: string },
 ): Promise<Result<true>> {
   try {
     const { v } = loadVideo(videoId);
@@ -39,19 +40,12 @@ export async function setShotSceneAction(
     const sc = getScene(patch.sceneId ?? cur.id);
     if (!sc || sc.projectId !== v.projectId) throw new Error("场地不存在");
     const ver = patch.sceneId && patch.sceneId !== cur.id ? latest(sc).v : (patch.v ?? cur.v);
-    const theme = findTheme(patch.theme ?? cur.theme).id;
-    const next = { id: sc.id, v: versionOf(sc, ver).v, theme, ...(theme === "custom" ? { themeText: (patch.themeText ?? cur.themeText ?? "").slice(0, 300) } : {}) };
-    const geomChanged = next.id !== cur.id || next.v !== cur.v || next.theme !== cur.theme;
+    const next = themedScene(sc, versionOf(sc, ver).v, cur.theme, cur.themeText);
+    const geomChanged = next.id !== cur.id || next.v !== cur.v;
     s.scene = next;
     if (patch.family !== undefined) s.family = Math.max(1, Math.min(9, Math.round(patch.family)));
     if (patch.special !== undefined) s.special = patch.special.slice(0, 600);
     if (geomChanged) s.compFile = null;
-    // 选了还没有装饰层的预设主题：自动摆一套，存成新版本
-    const items = versionOf(sc, next.v).items;
-    if (theme !== "none" && theme !== "custom" && !items.some((i) => i.theme === theme)) {
-      const nv = addVersion(sc, [...items, ...themeDecor(theme, items, sc.outdoor)], `加入${findTheme(theme).label}装饰`);
-      s.scene.v = nv.v;
-    }
     saveShortVideo(v);
     refresh(v.projectId, v.id);
     return { result: true };
@@ -132,7 +126,7 @@ export async function createSceneAction(projectId: string, init: { name: string;
     if (!findLocalProject(projectId)) throw new Error("项目不存在");
     const sc = createScene(projectId, { ...init, items: cleanItems(init.items) });
     if (useFor) {
-      const r = await setShotSceneAction(useFor.videoId, useFor.shotId, { sceneId: sc.id, theme: "none" });
+      const r = await setShotSceneAction(useFor.videoId, useFor.shotId, { sceneId: sc.id });
       if (r.error) throw new Error(r.error);
     }
     refresh(projectId, useFor?.videoId);

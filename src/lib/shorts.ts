@@ -183,6 +183,12 @@ export interface ShortVideoData {
   hooksReady?: boolean;
   /** 产品颜色款（产品资料里的 product_colors）；空 = 原色 */
   colorId?: string | null;
+  /** 整条视频的节日（THEMES 的 id），新建时选；所有镜头跟着它。旧数据没有 = 按镜头推断 */
+  theme?: string;
+  /** 自定义节日的描述（theme = "custom"） */
+  themeText?: string;
+  /** 从哪个模板（哪一版）套来的 */
+  fromTemplate?: { id: string; v: number; name: string; fromProduct: string; fromKind?: string; rewritten?: boolean };
 }
 
 export interface ShortVideo extends ShortVideoData {
@@ -192,7 +198,15 @@ export interface ShortVideo extends ShortVideoData {
   updatedAt: string;
 }
 
-export const emptyShortData = (templateId = "pov-gift"): ShortVideoData => ({
+/** 整条视频的节日：没存过的旧视频按第一个已绑定场地的镜头推断 */
+export function videoTheme(v: Pick<ShortVideoData, "theme" | "themeText" | "shots" | "room">): { theme: string; themeText?: string } {
+  if (v.theme) return { theme: v.theme, themeText: v.themeText };
+  const sh = v.shots.find((s) => s.scene)?.scene;
+  return sh ? { theme: sh.theme, themeText: sh.themeText } : { theme: v.room === "xmas-living" ? "christmas" : "none" };
+}
+
+export const emptyShortData = (templateId = "pov-gift", theme?: { theme: string; themeText?: string }): ShortVideoData => ({
+  ...(theme ? { theme: theme.theme, ...(theme.themeText ? { themeText: theme.themeText } : {}) } : {}),
   templateId,
   brief: "",
   concepts: [],

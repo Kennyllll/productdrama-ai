@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ProductRefs } from "@/components/shorts/ProductRefs";
 import { cadDir, getProductModel } from "@/lib/model-repo";
+import { listTemplates } from "@/lib/shorts-templates-repo";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +70,12 @@ export default async function ShortsPage({ params }: { params: Promise<{ id: str
         </Card>
         <div className="space-y-4">
           <Card title="新建短视频">
-            <NewShortForm projectId={id} templates={SHORT_TEMPLATES.map((t) => ({ id: t.id, label: t.label, description: t.description }))} />
+            <NewShortForm
+              projectId={id}
+              templates={SHORT_TEMPLATES.map((t) => ({ id: t.id, label: t.label, description: t.description, needsPackaging: Boolean(t.needsPackaging) }))}
+              saved={listTemplates().map((t) => ({ id: t.id, name: t.name, v: t.v, theme: t.theme, themeText: t.themeText, shots: t.shots.length, fromProduct: t.fromProduct, needsPackaging: Boolean(findTemplate(t.baseTemplateId).needsPackaging) }))}
+              hasPackaging={listAssets(id).some((a) => a.kind === "packaging_photo")}
+            />
           </Card>
           <Card title="产品资料（长剧和短视频共用）">
             <p className="text-sm text-neutral-300">{product?.name || "未填写产品名称"}</p>

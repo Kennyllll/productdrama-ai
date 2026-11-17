@@ -2,7 +2,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
-import { boxItem, cleanItems, newItem, presetScenes, sceneBounds, themeDecor, type Scene, type SceneItem, type SceneVersion } from "@/lib/shorts-scenes";
+import { boxItem, cleanItems, findTheme, newItem, presetScenes, sceneBounds, themeDecor, type Scene, type SceneItem, type SceneVersion, type ShotScene } from "@/lib/shorts-scenes";
 import { SET_ROOMS } from "@/lib/shorts-set";
 import type { ShortVideo } from "@/lib/shorts";
 
@@ -109,8 +109,16 @@ export function ensureScenes(projectId: string, videos: ShortVideo[]): Scene[] {
 }
 
 /** 旧视频的镜头没有绑定场地：按旧 room 预设绑定到迁移来的 v1 */
-export function legacyShotScene(scenes: Scene[], room: string): { id: string; v: number; theme: string } {
+export function legacyShotScene(scenes: Scene[], room: string, theme?: string): ShotScene {
   const label = room === "xmas-living" || room === "living" ? "客厅" : room === "kids-room" ? "儿童房" : room === "driveway" ? "车道 / 前院" : "公园小路";
   const s = scenes.find((x) => x.name === label) ?? scenes[0];
-  return { id: s.id, v: s.versions[0].v, theme: room === "xmas-living" ? "christmas" : "none" };
+  return { id: s.id, v: s.versions[0].v, theme: theme ?? (room === "xmas-living" ? "christmas" : "none") };
+}
+
+/** 场地某版本 + 节日：预设节日在这个版本里还没有装饰层，就自动摆一套，存成新版本 */
+export function themedScene(sc: Scene, v: number, theme: string, themeText?: string): ShotScene {
+  const t = findTheme(theme).id;
+  let ver = versionOf(sc, v);
+  if (t !== "none" && t !== "custom" && !ver.items.some((i) => i.theme === t)) ver = addVersion(sc, [...ver.items, ...themeDecor(t, ver.items, sc.outdoor)], `加入${findTheme(t).label}装饰`);
+  return { id: sc.id, v: ver.v, theme: t, ...(t === "custom" ? { themeText: (themeText ?? "").slice(0, 300) } : {}) };
 }

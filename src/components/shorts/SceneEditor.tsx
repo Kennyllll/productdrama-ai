@@ -29,7 +29,6 @@ export function SceneEditor({ projectId, videoId, shot, scenes, onDraft }: { pro
   const latestV = sc.versions[sc.versions.length - 1].v;
   const [family, setFamily] = useState(shot.family);
   const [special, setSpecial] = useState(shot.special);
-  const [themeText, setThemeText] = useState(shot.scene.themeText ?? "");
   const [edit, setEdit] = useState<SceneItem[] | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [meta, setMeta] = useState({ name: sc.name, description: sc.description, special: sc.special });
@@ -49,11 +48,10 @@ export function SceneEditor({ projectId, videoId, shot, scenes, onDraft }: { pro
   useEffect(() => {
     setFamily(shot.family);
     setSpecial(shot.special);
-    setThemeText(shot.scene.themeText ?? "");
     setEdit(null);
     setIsNew(false);
     setMeta({ name: sc.name, description: sc.description, special: sc.special });
-  }, [shot.code, shot.family, shot.special, shot.scene.themeText, sc.id, sc.name, sc.description, sc.special, ver.v]);
+  }, [shot.code, shot.family, shot.special, sc.id, sc.name, sc.description, sc.special, ver.v]);
 
   useEffect(() => onDraft(edit ? edit.filter((i) => !i.theme || i.theme === shot.scene.theme) : null), [edit, shot.scene.theme, onDraft]);
 
@@ -102,7 +100,7 @@ export function SceneEditor({ projectId, videoId, shot, scenes, onDraft }: { pro
     <div className="space-y-3 rounded-xl border border-white/10 bg-neutral-900/60 p-3 text-sm text-neutral-200">
       <div className="flex flex-wrap items-center gap-2">
         <b className="text-white">{shot.label} 的场地</b>
-        <span className="text-[11px] text-neutral-500">（这 4 项选完自动保存）</span>
+        <span className="text-[11px] text-neutral-500">（选完自动保存）</span>
         <select className={inp} disabled={pending || Boolean(locked)} value={sc.id} onChange={(e) => bind({ sceneId: e.target.value })}>
           {scenes.map((s) => (
             <option key={s.id} value={s.id}>
@@ -117,13 +115,11 @@ export function SceneEditor({ projectId, videoId, shot, scenes, onDraft }: { pro
             </option>
           ))}
         </select>
-        <select className={inp} disabled={pending || Boolean(locked)} value={shot.scene.theme} onChange={(e) => bind({ theme: e.target.value, themeText })}>
-          {THEMES.map((t) => (
-            <option key={t.id} value={t.id}>
-              主题：{t.label}
-            </option>
-          ))}
-        </select>
+        <span className="rounded border border-white/10 px-2 py-1 text-xs text-neutral-300" title="节日跟整条视频走，在视频页「视频设定」里改">
+          节日：{THEMES.find((t) => t.id === shot.scene.theme)?.label ?? "无节日"}
+          {shot.scene.theme === "custom" && shot.scene.themeText ? `（${shot.scene.themeText}）` : ""}
+          <span className="text-neutral-500">（整条视频统一）</span>
+        </span>
         <select className={inp} disabled={pending || Boolean(locked)} value={family} onChange={(e) => bind({ family: Number(e.target.value) })}>
           {[1, 2, 3, 4].map((n) => (
             <option key={n} value={n}>
@@ -134,15 +130,6 @@ export function SceneEditor({ projectId, videoId, shot, scenes, onDraft }: { pro
         {ver.v !== latestV && !locked ? <span className="text-xs text-amber-300">有新版本 v{latestV}，可在版本里切换</span> : null}
       </div>
       {locked ? <p className="text-xs text-neutral-500">{locked}（场地版本已锁定，仍可查看和另存新场地）</p> : null}
-      {shot.scene.theme === "custom" ? (
-        <label className="flex items-center gap-2">
-          自定义主题
-          <input className={`${inp} flex-1`} disabled={Boolean(locked)} value={themeText} onChange={(e) => setThemeText(e.target.value)} placeholder="例如：中秋节，挂灯笼、桌上有月饼" />
-          <button type="button" className="rounded bg-white/10 px-2 py-1" disabled={pending || Boolean(locked)} onClick={() => bind({ theme: "custom", themeText })}>
-            保存
-          </button>
-        </label>
-      ) : null}
       <label className="flex items-start gap-2">
         <span className="pt-1">本镜特殊要求</span>
         <textarea className={`${inp} min-h-12 flex-1`} disabled={Boolean(locked)} value={special} onChange={(e) => setSpecial(e.target.value)} placeholder="例如：画面里不要出现宠物；窗外在下雪" />
