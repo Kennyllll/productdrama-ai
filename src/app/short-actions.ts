@@ -46,6 +46,7 @@ import { cadDir, getColor, getProductModel, modelFor, modelPath } from "@/lib/mo
 import { addRule, type SetLayout } from "@/lib/production-repo";
 import { figuresOf, KB002_RIG, RIDE_KINDS, rideKindOf } from "@/lib/figures";
 import { basisOf, shotChecks, shotSync, TEXT_FIELDS, type ShotSync, type TextField } from "@/lib/shorts-sync";
+import { cleanShotNotes } from "@/lib/prompt-clean";
 import { captionIssues, castConflicts, fullSync, placeOf, rigOf, syncOf } from "@/lib/shorts-sync-state";
 import { opCompKey, operatorShows, opMissing, parseOp, opString, OP_POSES, poseOf } from "@/lib/shorts-operator";
 import { blockingText, itemSight } from "@/lib/shorts-blocking";
@@ -922,6 +923,9 @@ const FRAME_STYLE: Record<string, string> = {
   cinematic: "Vertical 9:16 cinematic film still, shot on cinema camera, motivated lighting, shallow depth of field, fine film grain. Photorealistic.",
 };
 
+/** 自拍镜头不管视频画风（电影感也一样）：一律是手机前置摄像头拍的样子 */
+const SELFIE_STYLE = "Vertical 9:16 smartphone front-camera selfie photo: slight wide-angle look, everything in focus (no shallow depth of field), natural daylight, true-to-life skin and fabrics, casual and unposed. Photorealistic, not cinematic, no film grain.";
+
 /** 本镜场地（旧数据没有就按 video.room 迁移到场地库 v1） */
 function shotScene(v: ShortVideo, s: ShortShot) {
   const scenes = ensureScenes(v.projectId, listShortVideos(v.projectId));
@@ -975,7 +979,7 @@ function refPlan(v: ShortVideo, s: ShortShot): RefPart[] {
       out.push({
         text:
           modelFor(v.projectId, v.colorId)?.source === "fal"
-            ? "is a plain gray shape render of the product from exactly this shot's camera angle: copy only its shape, pose and which side faces the camera, never mirrored or turned. It is gray on purpose; take every color, logo and sticker only from the real product photos."
+            ? "is a rough automatic gray model of the product from exactly this shot's camera angle: use it ONLY for where the product stands, how big it is and which side faces the camera, never mirrored or turned. Its shape is approximate: every part, proportion, the handlebar, seat, baskets, colors, logo and stickers come only from the real product photos"
             : "is the real product rendered from exactly this shot's camera angle: in the photo the product must face exactly this way and show this same side, never mirrored or turned.",
         file: () => angleRef(v, s),
       });
@@ -1055,7 +1059,7 @@ async function runFrameCheck(videoId: string, shotId: string, jobId: string, byt
 
 /** 自拍开头：拿手机的人自己入镜（前置摄像头，手臂伸直），其余人和产品在他身后 / 旁边 */
 function selfieFrameText(filmer: string): string {
-  return `Selfie shot from the phone's front camera: ${filmer || "the parent filming"} holds the phone at arm's length and is in the frame, face and shoulders in the foreground looking into the lens, mouth slightly open as if about to speak; the product and anyone else stay clearly visible behind or beside them. The phone itself is not visible.`;
+  return `Selfie shot from the phone's front camera: ${filmer || "the parent filming"} holds the phone at arm's length and is in the frame, face and upper body in the right part of the frame, exactly where the 3D blocking puts them, looking into the lens, mouth slightly open as if about to speak; the product and anyone else stay clearly visible behind or beside them. The phone itself is not visible.`;
 }
 
 /** 自拍的人：镜头指定的拿手机的人 → AI 放进画面的大人 → 家里第一个大人 */
@@ -1095,7 +1099,7 @@ function framePromptOf(v: ShortVideo, s: ShortShot): string {
   const otherFamily = prior.some((x) => famOf(x) !== famOf(s)) && !prior.some((x) => famOf(x) === famOf(s));
   const NOTES = "@@NOTES@@";
   const parts = [
-    me?.sc.outdoor ? (FRAME_STYLE[look] ?? FRAME_STYLE.ugc).replace("filmed it at home: natural indoor light", "filmed it outside the house: natural outdoor daylight") : (FRAME_STYLE[look] ?? FRAME_STYLE.ugc),
+    s.hook?.selfie ? SELFIE_STYLE : me?.sc.outdoor ? (FRAME_STYLE[look] ?? FRAME_STYLE.ugc).replace("filmed it at home: natural indoor light", "filmed it outside the house: natural outdoor daylight") : (FRAME_STYLE[look] ?? FRAME_STYLE.ugc),
     ...plan.map((r, k) => `Image ${k + 1} ${r.text}`),
     s.layout ? layoutText(s.layout) : "",
     s.layout ? `3D BLOCKING (authoritative: the positions, poses and orientation below override any conflicting wording later in this prompt): ${blockingText(s.layout, rigOf(v))}` : "",
@@ -1117,7 +1121,11 @@ function framePromptOf(v: ShortVideo, s: ShortShot): string {
   ].filter(Boolean);
   // Sunburst 的 prompt 上限 5000 字符：超了先缩短「画面细节」，其余规则一个字不删
   const lead = "Shot notes (wardrobe, expression, light and mood only; positions, actions and background come from above): ";
-  const notes = s.framePrompt.trim().replace(/^English:\s*/i, "");
+  // 衣服以家庭库为准、自拍画风以手机前置为准：补充文字里打架的句子直接删掉
+  const notes = cleanShotNotes(s.framePrompt.trim().replace(/^English:\s*/i, ""), {
+    wardrobe: (s.layout?.figures ?? []).some((f) => f.memberId),
+    selfie: Boolean(s.hook?.selfie),
+  }).text;
   const rest = parts.filter((x) => x !== NOTES).join("\n").length + 1;
   const room = FRAME_PROMPT_MAX - rest - lead.length;
   const fit = notes.length <= room ? notes : room > 80 ? `${notes.slice(0, room - 1).replace(/\s+\S*$/, "")}…` : "";

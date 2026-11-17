@@ -164,23 +164,25 @@ export function applySelfie(l: SetLayout, view: HookStage["view"], gripY: number
   const fwd = [-cd[0], -cd[1]];
   const rightV = [fwd[1], -fwd[0]];
   const h = me.h ?? (me.kind === "adult" ? 1.75 : 0.95);
-  const D = 1.2 * k;
+  // 规则：自拍时产品完整放在画面左边、不被人挡，比远景大
+  const D = 1.0 * k;
   const camH = h * 0.88;
   const cam: [number, number, number] = [r2(bike[0] + cd[0] * D), r2(bike[1] + cd[1] * D), r2(camH)];
-  const px = cam[0] + fwd[0] * 0.6 + rightV[0] * 0.3;
-  const py = cam[1] + fwd[1] * 0.6 + rightV[1] * 0.3;
+  const px = cam[0] + fwd[0] * 0.6 + rightV[0] * 0.45;
+  const py = cam[1] + fwd[1] * 0.6 + rightV[1] * 0.45;
   const down = Math.atan((camH - 0.35 * k) / D);
   const up = Math.atan((h * 0.93 - camH) / 0.6);
-  const tilt = (up - down) / 2;
-  // 视线往人那边偏 10°：人在画面右边、产品在左边，互不挡
-  const turn = (10 * Math.PI) / 180;
+  // 视线多往下压：产品在地上，要整台落在画面下半部，脸留在上方
+  const tilt = up * 0.45 - down * 0.55;
+  // 视线往人那边偏 14°：人在画面右边、产品在左边，互不挡
+  const turn = (14 * Math.PI) / 180;
   const look = [fwd[0] * Math.cos(turn) + rightV[0] * Math.sin(turn), fwd[1] * Math.cos(turn) + rightV[1] * Math.sin(turn)];
   const lookAt: [number, number, number] = [r2(cam[0] + look[0] * D), r2(cam[1] + look[1] * D), r2(camH + D * Math.tan(tilt))];
   const yaw = Math.round((Math.atan2(cam[0] - px, cam[1] - py) * 180) / Math.PI);
   const self: FigureSpec = { id: "self", kind: me.kind, pose: me.pose === "ride" ? "stand" : me.pose, onProduct: false, dx: r2(px - bike[0]), dy: r2(py - bike[1]), yaw, ...who(me) };
   const figures = [...(l.figures ?? []).filter((f) => f.id !== "self" && (!me.memberId || f.memberId !== me.memberId)), self];
   // 3D 里焦段按 36mm 宽算横向视角；手机前置约 26mm（等效），竖拍横向约 50°，这里就是 40mm
-  return { ...l, lens: 40, camPos: cam, lookAt, figures, figure: true, source: "自拍：按 Hook 预设自动摆" };
+  return { ...l, lens: 26, camPos: cam, lookAt, figures, figure: true, source: "自拍：按 Hook 预设自动摆" };
 }
 
 /** 按名字给预置 Hook 的 3D 预设；自己建的 Hook 没写就用这个 */

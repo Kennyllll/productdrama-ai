@@ -48,6 +48,11 @@ export function castConflicts(v: ShortVideo, s: ShortShot): string[] {
       const right = fx * py - fy * px < 0;
       const wrong = right ? /(脸|face)[^。.；;]{0,24}(左|left)|(左|left)[^。.；;]{0,6}(前景|foreground)/i : /(脸|face)[^。.；;]{0,24}(右|right)|(右|right)[^。.；;]{0,6}(前景|foreground)/i;
       if (wrong.test(`${s.camera}\n${s.framePrompt}`)) out.push(`自拍的人在 3D 画面${right ? "右" : "左"}边，文字写在${right ? "左" : "右"}边`);
+      // 规则：自拍时产品完整放在画面左边，不被人挡（产品比人更靠左、两者在画面里拉开）
+      const ang = (x: number, y: number) => Math.atan2(fx * y - fy * x, fx * x + fy * y);
+      const pa = ang((l.bike?.[0] ?? 0) - l.camPos[0], (l.bike?.[1] ?? 0) - l.camPos[1]);
+      const ma = ang(px, py);
+      if (pa <= 0 || pa - ma < 0.25) out.push("自拍规则：产品要完整放在画面左边、不被人挡，现在 3D 里不是：在 Hook 面板里取消再勾一次自拍，3D 会自动摆好");
     }
   }
   return out;

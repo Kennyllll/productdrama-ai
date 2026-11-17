@@ -63,7 +63,7 @@ test("自拍：拿手机的人在产品和摄影机之间，脸朝镜头，摄�
   const l = applySelfie(base, "front34", 0.51, { kind: "adult", pose: "reach", memberId: "marcus", h: 1.85 });
   const me = l.figures!.find((f) => f.id === "self")!;
   const toCam = Math.hypot(l.camPos[0] - me.dx, l.camPos[1] - me.dy);
-  assert.ok(toCam > 0.5 && toCam < 0.7, `离镜头 ${toCam}`);
+  assert.ok(toCam > 0.5 && toCam < 0.8, `离镜头 ${toCam}`);
   assert.ok(Math.hypot(me.dx, me.dy) > 0.4, "产品在他身后");
   assert.ok(Math.abs(l.camPos[2] - 1.85 * 0.88) < 0.02);
   const face = (Math.atan2(l.camPos[0] - me.dx, l.camPos[1] - me.dy) * 180) / Math.PI;
