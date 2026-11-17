@@ -8,6 +8,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { saveProductRigAction, saveSceneVersionAction, sceneConflictsAction } from "@/app/scene-actions";
 import { saveShortLayoutAction } from "@/app/short-actions";
+import { brainStageAction, type StageProposal } from "@/app/brain-stage-actions";
 import { buildFigure, presetPose, shape } from "@/components/shorts/scene-mesh";
 import { estimateRig, figuresOf, FIGURE_POSES, JOINTS, KB002_RIG, RIG_KEYS, rideOf, rigFrom, rigLocal, type FigureKind, type FigureSpec, type JointId, type P3, type ProductRig, type RigKey } from "@/lib/figures";
 import type { SetLayout } from "@/lib/production-repo";
@@ -115,6 +116,10 @@ export function StageEditor({
   const [shotView, setShotView] = useState(false);
   const [autoRig, setAutoRig] = useState<ProductRig | null>(null);
   const [msg, setMsg] = useState("");
+  const [ask, setAsk] = useState("");
+  const [brain, setBrain] = useState<StageProposal | null>(null);
+  const [brainMsg, setBrainMsg] = useState("");
+  const [thinking, setThinking] = useState(false);
   const [pending, start] = useTransition();
   const canvas = useRef<HTMLCanvasElement>(null);
   const api = useRef<{ sync: () => void } | null>(null);
@@ -740,6 +745,57 @@ export function StageEditor({
         </div>
     </>
   );
+  const askBrain = () => {
+    if (!window.confirm("让大脑（Kimi）按这句话调人偶和产品。\n\n调用文字模型 1 次，大约 $0.03–$0.10（按实际用量记），不出图。改完只在 3D 里预览，不会自动保存。\n\n确定吗？")) return;
+    setBrain(null);
+    setBrainMsg("大脑在想…（半分钟到两分钟）");
+    const d = docRef.current;
+    setThinking(true);
+    void (async () => {
+      const r = await brainStageAction(videoId, shotCode, ask, { figures: d.figures, bike: d.bike, bikeYaw: d.bikeYaw, items: d.items, theme: scene.theme }).catch((e: unknown) => ({ error: e instanceof Error ? e.message : "大脑调整失败", result: undefined }));
+      setThinking(false);
+      if (r.error || !r.result) return setBrainMsg(`⚠ ${r.error ?? "大脑没有返回结果"}`);
+      const p = r.result;
+      commit((x) => ({ ...x, figures: p.figures, bike: p.bike, bikeYaw: p.bikeYaw }));
+      setSel(null);
+      setBrain(p);
+      setBrainMsg(`已在 3D 里改好，还没保存。不对就点「撤销」或再说一句。本次花费 $${p.usd.toFixed(3)}`);
+    })();
+  };
+  const vBrain = ro ? null : (
+    <div className="space-y-2 rounded-xl border border-violet-400/30 bg-violet-400/5 p-3">
+      <p className="text-white">跟大脑说一句 <span className="text-[11px] text-neutral-400">调人偶和产品（家具在「场地」里改，摄影机在右边「镜头」里调）</span></p>
+      <div className="flex gap-2">
+        <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="比如：小孩骑在车上，大人站在旁边，其他细节你帮我调" className="min-w-0 flex-1 rounded border border-white/10 bg-neutral-950 px-2 py-1 text-white" />
+        <button type="button" disabled={thinking || ask.trim().length < 2} onClick={askBrain} className="rounded-lg bg-violet-400 px-3 py-1 font-medium text-black disabled:opacity-40">
+          {thinking ? "想中…" : "让大脑调"}
+        </button>
+      </div>
+      {brainMsg ? <p className="text-neutral-300">{brainMsg}</p> : null}
+      {brain ? (
+        <div className="space-y-1 text-[12px]">
+          {brain.summary ? <p className="text-white">{brain.summary}</p> : null}
+          {brain.changes.length ? (
+            <ul className="list-disc pl-4 text-neutral-300">
+              {brain.changes.map((c, i) => (
+                <li key={i}>{c}</li>
+              ))}
+            </ul>
+          ) : null}
+          {brain.camera ? <p className="text-sky-300">摄影机建议（要你在右边手动调）：{brain.camera}</p> : null}
+          {brain.text.map((c, i) => (
+            <p key={i} className="text-neutral-400">分镜文字建议（没改，要你在镜头里手动改）：{c}</p>
+          ))}
+          {brain.cannot.map((c, i) => (
+            <p key={i} className="text-amber-300">做不到：{c}</p>
+          ))}
+          {brain.questions.map((q, i) => (
+            <p key={i} className="text-violet-200">问你：{q}</p>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
   if (compact) {
     return (
       <div className="space-y-2 text-xs text-neutral-300">
@@ -747,6 +803,7 @@ export function StageEditor({
           {vView}
           {ro ? null : vObjects}
         </div>
+        {vBrain}
         <canvas ref={canvas} className="h-[70vh] w-full touch-none rounded-xl border border-white/10 bg-black" />
         <fieldset disabled={ro} className={`grid min-w-0 gap-2 md:grid-cols-2 ${ro ? "opacity-60" : ""}`}>
           {vProduct}
@@ -763,6 +820,7 @@ export function StageEditor({
       <aside className="space-y-3 text-xs text-neutral-300">
         {vHeader}
         {vView}
+        {vBrain}
         {vObjects}
         {vSel}
         {vRig}
