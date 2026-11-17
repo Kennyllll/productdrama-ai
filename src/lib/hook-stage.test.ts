@@ -56,3 +56,17 @@ test("Hook 动作：旁边的人写扶车把，草稿就改成看着；采用时
   assert.equal(fixed.length, 1);
   assert.equal(promptConflicts({ layout: l, description: "", framePrompt: "", motionPrompt: "" }, KB002_RIG).filter((c) => c.fix === "3d").length, 0);
 });
+
+test("自拍：拿手机的人在产品和摄影机之间，脸朝镜头，摄影机在他面前约半米、手机高度", async () => {
+  const { applySelfie, buildHookLayout } = await import("@/lib/hook-stage");
+  const base = buildHookLayout({ dist: 1.8, camH: 1.4, lens: 24, view: "front34", people: [] }, null, 0.51);
+  const l = applySelfie(base, "front34", 0.51, { kind: "adult", pose: "reach", memberId: "marcus", h: 1.85 });
+  const me = l.figures!.find((f) => f.id === "self")!;
+  const toCam = Math.hypot(l.camPos[0] - me.dx, l.camPos[1] - me.dy);
+  assert.ok(toCam > 0.5 && toCam < 0.7, `离镜头 ${toCam}`);
+  assert.ok(Math.hypot(me.dx, me.dy) > 0.4, "产品在他身后");
+  assert.ok(Math.abs(l.camPos[2] - 1.85 * 0.88) < 0.02);
+  const face = (Math.atan2(l.camPos[0] - me.dx, l.camPos[1] - me.dy) * 180) / Math.PI;
+  assert.ok(Math.abs(face - me.yaw) < 1, "脸朝镜头");
+  assert.equal(applySelfie(l, "front34", 0.51, { kind: "adult", pose: "reach", memberId: "marcus", h: 1.85 }).figures!.length, 1, "重复开自拍不会多出一个人");
+});

@@ -27,14 +27,16 @@ export default async function ShortSetPage({ params, searchParams }: { params: P
   const base = getProductModel(id);
   const model = modelFor(id, v.colorId);
   const jobs = listJobs(videoId);
+  // 开头标清楚是第几段：切镜后的第二段只拍产品，别让人以为 3D 没摆好
+  const labelOf = (s: (typeof v.shots)[number], i: number) => (s.hook ? `#${i + 1} ${s.hook.partOf ? "开头·切镜后" : "开头"}` : `#${i + 1}`);
   const shots: SetShot[] = v.shots.map((s, i) => {
     const frame = jobs.find((j) => j.id === s.frameJobId);
     return {
       needsCapture: !s.compFile,
       locked: s.stage !== "draft" ? "构图已确认：要改机位先在工作台点“退回构图”" : undefined,
       code: s.id,
-      label: `#${i + 1}`,
-      title: `#${i + 1} ${s.beat} · ${s.camera || "机位未写"} — ${s.description}`,
+      label: labelOf(s, i),
+      title: `${labelOf(s, i)} ${s.beat} · ${s.camera || "机位未写"} — ${s.description}`,
       original: autoLayout(s, i),
       edited: s.layout,
       refs: [
@@ -56,9 +58,9 @@ export default async function ShortSetPage({ params, searchParams }: { params: P
       layout: s.layout ?? autoLayout(s, i),
       scene: { id: sc.id, name: sc.name, v: ver.v, theme: sh.theme, themeLabel: findTheme(sh.theme).label },
       items: ver.items,
-      members: (castOf(v.families, s.family ?? 1)?.members ?? []).filter((m) => m.id !== filmerId(v, s)).map((m) => ({ id: m.id, name: m.name, kind: memberKind(m), h: m.heightCm / 100, label: `${m.name}（${roleOf(m.role).label}，${(m.heightCm / 100).toFixed(2)} 米）` })),
+      members: (castOf(v.families, s.family ?? 1)?.members ?? []).filter((m) => !!s.hook?.selfie || m.id !== filmerId(v, s)).map((m) => ({ id: m.id, name: m.name, kind: memberKind(m), h: m.heightCm / 100, label: `${m.name}（${roleOf(m.role).label}，${(m.heightCm / 100).toFixed(2)} 米）` })),
     };
-    return { code: s.id, label: `#${i + 1}`, scene: sh, family: s.family ?? 1, special: s.special ?? "", locked: shots[i].locked };
+    return { code: s.id, label: labelOf(s, i), scene: sh, family: s.family ?? 1, special: s.special ?? "", locked: shots[i].locked };
   });
   const filmers = Object.fromEntries(
     v.shots.map((s) => {

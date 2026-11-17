@@ -261,6 +261,7 @@ export function ShortSet({
             onSave={(c, layout) => saveShortLayoutAction(videoId, c, layout)}
             onCapture={async (c, png) => {
               const r = await saveShortCompAction(videoId, c, png);
+              // 开头两段：先存好切镜后的第二段，再回到第一段（有人、有动作的那段）存好并停在那里
               if (autoCapture && nextCode && c === initialCode) window.location.href = `?shot=${nextCode}&capture=1`;
               return r;
             }}

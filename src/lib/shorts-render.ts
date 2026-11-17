@@ -6,7 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import ffmpegPath from "ffmpeg-static";
 import { hookAss } from "@/lib/hook-effects";
-import { hookParts, hooksOf, shotCuts, shotSound, type ShortShot, type ShortVideo } from "@/lib/shorts";
+import { hookEffectOf, hookParts, hooksOf, shotCuts, shotSound, type ShortShot, type ShortVideo } from "@/lib/shorts";
 import { finalPath, getJob, jobFilePath, videoDir } from "@/lib/shorts-repo";
 
 const run = promisify(execFile);
@@ -61,7 +61,8 @@ export async function renderShort(v: ShortVideo, dest = finalPath(v), hookId?: s
     for (const [k, c] of shotCuts(s).entries()) {
       const zoom = c.zoom > 1 ? [`scale=${Math.round(1080 * c.zoom / 2) * 2}:${Math.round(1920 * c.zoom / 2) * 2}`, "crop=1080:1920"] : [];
       const vf = ["scale=1080:1920:force_original_aspect_ratio=increase", "crop=1080:1920", ...zoom, "setsar=1", "fps=30"];
-      const ass = inHook.has(s.id) && hook?.hook?.effect ? hookAss(hook.hook.effect, hook.caption, hookLen, hookT + at) : null;
+      const fx = hookEffectOf(hook?.hook);
+      const ass = inHook.has(s.id) && fx && hook ? hookAss(fx, hook.caption, hookLen, hookT + at) : null;
       if (ass) {
         const f = path.join(work, `seg${i}-${k}.ass`);
         fs.writeFileSync(f, ass);

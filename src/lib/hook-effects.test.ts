@@ -62,3 +62,16 @@ test("预置 Hook 照案例：价格开场默认自拍并切镜，先给结果�
   assert.equal(cleanHookData({ ...price, second: null })?.second, null);
   assert.equal(cleanHookData(price)?.second?.seconds, price.second.seconds);
 });
+
+test("第二段跟着自拍开头开声音；旧 Hook 开头按名字补效果；字幕空 / 中文要提示", async () => {
+  const { hookEffectOf } = await import("@/lib/shorts");
+  const { captionIssues } = await import("@/lib/shorts-caption-check");
+  const shots = [{ id: "a", hook: { name: "价格开场", selfie: true } }, { id: "a2", hook: { name: "x", partOf: "a" } }];
+  assert.equal(shotSound({ sound: false, shots }, shots[1]), true);
+  assert.equal(hookEffectOf({ name: "旧", libId: "l1", libName: "紧迫感" }), "ticker");
+  assert.equal(hookEffectOf({ name: "原版" }), undefined);
+  const h = { name: "价格开场", effect: "priceBox" as const };
+  assert.equal(captionIssues({ hook: h, caption: " " }).length, 1);
+  assert.equal(captionIssues({ hook: h, caption: "黑五特价 $59" }).length, 1);
+  assert.equal(captionIssues({ hook: h, caption: "Black Friday: $59.99" }).length, 0);
+});

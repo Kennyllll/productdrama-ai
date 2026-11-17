@@ -2,7 +2,7 @@
 import type { SetLayout } from "@/lib/production-repo";
 import type { ShotScene } from "@/lib/shorts-scenes";
 import type { ShotBasis } from "@/lib/shorts-sync";
-import type { HookEffectId } from "@/lib/hook-effects";
+import { PRESET_EFFECT, type HookEffectId } from "@/lib/hook-effects";
 
 /** 短视频硬约束：成片每秒的全部花费（含重做和废片）不超过这个数 */
 export const MAX_USD_PER_SECOND = 0.5;
@@ -244,7 +244,10 @@ export const emptyShortData = (templateId = "pov-gift", theme?: { theme: string;
 });
 
 /** 这一镜生成视频时带不带声音：自拍开头强制带；其余跟视频的声音开关 */
-export const shotSound = (v: Pick<ShortVideoData, "sound">, s: Pick<ShortShot, "hook">): boolean => Boolean(s.hook?.selfie || v.sound);
+export const shotSound = (v: Pick<ShortVideoData, "sound"> & { shots?: Pick<ShortShot, "id" | "hook">[] }, s: Pick<ShortShot, "hook">): boolean =>
+  Boolean(s.hook?.selfie || v.sound || (s.hook?.partOf && v.shots?.some((x) => x.id === s.hook!.partOf && x.hook?.selfie)));
+/** 开头的字幕效果；加效果之前采用的 Hook 开头按 Hook 名字补上 */
+export const hookEffectOf = (h: ShotHook | undefined): HookEffectId | undefined => h?.effect ?? (h?.libId ? PRESET_EFFECT[h.libName ?? h.name] : undefined);
 
 /** 开头（可选的几种开头，不含切镜后的第二段） */
 export const hooksOf = (v: Pick<ShortVideoData, "shots">) => v.shots.filter((s) => s.hook && !s.hook.partOf);

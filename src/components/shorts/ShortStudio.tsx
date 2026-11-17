@@ -4,6 +4,7 @@ import { askConfirm, askPrompt } from "@/components/ConfirmHost";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { fmtWait } from "@/components/shorts/JobPill";
 import { OperatorPicker } from "@/components/shorts/OperatorPicker";
+import { effectDef } from "@/lib/hook-effects";
 import { HookPanel } from "@/components/shorts/HookPanel";
 import type { HookDef } from "@/lib/hooks";
 import {
@@ -39,6 +40,7 @@ import {
   DEFAULT_ATTEMPTS,
   finalSeconds,
   hookBudget,
+  hookEffectOf,
   hooksOf,
   isExtraHook,
   jobCost,
@@ -990,6 +992,8 @@ export function ShortStudio({
                         className={`${input} w-48`}
                       />
                     </label>
+                    {!s.hook.libId && !s.hook.partOf ? (
+                    <>
                     <label className="flex items-center gap-1">
                       剪一刀：第
                       <input
@@ -1022,8 +1026,16 @@ export function ShortStudio({
                         </select>
                       </label>
                     ) : null}
+                    </>
+                    ) : null}
                     <p className="basis-full text-neutral-500">
-                      只生成一段 {s.genSeconds} 秒视频、只付一次钱，导出时按剪辑点剪成 2 个镜头（同一个机位）。改剪辑点不花钱。
+                      {s.hook.partOf
+                        ? "开头切镜后的第二段：字幕和效果跟着开头连着放。"
+                        : s.hook.libId
+                          ? v.shots.some((x) => x.hook?.partOf === s.id)
+                            ? `照案例切镜头：这段用 ${s.useSeconds} 秒，然后切到第二段（下一个开头镜头）。`
+                            : "照案例一镜到底，不切镜头。"
+                          : `只生成一段 ${s.genSeconds} 秒视频、只付一次钱，导出时按剪辑点剪成 2 个镜头（同一个机位）。改剪辑点不花钱。`}
                       {isExtraHook(v, s)
                         ? ` 这个开头单独预算 ${usd(hookBudget(s))}，不占正文预算。`
                         : " 第一个开头算在本条视频预算里。"}
@@ -1084,6 +1096,7 @@ export function ShortStudio({
                       className={num}
                     />
                     秒
+                    {s.hook ? null : (
                     <button
                       className={btn}
                       disabled={busy || js.length > 0}
@@ -1095,6 +1108,7 @@ export function ShortStudio({
                     >
                       删除
                     </button>
+                    )}
                   </div>
                 </div>
                 <div className="grid gap-2 md:grid-cols-2">
@@ -1117,7 +1131,13 @@ export function ShortStudio({
                     />
                   </label>
                   <label className="text-xs text-neutral-400">
-                    字幕（英文，成片不烧，后期加字幕时参考）
+                    {s.hook?.partOf
+                      ? "字幕（第二段不用：开头的字幕跨两段连着放）"
+                      : hookEffectOf(s.hook)
+                        ? `字幕（英文，出片时按 Hook 效果烧进开头：${effectDef(hookEffectOf(s.hook))?.label ?? ""}）`
+                        : s.hook
+                          ? "字幕（英文，这个开头没选 Hook 效果，出片不烧）"
+                          : "字幕（英文，正文出片不烧，只作参考）"}
                     <input
                       value={s.caption}
                       onChange={(e) => edit(i, { caption: e.target.value })}
@@ -1133,16 +1153,24 @@ export function ShortStudio({
                     />
                   </label>
                   <div className="text-xs text-neutral-400 md:col-span-2">
-                    拍摄者（先选姿态，露什么按机位自动算）
-                    {locked ? " · 改了要先“退回构图”" : ""}
-                    <div className="mt-1">
-                      <OperatorPicker
-                        value={s.operator ?? ""}
-                        disabled={locked}
-                        layout={s.layout}
-                        onChange={(v) => edit(i, { operator: v })}
-                      />
-                    </div>
+                    {s.hook?.selfie ? (
+                      <p className="text-amber-200">
+                        拍摄者：自拍。拿手机的人自己入镜（3D 里的「自拍」人偶），对着前置摄像头说台词，这一镜强制开声音。要换人，在 3D 里改这个人偶「是谁」。
+                      </p>
+                    ) : (
+                      <>
+                        拍摄者（先选姿态，露什么按机位自动算）
+                        {locked ? " · 改了要先“退回构图”" : ""}
+                        <div className="mt-1">
+                          <OperatorPicker
+                            value={s.operator ?? ""}
+                            disabled={locked}
+                            layout={s.layout}
+                            onChange={(v) => edit(i, { operator: v })}
+                          />
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
                 <details className="mt-2 rounded-md border border-white/10 p-2">
