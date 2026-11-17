@@ -30,6 +30,7 @@ import {
   shotStageAction,
   type StageAction,
   type StudioState,
+  fitShotActionsAction,
 } from "@/app/short-actions";
 import {
   budgetOf,
@@ -1225,10 +1226,8 @@ export function ShortStudio({
                       const sy = st.sync?.[s.id];
                       if (!sy || (s.stage !== "draft" && s.stage !== "comp_ok"))
                         return null;
-                      if (!sy.changes.length && !sy.issues.length)
-                        return sy.tracked ? (
-                          <p className="text-emerald-300/80">文字和 3D 一致</p>
-                        ) : null;
+                      if (!sy.changes.length && !sy.issues.length && !sy.fix3d?.length)
+                        return <p className="text-emerald-300/80">文字和 3D 没有冲突</p>;
                       return (
                         <SyncNotice
                           sync={sy}
@@ -1238,6 +1237,8 @@ export function ShortStudio({
                           why={s.stage !== "draft" ? "构图已确认：要改先点“退回构图”" : dirty ? "先保存分镜再改写" : ""}
                           msg={rw?.shotId === s.id ? rw.text : ""}
                           onRewrite={() => rewrite(s.id)}
+                          figHref={(fig) => `/projects/${v.projectId}/shorts/${v.id}/set?shot=${s.id}${fig ? `&fig=${fig}` : ""}`}
+                          onFix3d={() => act(() => fitShotActionsAction(v.id, s.id), "已把 3D 做不到的动作改好")}
                         />
                       );
                     })()}

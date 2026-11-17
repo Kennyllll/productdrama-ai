@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
-import { applyShotTextAction, rewriteShotAction, shotSyncAction } from "@/app/short-actions";
+import { applyShotTextAction, fitShotActionsAction, rewriteShotAction, shotSyncAction } from "@/app/short-actions";
 import { type ShotSync, type TextField } from "@/lib/shorts-sync";
 import { DraftView, SyncNotice } from "@/components/shorts/RewriteUI";
 
@@ -26,7 +26,7 @@ export function ShotSyncBox({ videoId, shotId, label, figIds = [] }: { videoId: 
   }, [load]);
   if (!st) return null;
   const { sync, draft, texts } = st;
-  const n = sync.changes.length + sync.issues.length;
+  const n = sync.changes.length + sync.issues.length + (sync.fix3d?.length ?? 0);
   const rewrite = (feedback = "", draftFields?: Record<TextField, string>) =>
     start(async () => {
       setMsg("");
@@ -47,10 +47,10 @@ export function ShotSyncBox({ videoId, shotId, label, figIds = [] }: { videoId: 
   return (
     <div className="space-y-2 text-xs">
       {n ? (
-        <SyncNotice sync={sync} busy={busy} working={busy && !prop} canRewrite={draft} why={draft ? "" : "构图已确认：要改文字先在工作台点“退回构图”"} msg={msg} onRewrite={() => rewrite()} />
+        <SyncNotice onFix3d={() => start(async () => { const r = await fitShotActionsAction(videoId, shotId); if (r.error) setMsg(`⚠ ${r.error}`); else { setMsg("已把 3D 做不到的动作改好"); load(); } })} figHref={(id) => `?shot=${shotId}${id ? `&fig=${id}` : ""}`} sync={sync} busy={busy} working={busy && !prop} canRewrite={draft} why={draft ? "" : "构图已确认：要改文字先在工作台点“退回构图”"} msg={msg} onRewrite={() => rewrite()} />
       ) : (
         <p className="rounded-lg border border-emerald-400/30 bg-emerald-400/5 p-3 text-emerald-200">
-          {label} 文字检查（免费）：{sync.tracked ? "文字和 3D 一致" : "没发现冲突（保存一次分镜后开始跟踪 3D 改动）"}
+          {label} 文字检查（免费）：文字和 3D 没有冲突
         </p>
       )}
       {!n && msg ? <p className="text-neutral-300">{msg}</p> : null}

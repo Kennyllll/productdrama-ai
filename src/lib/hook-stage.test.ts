@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildHookLayout, cleanHookPeople, DEFAULT_STAGE } from "./hook-stage";
 import type { FamilyMember } from "./families";
+import { KB002_RIG } from "./figures";
+import { fitFigureActions, promptConflicts } from "./shorts-conflicts";
 
 const m = (id: string, age: number, heightCm: number): FamilyMember => ({ id, name: id, role: age >= 14 ? "dad" : "son", age, heightCm, look: { zh: "", en: "" }, wear: { zh: "", en: "" } }) as FamilyMember;
 const fam = [m("ryan", 34, 183), m("leo", 4, 105), m("mia", 3, 98)];
@@ -33,4 +35,24 @@ test("Hook 3D：人偶带成员和动作", () => {
   assert.equal(l.figures?.[0].memberId, "leo");
   assert.equal(l.figures?.[0].actionEn, "ringing the bell");
   assert.equal(l.figures?.[0].onProduct, true);
+});
+
+test("Hook 动作：旁边的人写扶车把，草稿就改成看着；采用时 3D 做不到的动作程序兜底改掉", () => {
+  const { people, dropped } = cleanHookPeople(
+    [
+      { memberId: "leo", pose: "ride", action: "双手握车把，双脚踩脚踏" },
+      { memberId: "ryan", pose: "stand", side: "left", action: "一只手扶在车把上", actionEn: "one hand on the handlebar" },
+    ],
+    fam,
+  );
+  assert.equal(people[1].action, "站在车旁看着");
+  assert.ok(!/handlebar/.test(people[1].actionEn ?? ""));
+  assert.equal(dropped.length, 1);
+  assert.equal(people[0].action, "双手握车把，双脚踩脚踏");
+  const l = buildHookLayout({ ...DEFAULT_STAGE, people }, null, KB002_RIG.gripY);
+  l.figures = l.figures?.map((f) => (f.memberId === "ryan" ? { ...f, action: "一只手扶在车把上" } : f));
+  assert.ok(promptConflicts({ layout: l, description: "", framePrompt: "", motionPrompt: "" }, KB002_RIG).some((c) => c.fix === "3d"));
+  const fixed = fitFigureActions(l, KB002_RIG);
+  assert.equal(fixed.length, 1);
+  assert.equal(promptConflicts({ layout: l, description: "", framePrompt: "", motionPrompt: "" }, KB002_RIG).filter((c) => c.fix === "3d").length, 0);
 });

@@ -41,3 +41,32 @@ export function promptConflicts(s: Pick<ShortShot, "layout" | "description" | "f
   });
   return out;
 }
+
+/** 3D 做得到的动作（给 AI 写错的动作兜底）：骑车的坐座椅握车把，旁边的人按姿势站 / 蹲 / 坐着看 */
+export function safeAction(f: ReturnType<typeof figuresOf>[number], l: SetLayout, rig: ProductRig | null | undefined): { action: string; actionEn: string } {
+  if (f.onProduct && l.bike)
+    return rig?.footY !== undefined
+      ? { action: "坐在座椅上，双手握车把，双脚踩在脚踏上", actionEn: "sitting on the saddle, both hands on the handlebar grips, both feet on the pedals" }
+      : { action: "坐在座椅上，双手握车把", actionEn: "sitting on the saddle, both hands on the handlebar grips" };
+  const kid = figuresOf(l).some((x) => x.id !== f.id && x.kind === "child");
+  const at = kid ? ["看着孩子", "watching the child"] : ["看着车", "looking at the trike"];
+  const grips = rig && l.bike ? handContacts(f, l, rig).includes("grip") : false;
+  if (grips) return { action: "站在车旁，一只手扶着车把", actionEn: "standing beside the trike, one hand on the handlebar" };
+  if (f.pose === "crouch") return { action: `蹲在车旁${at[0]}`, actionEn: `crouching beside the trike, ${at[1]}` };
+  if (f.pose === "sit") return { action: `坐着${at[0]}`, actionEn: `sitting, ${at[1]}` };
+  return { action: `站在车旁${at[0]}`, actionEn: `standing beside the trike, ${at[1]}` };
+}
+
+/** 人偶动作栏写了 3D 做不到的（AI 写的扶车把、骑车等），换成做得到的；返回改了什么，给人看 */
+export function fitFigureActions(l: SetLayout | null, rig: ProductRig | null | undefined): string[] {
+  if (!l?.figures?.length) return [];
+  const bad = new Set(promptConflicts({ layout: l, description: "", framePrompt: "", motionPrompt: "" }, rig).flatMap((c) => (c.fix === "3d" && c.fig ? [c.fig] : [])));
+  const notes: string[] = [];
+  l.figures = l.figures.map((f, k) => {
+    if (!bad.has(f.id)) return f;
+    const ok = safeAction(f, l, rig);
+    notes.push(`人偶${k + 1}「${f.action || "（空）"}」3D 里做不到，改成「${ok.action}」`);
+    return { ...f, ...ok };
+  });
+  return notes;
+}

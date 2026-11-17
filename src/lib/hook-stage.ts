@@ -2,6 +2,7 @@
 import type { SetLayout } from "@/lib/production-repo";
 import type { FigureSpec } from "@/lib/figures";
 import { memberKind, type FamilyMember } from "@/lib/families";
+import { stripNeg } from "@/lib/shorts-sync";
 
 export interface HookPerson {
   kind: "child" | "adult";
@@ -39,6 +40,7 @@ const who = (p: HookPerson): Partial<FigureSpec> => ({
   ...(p.action ? { action: p.action, actionEn: p.actionEn } : {}),
 });
 
+const TOUCH = /车把|把手|握把|扶|握|推|碰|摸|handlebar|\bgrip|\bhold|\btouch|\bsteady|\bpush/i;
 const POSES: HookPerson["pose"][] = ["stand", "crouch", "ride", "point", "reach", "hold"];
 const SIDES: NonNullable<HookPerson["side"]>[] = ["right", "left", "behind"];
 const str = (v: unknown, n: number) => (typeof v === "string" ? v.trim().slice(0, n) : "");
@@ -83,14 +85,22 @@ export function cleanHookPeople(raw: unknown, members: FamilyMember[] | undefine
       sides.add(side);
     }
     if (m) used.add(m.id);
-    const action = str(o.action, 80);
+    let action = str(o.action, 80);
+    let actionEn = str(o.actionEn, 200);
+    // 3D 里只有骑车的人碰得到车（车把被骑的人握着），旁边的人写扶车 / 碰车就做不出来
+    if (!onProduct && pose !== "hold" && TOUCH.test(stripNeg(action))) {
+      const ok = pose === "crouch" ? ["蹲在车旁看着", "crouching beside the trike, watching"] : ["站在车旁看着", "standing beside the trike, watching"];
+      dropped.push(`${name}「${action}」3D 里做不到（旁边的人碰不到车），改成「${ok[0]}」`);
+      action = ok[0];
+      actionEn = ok[1];
+    }
     people.push({
       kind,
       pose,
       onProduct,
       ...(onProduct ? {} : { side }),
       ...(m ? { memberId: m.id, h: m.heightCm / 100 } : {}),
-      ...(action ? { action, actionEn: str(o.actionEn, 200) || undefined } : {}),
+      ...(action ? { action, actionEn: actionEn || undefined } : {}),
     });
   }
   return { people, dropped };

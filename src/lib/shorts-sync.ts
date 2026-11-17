@@ -32,6 +32,8 @@ export interface ShotSync {
   changes: string[];
   /** 文字和 3D 对不上的地方 */
   issues: string[];
+  /** 要在 3D 里改的（人偶动作栏和 3D 接触对不上） */
+  fix3d?: { msg: string; fig?: string }[];
 }
 
 const VIEW_LABEL = { head: "车头正对镜头", front34: "前 3/4 侧", side: "正侧面", rear34: "后 3/4 侧", rear: "车尾对镜头" } as const;
@@ -160,7 +162,8 @@ export function shotChecks(s: ShortShot, b: ShotBasis): string[] {
 
 export function shotSync(s: ShortShot, place: Place | null): ShotSync {
   const now = basisOf(s, place);
-  return { tracked: !!s.textBasis, changes: s.textBasis ? diffBasis(s.textBasis, now) : [], issues: shotChecks(s, now) };
+  // 出图时人、位置、动作、机位都从 3D 现读，3D 改过不算文字过期；只报文字里明确和 3D 打架的话
+  return { tracked: !!s.textBasis, changes: [], issues: shotChecks(s, now) };
 }
 
 export const TEXT_FIELDS = ["description", "camera", "productNote", "framePrompt", "motionPrompt"] as const;

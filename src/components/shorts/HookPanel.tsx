@@ -45,8 +45,9 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
     start(async () => {
       if (!draft) return;
       const r = await adoptHookAction(videoId, libId, values, entry, draft.draft, shot?.id ?? targetId, draft.people);
-      onDone(r, "已换好开头：正在打开 3D，按 Hook 摆好的构图会自动保存");
-      if (!r.error && r.result) window.location.href = setHref(r.result.shotId);
+      const fixed = r.result?.fixed ?? [];
+      onDone(r, fixed.length ? `已换好开头。AI 写的动作有 ${fixed.length} 处 3D 做不到，程序已改好：${fixed.join("；")}。点「打开 3D」看构图` : "已换好开头：正在打开 3D，按 Hook 摆好的构图会自动保存");
+      if (!r.error && r.result && !fixed.length) window.location.href = setHref(r.result.shotId);
     });
   const saveValues = () =>
     start(async () => {

@@ -44,7 +44,7 @@ import { cadDir, getColor, getProductModel, modelFor, modelPath } from "@/lib/mo
 import { addRule, type SetLayout } from "@/lib/production-repo";
 import { figuresOf, KB002_RIG, RIDE_KINDS, rideKindOf } from "@/lib/figures";
 import { basisOf, shotChecks, shotSync, TEXT_FIELDS, type ShotSync, type TextField } from "@/lib/shorts-sync";
-import { placeOf, syncOf } from "@/lib/shorts-sync-state";
+import { fullSync, placeOf, rigOf, syncOf } from "@/lib/shorts-sync-state";
 import { opCompKey, operatorShows, opMissing, parseOp, opString, OP_POSES, poseOf } from "@/lib/shorts-operator";
 import { blockingText, itemSight } from "@/lib/shorts-blocking";
 import path from "node:path";
@@ -71,7 +71,7 @@ import { runKey, runningOf, runs, type RunInfo } from "@/lib/shorts-runs";
 import { getRig } from "@/lib/product-rig-repo";
 import { castOf, getFamily } from "@/lib/families-repo";
 import { memberText, filmerId } from "@/lib/families";
-import { promptConflicts } from "@/lib/shorts-conflicts";
+import { fitFigureActions, promptConflicts } from "@/lib/shorts-conflicts";
 
 type Result<T> = { error?: string; result?: T };
 const fail = (e: unknown) => ({ error: e instanceof HiggsfieldError || e instanceof AiError || e instanceof Error ? e.message : "操作失败" });
@@ -277,7 +277,7 @@ export async function draftHookAction(videoId: string, libId: string, values: Re
     const th = videoTheme(v);
     const { data } = await chatJson({
       system:
-        'You write the opening hook shot (the first 2-4 seconds) of a North American TikTok product video. Follow the hook recipe and the filled values exactly. The hook must flow straight into the first body shot (nextShot): same location, same people and family, same product color. The holiday is given in holiday and overrides anything written in nextShot; if it is none, there are no holiday decorations, trees, gifts, bows or holiday outfits at all. The person filming holds the phone and is never visible: never describe them in framePrompt or motionPrompt. If productEntry says no box, there is no box, packaging or wrapping anywhere in the frame. First decide who is in frame (people), following the story (story, brief, nextShotPeople) and the hook recipe: pick only from family by memberId, never the filmer; at most 3 people; only a child can ride the product and at most one rider; return an empty list only when the story and recipe are clearly better with the product alone. presetPeople is the recipe default and only a suggestion. The program places exactly these people in 3D around the product (side = left, right or behind the product) with exactly these poses, and the camera comes from camera3d. Anyone riding follows rideRule exactly in action, actionEn, description and framePrompt: describe exactly these people doing exactly these poses and actions, and nobody else. Use only product facts from productFacts; never invent features, prices, parts or packaging. The on-screen caption is fixed and added in editing (caption): write the picture so it supports that caption, and never put text into the image. Values marked showsInPicture must be visible in the picture; the others only live in the caption. Return JSON {"people":[{"memberId":"family 里的 memberId","pose":"stand|crouch|ride|point|reach|hold","onProduct":false,"side":"left|right|behind","action":"中文：这个人在做什么，一句话","actionEn":"the same action in English"}],"description":"中文：画面里有谁、在哪、在做什么、产品怎么出场","camera":"中文：机位和景别","productNote":"中文：产品在画面里的状态","framePrompt":"English first-frame image prompt, concrete and visual, max 900 characters","motionPrompt":"English motion prompt for the clip, max 500 characters","notes":["中文提醒，最多 3 条"]}.',
+        'You write the opening hook shot (the first 2-4 seconds) of a North American TikTok product video. Follow the hook recipe and the filled values exactly. The hook must flow straight into the first body shot (nextShot): same location, same people and family, same product color. The holiday is given in holiday and overrides anything written in nextShot; if it is none, there are no holiday decorations, trees, gifts, bows or holiday outfits at all. The person filming holds the phone and is never visible: never describe them in framePrompt or motionPrompt. If productEntry says no box, there is no box, packaging or wrapping anywhere in the frame. First decide who is in frame (people), following the story (story, brief, nextShotPeople) and the hook recipe: pick only from family by memberId, never the filmer; at most 3 people; only a child can ride the product and at most one rider; return an empty list only when the story and recipe are clearly better with the product alone. presetPeople is the recipe default and only a suggestion. The program places exactly these people in 3D around the product (side = left, right or behind the product) with exactly these poses, and the camera comes from camera3d. Nobody except the rider touches the product: in 3D the people beside it cannot reach the handlebar, seat or frame, so never write them holding, steadying or touching any part of it (looking at it, pointing at it or cheering is fine). Anyone riding follows rideRule exactly in action, actionEn, description and framePrompt: describe exactly these people doing exactly these poses and actions, and nobody else. Use only product facts from productFacts; never invent features, prices, parts or packaging. The on-screen caption is fixed and added in editing (caption): write the picture so it supports that caption, and never put text into the image. Values marked showsInPicture must be visible in the picture; the others only live in the caption. Return JSON {"people":[{"memberId":"family 里的 memberId","pose":"stand|crouch|ride|point|reach|hold","onProduct":false,"side":"left|right|behind","action":"中文：这个人在做什么，一句话","actionEn":"the same action in English"}],"description":"中文：画面里有谁、在哪、在做什么、产品怎么出场","camera":"中文：机位和景别","productNote":"中文：产品在画面里的状态","framePrompt":"English first-frame image prompt, concrete and visual, max 900 characters","motionPrompt":"English motion prompt for the clip, max 500 characters","notes":["中文提醒，最多 3 条"]}.',
       user: JSON.stringify({
         hook: { name: lib.name, recipe: lib.about, productEntry: en.en, seconds: lib.seconds },
         values: lib.fields.map((f) => ({ label: f.label, value: vals[f.key], showsInPicture: f.visual })),
@@ -310,7 +310,7 @@ export async function draftHookAction(videoId: string, libId: string, values: Re
 }
 
 /** 采用 Hook 剧本：新建开头（或重写 replaceId 这个开头）。3D 摆位先抄第一个开头，家庭和场地跟正文第一镜（免费） */
-export async function adoptHookAction(videoId: string, libId: string, values: Record<string, string>, entry: string, draft: Partial<Record<TextField, string>>, replaceId?: string, people?: unknown): Promise<Result<StudioState & { shotId: string }>> {
+export async function adoptHookAction(videoId: string, libId: string, values: Record<string, string>, entry: string, draft: Partial<Record<TextField, string>>, replaceId?: string, people?: unknown): Promise<Result<StudioState & { shotId: string; fixed?: string[] }>> {
   try {
     const v = load(videoId);
     const lib = getHook(libId);
@@ -349,6 +349,7 @@ export async function adoptHookAction(videoId: string, libId: string, values: Re
     const stage = lib.stage ?? DEFAULT_STAGE;
     const crew = people === undefined ? stage.people : cleanHookPeople(people, castOf(v.families, s.family ?? 1)?.members, filmerId(v, s)).people;
     s.layout = buildHookLayout({ ...stage, people: crew }, (old ?? base)?.layout, rigOf(v)?.gripY ?? 0.51);
+    const fixed = fitFigureActions(s.layout, rigOf(v));
     // Hook 的机位高度定了拍摄者姿势：0.9 米就是蹲着拍，不能还写站着
     const op = parseOp(s.operator);
     const ok = (id: typeof op.pose) => stage.camH >= poseOf(id).lo && stage.camH <= poseOf(id).hi;
@@ -360,7 +361,7 @@ export async function adoptHookAction(videoId: string, libId: string, values: Re
     v.hooksReady = true;
     saveShortVideo(v);
     refresh(v);
-    return { result: { ...state(videoId), shotId: s.id } };
+    return { result: { ...state(videoId), shotId: s.id, fixed } };
   } catch (e) {
     return fail(e);
   }
@@ -941,10 +942,6 @@ async function runFrameCheck(videoId: string, shotId: string, jobId: string, byt
   saveShortVideo(v);
 }
 
-function rigOf(v: ShortVideo) {
-  const m = getProductModel(v.projectId);
-  return (m && getRig(m.id)) || KB002_RIG;
-}
 
 function framePromptOf(v: ShortVideo, s: ShortShot): string {
   const p = getProduct(v.projectId);
@@ -1180,6 +1177,19 @@ async function translateActions(l: SetLayout, prev: SetLayout | null) {
   });
 }
 
+/** 人偶动作栏写了 3D 做不到的，程序换成做得到的（免费，不调 AI；动作不进 3D 构图图，构图不作废） */
+export async function fitShotActionsAction(videoId: string, shotId: string): Promise<Result<StudioState>> {
+  try {
+    const { v, s } = draftShot(videoId, shotId);
+    if (!fitFigureActions(s.layout, rigOf(v)).length) throw new Error("没有要改的动作");
+    saveShortVideo(v);
+    refresh(v);
+    return { result: state(videoId) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 function draftShot(videoId: string, shotId: string) {
   const v = load(videoId);
   const s = v.shots.find((x) => x.id === shotId);
@@ -1235,13 +1245,15 @@ export async function rewriteShotAction(
     const me = shotScene(v, s);
     const place = me ? { name: me.sc.name, outdoor: me.sc.outdoor, sh: me.sh } : null;
     const sync = shotSync(s, place);
-    const figs = figuresOf(s.layout).map((f) => `${f.kind}${f.onProduct ? " (riding / sitting on the product)" : ""}, ${f.action ? `action written by the user (authoritative): ${f.action}` : `no action written yet; pose preset ${f.pose}${f.custom ? ", hands and feet adjusted by hand in 3D" : ""}`}`);
+    const rig = rigOf(v);
+    const own = promptConflicts(s, rig).map((c) => c.msg).filter((m) => !sync.issues.includes(m));
+    const figs = figuresOf(s.layout).map((f) => `${f.kind}${f.onProduct ? " (riding / sitting on the product)" : ""}, ${f.action ? `action written by the user (authoritative, except where it contradicts the hand / foot contacts below: the contacts win): ${f.action}` : `no action written yet; pose preset ${f.pose}${f.custom ? ", hands and feet adjusted by hand in 3D" : ""}`}`);
     const facts = [
       me ? sceneText(me.sc, me.ver, me.sh, itemSight(s.layout)) : "",
       me ? (me.sc.outdoor ? "This location is outdoors." : "This location is indoors.") : "",
       `People in the 3D blocking (exactly these, nobody else in frame): ${figs.length ? figs.join("; ") : "none"}.`,
       layoutText(s.layout),
-      blockingText(s.layout, rigOf(v)),
+      blockingText(s.layout, rig),
       operatorPrompt(s.operator, s.layout, filmerText(v, s)) || "The person filming is not visible.",
     ]
       .filter(Boolean)
@@ -1254,7 +1266,7 @@ export async function rewriteShotAction(
       : "";
     const { data } = await chatJson({
       system: "You keep one shot of a TikTok-style product video in sync with its 3D blocking. The 3D facts are the truth: location, people, camera lens and height, product orientation and the person filming. Check EVERY sentence of every field against the 3D facts: who is in frame, where each person and the product sit in the frame (left / center / right, near / far), poses and actions, product orientation and pose, location, background and holiday decorations, camera. The listed changes and conflicts come from a simple keyword check and are often incomplete, so also fix sentences that were not listed. A 3D pose name only describes the body position: never invent props or intentions from it (a reaching hand is not handing something over). Mention background or holiday decorations only if the location facts list them. Rewrite whatever does not match; keep all continuity details (same people, wardrobe, props, product details), the casual phone-footage style and roughly the same length. Never add a person who is not in the 3D people list; if the text mentions someone who is not there, remove them and make clear the remaining people are the only ones in frame. The person filming holds the phone and is never the subject: never call it a selfie (no 'selfie', no 自拍). Never mention the 3D blocking itself (no mannequins, gray boxes or markers). Keep the camera field consistent with the lens and camera height. Where people are and what they do come only from the 3D facts (positions plus each person's written action); the image prompt adds those automatically. So framePrompt holds only what the 3D cannot carry: wardrobe, facial expression and gaze, light, mood and small details of the people and the product; it must not describe positions, left / right, distances, poses, hand or body actions, camera or background layout. description and motionPrompt may describe actions, but only as the 3D facts give them. If a person has no written action, describe them only by the pose preset and add a needs3d line asking the user to write that person's action in the 3D figure's 动作 field (e.g. '人偶1·小孩：在 3D 的「动作」栏写这个人在做什么'). Fields description, camera and productNote are in Simplified Chinese; framePrompt and motionPrompt are in English. Output json: {\"description\":\"\",\"camera\":\"\",\"productNote\":\"\",\"framePrompt\":\"\",\"motionPrompt\":\"\",\"notes\":[\"one short Simplified Chinese line per change\"],\"needs3d\":[]}" + userRule + (feedback ? " This overrides the rule above for body and hand actions: what a person does with their body or hands (pointing, gripping the handlebars, waving, holding something) belongs only in that person's 3D 动作 field. If the feedback asks for an action that differs from that person's written action in the 3D facts, do not write it into any field; add a needs3d line such as '人偶2·大人 的「动作」栏改成：……'." : ""),
-      user: JSON.stringify(feedback ? { facts3d: facts, changedSinceWritten: sync.changes, conflicts: sync.issues, shot: old, currentDraft: draft, userFeedback: feedback } : { facts3d: facts, changedSinceWritten: sync.changes, conflicts: sync.issues, shot: old }),
+      user: JSON.stringify(feedback ? { facts3d: facts, changedSinceWritten: sync.changes, conflicts: [...sync.issues, ...own], shot: old, currentDraft: draft, userFeedback: feedback } : { facts3d: facts, changedSinceWritten: sync.changes, conflicts: [...sync.issues, ...own], shot: old }),
       maxTokens: 3000,
       thinking: !!feedback,
       timeoutMs: 180_000,
@@ -1269,7 +1281,7 @@ export async function rewriteShotAction(
     ) as Record<TextField, string>;
     const list = (x: unknown) => (Array.isArray(x) ? x.filter((y): y is string => typeof y === "string" && !!y.trim()).slice(0, 8) : []);
     const next = { ...s, ...fields };
-    return { result: { fields, notes: list(d.notes), left: shotChecks(next, basisOf(next, place)), needs3d: list(d.needs3d) } };
+    return { result: { fields, notes: list(d.notes), left: [...new Set([...shotChecks(next, basisOf(next, place)), ...promptConflicts(next, rig).filter((c) => c.fix === "text").map((c) => c.msg)])], needs3d: [...new Set([...list(d.needs3d), ...promptConflicts(next, rig).filter((c) => c.fix === "3d").map((c) => c.msg)])] } };
   } catch (e) {
     return fail(e);
   }
@@ -1281,7 +1293,7 @@ export async function shotSyncAction(videoId: string, shotId: string): Promise<R
     const v = load(videoId);
     const s = v.shots.find((x) => x.id === shotId);
     if (!s) throw new Error("镜头不存在");
-    return { result: { sync: shotSync(s, placeOf(v, s)), draft: s.stage === "draft", texts: Object.fromEntries(TEXT_FIELDS.map((k) => [k, s[k]])) as Record<TextField, string> } };
+    return { result: { sync: fullSync(v, s), draft: s.stage === "draft", texts: Object.fromEntries(TEXT_FIELDS.map((k) => [k, s[k]])) as Record<TextField, string> } };
   } catch (e) {
     return fail(e);
   }

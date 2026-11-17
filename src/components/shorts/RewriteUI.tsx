@@ -7,27 +7,52 @@ const btn = "rounded border border-white/15 px-2 py-1 text-xs text-neutral-200 h
 const primary = "rounded bg-amber-400 px-3 py-1 text-xs font-medium text-black disabled:opacity-40";
 
 /** 文字和 3D 不一致：只给一句话和一个按钮，具体哪几处收起来 */
-export function SyncNotice({ sync, busy, working, canRewrite, why, msg, onRewrite }: { sync: ShotSync; busy: boolean; working: boolean; canRewrite: boolean; why?: string; msg?: string; onRewrite: () => void }) {
+export function SyncNotice({ sync, busy, working, canRewrite, why, msg, onRewrite, figHref, onFix3d }: { onFix3d?: () => void; figHref?: (fig?: string) => string; sync: ShotSync; busy: boolean; working: boolean; canRewrite: boolean; why?: string; msg?: string; onRewrite: () => void }) {
   const list = [...sync.issues, ...sync.changes];
-  if (!list.length) return null;
+  const in3d = sync.fix3d ?? [];
+  if (!list.length && !in3d.length) return null;
   return (
     <div className="mt-1 space-y-2 rounded border border-amber-400/40 bg-amber-400/5 p-2 text-xs text-amber-200">
-      <p className="font-medium">这一镜的文字和 3D 摆位有 {list.length} 处不一致，生成前要改好。</p>
+      <p className="font-medium">这一镜的文字和 3D 摆位有 {list.length + in3d.length} 处不一致，生成前要改好。</p>
+      {in3d.length ? (
+        <div className="space-y-1">
+          <p>{list.length ? "第 1 步：人偶的动作 3D 做不到（免费改）" : "人偶的动作 3D 做不到（免费改），改完这里自动变好："}</p>
+          {onFix3d ? (
+            <button className={btn} disabled={busy || !canRewrite} onClick={onFix3d}>
+              让程序改成 3D 做得到的动作（免费）
+            </button>
+          ) : null}
+          {in3d.map((x) => (
+            <div key={x.msg} className="flex items-center justify-between gap-2">
+              <span>• {x.msg}</span>
+              {figHref ? (
+                <a href={figHref(x.fig)} className={`${btn} shrink-0`}>
+                  去 3D 改
+                </a>
+              ) : null}
+            </div>
+          ))}
+          {list.length ? <p>第 2 步：再让 AI 按 3D 改文字</p> : null}
+        </div>
+      ) : null}
+      {list.length ? (<>
       <div className="flex flex-wrap items-center gap-2">
         <button className={primary} disabled={busy || !canRewrite} onClick={onRewrite}>
           {working ? "AI 改写中…" : "让 AI 按 3D 改文字（约 $0.01）"}
         </button>
+
         {why ? <span className="text-neutral-400">{why}</span> : null}
       </div>
       {msg ? <p className="text-neutral-200">{msg}</p> : null}
       <details>
-        <summary className="cursor-pointer text-neutral-400">看是哪 {list.length} 处</summary>
+        <summary className="cursor-pointer text-neutral-400">看文字是哪 {list.length} 处（删掉或改掉这几句就行，免费）</summary>
         <ul className="mt-1 list-disc pl-4">
           {list.map((x) => (
             <li key={x}>{x}</li>
           ))}
         </ul>
       </details>
+      </>) : null}
     </div>
   );
 }
