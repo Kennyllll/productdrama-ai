@@ -164,6 +164,13 @@ export interface ShortShot {
 
 export interface ShotHook {
   name: string;
+  /** 从 Hook 库来的：库里的 id / 名字，视频里填的属性值，产品怎么出场，字幕模板，哪些属性影响画面 */
+  libId?: string;
+  libName?: string;
+  values?: Record<string, string>;
+  entry?: string;
+  captionTpl?: string;
+  visualKeys?: string[];
   cut?: number;
   zoomB?: number;
 }

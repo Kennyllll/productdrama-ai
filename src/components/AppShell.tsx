@@ -75,6 +75,9 @@ export function AppShell({ children, projects }: { children: ReactNode; projects
           <NavLink href="/families" active={pathname.startsWith("/families")}>
             家庭库
           </NavLink>
+          <NavLink href="/hooks" active={pathname.startsWith("/hooks")}>
+            Hook 库
+          </NavLink>
           <NavLink href="/settings" active={pathname.startsWith("/settings")}>
             设置
           </NavLink>

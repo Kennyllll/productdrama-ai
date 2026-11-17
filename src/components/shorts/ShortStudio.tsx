@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { fmtWait } from "@/components/shorts/JobPill";
 import { OperatorPicker } from "@/components/shorts/OperatorPicker";
+import { HookPanel } from "@/components/shorts/HookPanel";
+import type { HookDef } from "@/lib/hooks";
 import {
   addHookAction,
   aiConceptsAction,
@@ -85,6 +87,7 @@ export function ShortStudio({
   kit,
   hasBase = false,
   families = [],
+  hookLib = [],
   cast = [],
 }: {
   initial: StudioState;
@@ -96,6 +99,7 @@ export function ShortStudio({
   kit?: KitData;
   hasBase?: boolean;
   families?: { id: string; name: string }[];
+  hookLib?: HookDef[];
   /** 家庭位 1 的成员：选谁拿手机 */
   cast?: { id: string; name: string }[];
 }) {
@@ -162,6 +166,7 @@ export function ShortStudio({
     });
   };
 
+  const [hookPanel, setHookPanel] = useState<{ shotId?: string } | null>(null);
   const famName = (k: string) => families.find((f) => f.id === v.families?.[k])?.name ?? "不指定";
   const famSlots = [...new Set(["1", ...shots.map((s) => String(s.family ?? 1))])].sort();
   const changeFamily = (slot: string, id: string) =>
@@ -850,14 +855,24 @@ export function ShortStudio({
                 i === 0 ? (
                   <li key="h-hook" className="col-span-full flex flex-wrap items-center justify-between gap-2 pt-1 text-xs font-medium text-neutral-400">
                     <span>开头 · 多个开头共用下面的正文，导出时勾选要哪几个</span>
+                    <span className="flex gap-2">
                     <button
                       className={btn}
                       disabled={busy || dirty}
                       title={dirty ? "先保存分镜" : ""}
                       onClick={() => act(() => addHookAction(v.id), "已新建开头：先改文字，再去 3D 保存构图")}
                     >
-                      ＋ 新建开头
+                      ＋ 照抄第一个开头
                     </button>
+                    <button className={btn} disabled={busy || dirty || !hookLib.length} title={dirty ? "先保存分镜" : ""} onClick={() => setHookPanel({})}>
+                      ＋ 从 Hook 库选
+                    </button>
+                    </span>
+                  </li>
+                ) : null,
+                i === 0 && hookPanel ? (
+                  <li key="h-panel" className="col-span-full">
+                    <HookPanel key={hookPanel.shotId ?? "new"} videoId={v.id} lib={hookLib} shot={hookPanel.shotId ? v.shots.find((x) => x.id === hookPanel.shotId) : undefined} onDone={apply} onClose={() => setHookPanel(null)} />
                   </li>
                 ) : null,
                 !s.hook && i === firstBody ? (
@@ -888,6 +903,11 @@ export function ShortStudio({
                       {runBusy ? "生成中…" : s.stage === "accepted" ? "已采用" : wait > 0 ? `等 #${wait} 采用` : STAGE_LABELS[s.stage]}
                     </p>
                   </button>
+                  {s.hook?.libId ? (
+                    <button className="mt-1 text-xs text-amber-300 underline" disabled={busy || dirty} onClick={() => setHookPanel({ shotId: s.id })}>
+                      Hook 属性（{s.hook.libName}）
+                    </button>
+                  ) : null}
                   {s.hook ? (
                     <label className="mt-1 flex items-center gap-1 text-xs text-neutral-400">
                       <input

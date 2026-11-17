@@ -6,6 +6,8 @@ import { keyFromPath, putFile, readFile, storageKey } from "@/lib/storage";
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { AiError, chatJson } from "@/lib/ai/client";
+import { createHook, getHook } from "@/lib/hooks-repo";
+import { cleanHookValues, fillCaption, HOOK_ENTRIES } from "@/lib/hooks";
 import { shortConceptPrompt, shortShotsPrompt } from "@/lib/ai/short-prompts";
 import { deleteRequest, estimate, getStatus, HiggsfieldError, submit, uploadFile } from "@/lib/higgsfield";
 import { assetPath, findLocalProject, getProduct, listAssets } from "@/lib/repo";
@@ -158,7 +160,18 @@ const str = (s: unknown, max: number) => (typeof s === "string" ? s.slice(0, max
 function cleanHook(h: unknown, useSeconds: number): ShotHook {
   const x = (h ?? {}) as Partial<ShotHook>;
   const cut = typeof x.cut === "number" && x.cut >= 0.3 && x.cut <= useSeconds - 0.3 ? Math.round(x.cut * 10) / 10 : undefined;
-  return { name: str(x.name, 30).trim() || "开头", cut, zoomB: cut ? Math.round(clampNum(x.zoomB, 1, 1.5, 1) * 100) / 100 : undefined };
+  const lib =
+    typeof x.libId === "string" && x.libId
+      ? {
+          libId: x.libId.slice(0, 60),
+          libName: str(x.libName, 40),
+          values: Object.fromEntries(Object.entries(x.values && typeof x.values === "object" ? x.values : {}).filter(([k, val]) => /^\w{1,30}$/.test(k) && typeof val === "string").slice(0, 12).map(([k, val]) => [k, String(val).slice(0, 200)])),
+          entry: str(x.entry, 20),
+          captionTpl: str(x.captionTpl, 200),
+          visualKeys: Array.isArray(x.visualKeys) ? x.visualKeys.filter((k): k is string => typeof k === "string").slice(0, 12) : [],
+        }
+      : {};
+  return { name: str(x.name, 30).trim() || "开头", cut, zoomB: cut ? Math.round(clampNum(x.zoomB, 1, 1.5, 1) * 100) / 100 : undefined, ...lib };
 }
 
 function cleanShot(s: Partial<ShortShot>, prev?: ShortShot): ShortShot {
@@ -233,6 +246,139 @@ export async function saveShortVideoAction(
     saveShortVideo(v);
     refresh(v);
     return { result: state(videoId) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+const HOOK_LIM: Record<TextField, number> = { description: 600, camera: 200, productNote: 300, framePrompt: 2000, motionPrompt: 1000 };
+
+/** 从 Hook 库写开头剧本（DeepSeek 文字调用 1 次，约 $0.01，不出图）；只返回草稿，用户点“采用”才变成开头镜头 */
+export async function draftHookAction(videoId: string, libId: string, values: Record<string, string>, entry: string): Promise<Result<{ draft: Record<TextField, string>; caption: string; notes: string[] }>> {
+  try {
+    const v = load(videoId);
+    const lib = getHook(libId);
+    if (!lib) throw new Error("Hook 不存在");
+    const vals = cleanHookValues(lib, values);
+    const en = HOOK_ENTRIES.find((x) => x.id === entry) ?? HOOK_ENTRIES.find((x) => x.id === lib.entry) ?? HOOK_ENTRIES[0];
+    const first = v.shots.find((s) => !s.hook);
+    const caption = fillCaption(lib.caption, vals, getProduct(v.projectId)?.name ?? "");
+    const th = videoTheme(v);
+    const { data } = await chatJson({
+      system:
+        'You write the opening hook shot (the first 2-4 seconds) of a North American TikTok product video. Follow the hook recipe and the filled values exactly. The hook must flow straight into the first body shot (nextShot): same location, same people and family, same product color. The holiday is given in holiday and overrides anything written in nextShot; if it is none, there are no holiday decorations, trees, gifts, bows or holiday outfits at all. The person filming holds the phone and is never visible: never describe them in framePrompt or motionPrompt. If productEntry says no box, there is no box, packaging or wrapping anywhere in the frame. Use only product facts from productFacts; never invent features, prices, parts or packaging. The on-screen caption is fixed and added in editing (caption): write the picture so it supports that caption, and never put text into the image. Values marked showsInPicture must be visible in the picture; the others only live in the caption. Return JSON {"description":"中文：画面里有谁、在哪、在做什么、产品怎么出场","camera":"中文：机位和景别","productNote":"中文：产品在画面里的状态","framePrompt":"English first-frame image prompt, concrete and visual, max 900 characters","motionPrompt":"English motion prompt for the clip, max 500 characters","notes":["中文提醒，最多 3 条"]}.',
+      user: JSON.stringify({
+        hook: { name: lib.name, recipe: lib.about, productEntry: en.en, seconds: lib.seconds },
+        values: lib.fields.map((f) => ({ label: f.label, value: vals[f.key], showsInPicture: f.visual })),
+        caption,
+        holiday: th.theme && th.theme !== "none" ? th.themeText || th.theme : "none",
+        productFacts: productText(v.projectId),
+        nextShot: first ? { beat: first.beat, ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, first[k]])) } : null,
+      }),
+      maxTokens: 3000,
+      thinking: false,
+      timeoutMs: 180_000,
+    });
+    const d = (data ?? {}) as Record<string, unknown>;
+    const draft = Object.fromEntries(TEXT_FIELDS.map((k) => [k, typeof d[k] === "string" ? String(d[k]).trim().replace(/^English:\s*/i, "").slice(0, HOOK_LIM[k]) : ""])) as Record<TextField, string>;
+    if (!draft.description || !draft.framePrompt) throw new AiError("AI 没有写出剧本，请重试");
+    const notes = Array.isArray(d.notes) ? d.notes.filter((n): n is string => typeof n === "string" && !!n.trim()).slice(0, 3) : [];
+    return { result: { draft, caption, notes } };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 采用 Hook 剧本：新建开头（或重写 replaceId 这个开头）。3D 摆位先抄第一个开头，家庭和场地跟正文第一镜（免费） */
+export async function adoptHookAction(videoId: string, libId: string, values: Record<string, string>, entry: string, draft: Partial<Record<TextField, string>>, replaceId?: string): Promise<Result<StudioState>> {
+  try {
+    const v = load(videoId);
+    const lib = getHook(libId);
+    if (!lib) throw new Error("Hook 不存在");
+    const vals = cleanHookValues(lib, values);
+    const hooks = v.shots.filter((s) => s.hook);
+    const body = v.shots.filter((s) => !s.hook);
+    const old = replaceId ? hooks.find((s) => s.id === replaceId) : undefined;
+    if (replaceId && !old) throw new Error("开头不存在");
+    if (old && old.stage !== "draft") throw new Error("这个开头构图已确认：要重写剧本先点“退回构图”");
+    if (!old && v.shots.length >= 16) throw new Error("镜头太多了（最多 16 个）");
+    const text = Object.fromEntries(TEXT_FIELDS.map((k) => [k, str(draft[k], HOOK_LIM[k]).trim()])) as Record<TextField, string>;
+    if (!text.description || !text.framePrompt) throw new Error("剧本是空的：先生成剧本");
+    const base = old ?? hooks[0] ?? body[0];
+    const link = body[0] ?? base;
+    const hook: ShotHook = {
+      name: old?.hook?.name ?? lib.name,
+      libId: lib.id,
+      libName: lib.name,
+      values: vals,
+      entry: HOOK_ENTRIES.some((x) => x.id === entry) ? entry : lib.entry,
+      captionTpl: lib.caption,
+      visualKeys: lib.fields.filter((f) => f.visual).map((f) => f.key),
+    };
+    const caption = fillCaption(lib.caption, vals, getProduct(v.projectId)?.name ?? "");
+    const s = old
+      ? cleanShot({ ...old, ...text, hook, caption }, old)
+      : cleanShot({ ...(base ?? {}), ...text, id: undefined, hook, caption, beat: "开头", useSeconds: lib.seconds, checkNote: "" });
+    if (!old) {
+      s.layout = base?.layout ?? null;
+      s.scene = link?.scene ? { ...link.scene } : undefined;
+      s.family = link?.family;
+      s.special = base?.special;
+      v.shots = [...hooks, s, ...body];
+    } else v.shots = v.shots.map((x) => (x.id === old.id ? s : x));
+    bindScenes(v);
+    s.textBasis = basisOf(s, placeOf(v, s));
+    v.hooksReady = true;
+    saveShortVideo(v);
+    refresh(v);
+    return { result: state(videoId) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 改开头的 Hook 属性：只进字幕的直接改字幕（免费）；影响画面的、画面已经做过，先列出费用让用户确认，再退回构图 */
+export async function setHookValuesAction(videoId: string, shotId: string, values: Record<string, string>, confirmed = false): Promise<Result<{ confirm?: string; state?: StudioState; rewrite?: boolean }>> {
+  try {
+    const v = load(videoId);
+    const s = v.shots.find((x) => x.id === shotId);
+    const h = s?.hook;
+    if (!s || !h?.libId) throw new Error("这个开头不是从 Hook 库来的");
+    const vals = Object.fromEntries(Object.keys(h.values ?? {}).map((k) => [k, str(values[k] ?? h.values?.[k], 200).trim()]));
+    const changed = Object.keys(vals).filter((k) => vals[k] !== h.values?.[k]);
+    if (!changed.length) return { result: { state: state(videoId) } };
+    if (listJobs(videoId).some((j) => j.shotId === s.id && (j.status === "submitting" || j.status === "submitted"))) throw new Error("这个开头正在生成，等生成完再改");
+    const visual = changed.filter((k) => h.visualKeys?.includes(k));
+    const made = s.stage !== "draft" || !!s.frameJobId || !!s.videoJobId;
+    if (visual.length && s.stage === "accepted") throw new Error("这个开头已采用：要改影响画面的属性，先点“退回返工”");
+    if (visual.length && made && !confirmed) {
+      const lib = getHook(h.libId);
+      const names = visual.map((k) => lib?.fields.find((f) => f.key === k)?.label ?? k).join("、");
+      const usd = FRAME_USD_FALLBACK + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * VIDEO_USD_PER_SEC[v.resolution] : 0);
+      return { result: { confirm: `改了影响画面的属性（${names}），开头「${h.name}」已经做过的画面要退回构图、重写剧本再重做：\n剧本 DeepSeek 约 $0.01 + 重做大约 $${usd.toFixed(2)}（每次生成照样先审批）。已经生成的画面会留在历史里。` } };
+    }
+    s.hook = { ...h, values: vals };
+    if (h.captionTpl) s.caption = fillCaption(h.captionTpl, vals, getProduct(v.projectId)?.name ?? "");
+    if (visual.length && made) s.stage = "draft";
+    saveShortVideo(v);
+    refresh(v);
+    return { result: { state: state(videoId), rewrite: visual.length > 0 } };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 把改好属性的开头另存成 Hook 库里的新 Hook（示例值换成这条视频填的值，免费） */
+export async function saveHookAsLibAction(videoId: string, shotId: string, name: string): Promise<Result<string>> {
+  try {
+    const v = load(videoId);
+    const h = v.shots.find((x) => x.id === shotId)?.hook;
+    const lib = h?.libId ? getHook(h.libId) : null;
+    if (!h || !lib) throw new Error("这个开头的 Hook 已经不在库里了");
+    const nm = str(name, 40).trim();
+    if (!nm) throw new Error("名字不能为空");
+    const entry = HOOK_ENTRIES.find((x) => x.id === h.entry)?.id ?? lib.entry;
+    return { result: createHook({ name: nm, about: lib.about, use: lib.use, seconds: lib.seconds, entry, caption: lib.caption, fields: lib.fields.map((f) => ({ ...f, example: h.values?.[f.key] || f.example })) }) };
   } catch (e) {
     return fail(e);
   }

@@ -11,6 +11,7 @@ import { finalPath, getJob, getShortVideo, listJobs, toJobView } from "@/lib/sho
 import { syncOf } from "@/lib/shorts-sync-state";
 import { runningOf } from "@/lib/shorts-runs";
 import { castOf, listFamilies } from "@/lib/families-repo";
+import { listHooks } from "@/lib/hooks-repo";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,7 @@ export default async function ShortVideoPage({ params, searchParams }: { params:
         kit={loadKit(id)}
         hasBase={!!getProductModel(id)}
         families={listFamilies().map((f) => ({ id: f.id, name: f.name }))}
+        hookLib={listHooks()}
         finalAt={finalAt}
         initialShot={shot && video.shots.some((s) => s.id === shot) ? shot : null}
       />
