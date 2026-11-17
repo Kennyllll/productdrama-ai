@@ -13,7 +13,7 @@ const sel = "rounded border border-white/10 bg-neutral-950 px-2 py-1 text-sm tex
 const btn = "rounded border border-white/10 px-2 py-1 text-xs text-neutral-200 hover:border-amber-400/60 disabled:opacity-50";
 
 /** 从 Hook 库做开头（shot 为空 = 新建；有 shot = 改这个开头的属性 / 重写剧本 / 另存为新 Hook） */
-export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClose }: { videoId: string; lib: HookDef[]; shot?: ShortShot; targetId?: string; setHref: (shotId: string) => string; onDone: Done; onClose: () => void }) {
+export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClose, themePicker }: { themePicker?: React.ReactNode; videoId: string; lib: HookDef[]; shot?: ShortShot; targetId?: string; setHref: (shotId: string) => string; onDone: Done; onClose: () => void }) {
   const h = shot?.hook;
   const [libId, setLibId] = useState(h?.libId ?? lib[0]?.id ?? "");
   const def = lib.find((x) => x.id === libId);
@@ -92,6 +92,7 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
         </button>
       </div>
       {def ? <p className="text-neutral-500">{def.about}</p> : null}
+      {themePicker ? <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">这条视频的节日（开头和正文都跟着它，换了会先提示哪些镜头要重做）：{themePicker}</div> : null}
       {def?.stage ? (
         <p className="text-sky-200">
           3D 会自动摆成：产品{VIEW_LABEL[def.stage.view]}；摄影机约 {def.stage.dist} 米、高 {def.stage.camH} 米。画面里放谁、做什么，生成剧本时 AI 按这条视频的剧情定。采用后会打开 3D 自动保存构图，你只要微调。

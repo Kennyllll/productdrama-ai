@@ -168,6 +168,16 @@ export function ShortStudio({
     });
   };
 
+  const themeSelect = (
+    <select value={vt.theme} disabled={busy} onChange={(e) => changeTheme(e.target.value)} className={`${input} w-auto py-1 text-xs`}>
+      {THEMES.map((t) => (
+        <option key={t.id} value={t.id}>
+          节日：{t.label}
+        </option>
+      ))}
+    </select>
+  );
+
   const [hookPanel, setHookPanel] = useState<{ shotId?: string } | null>(null);
   const famName = (k: string) => families.find((f) => f.id === v.families?.[k])?.name ?? "不指定";
   const famSlots = [...new Set(["1", ...shots.map((s) => String(s.family ?? 1))])].sort();
@@ -428,18 +438,7 @@ export function ShortStudio({
             >
               存为模板
             </button>
-            <select
-              value={vt.theme}
-              disabled={busy}
-              onChange={(e) => changeTheme(e.target.value)}
-              className={`${input} w-auto py-1 text-xs`}
-            >
-              {THEMES.map((t) => (
-                <option key={t.id} value={t.id}>
-                  节日：{t.label}
-                </option>
-              ))}
-            </select>
+            {themeSelect}
             <select
               value={v.templateId}
               disabled={busy || st.jobs.length > 0}
@@ -874,7 +873,7 @@ export function ShortStudio({
                 ) : null,
                 i === 0 && hookPanel ? (
                   <li key="h-panel" className="col-span-full">
-                    <HookPanel key={hookPanel.shotId ?? "new"} videoId={v.id} lib={hookLib} shot={hookPanel.shotId ? v.shots.find((x) => x.id === hookPanel.shotId) : undefined} targetId={hookPanel.shotId ? undefined : hookList[0]?.id} setHref={(id) => `/projects/${v.projectId}/shorts/${v.id}/set?shot=${id}&capture=1`} onDone={apply} onClose={() => setHookPanel(null)} />
+                    <HookPanel themePicker={themeSelect} key={hookPanel.shotId ?? "new"} videoId={v.id} lib={hookLib} shot={hookPanel.shotId ? v.shots.find((x) => x.id === hookPanel.shotId) : undefined} targetId={hookPanel.shotId ? undefined : hookList[0]?.id} setHref={(id) => `/projects/${v.projectId}/shorts/${v.id}/set?shot=${id}&capture=1`} onDone={apply} onClose={() => setHookPanel(null)} />
                   </li>
                 ) : null,
                 !s.hook && i === firstBody ? (

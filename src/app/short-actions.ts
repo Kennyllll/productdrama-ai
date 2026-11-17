@@ -45,7 +45,7 @@ import { addRule, type SetLayout } from "@/lib/production-repo";
 import { figuresOf, KB002_RIG, RIDE_KINDS, rideKindOf } from "@/lib/figures";
 import { basisOf, shotChecks, shotSync, TEXT_FIELDS, type ShotSync, type TextField } from "@/lib/shorts-sync";
 import { placeOf, syncOf } from "@/lib/shorts-sync-state";
-import { opCompKey, operatorShows, opMissing, parseOp } from "@/lib/shorts-operator";
+import { opCompKey, operatorShows, opMissing, parseOp, opString, OP_POSES, poseOf } from "@/lib/shorts-operator";
 import { blockingText, itemSight } from "@/lib/shorts-blocking";
 import path from "node:path";
 import {
@@ -349,6 +349,11 @@ export async function adoptHookAction(videoId: string, libId: string, values: Re
     const stage = lib.stage ?? DEFAULT_STAGE;
     const crew = people === undefined ? stage.people : cleanHookPeople(people, castOf(v.families, s.family ?? 1)?.members, filmerId(v, s)).people;
     s.layout = buildHookLayout({ ...stage, people: crew }, (old ?? base)?.layout, rigOf(v)?.gripY ?? 0.51);
+    // Hook 的机位高度定了拍摄者姿势：0.9 米就是蹲着拍，不能还写站着
+    const op = parseOp(s.operator);
+    const ok = (id: typeof op.pose) => stage.camH >= poseOf(id).lo && stage.camH <= poseOf(id).hi;
+    const fit = OP_POSES.find((x) => ok(x.id));
+    if (!op.custom && fit && !ok(op.pose)) s.operator = opString({ ...op, pose: fit.id });
     s.compFile = null;
     bindScenes(v);
     s.textBasis = basisOf(s, placeOf(v, s));
