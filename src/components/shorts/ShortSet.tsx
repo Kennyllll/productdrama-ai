@@ -266,7 +266,7 @@ export function ShortSet({
             onDirty={setCamDirty}
             otherDirty={stageDirty}
           />
-          {code ? <ShotSyncBox videoId={videoId} shotId={code} label={b?.label ?? ""} /> : null}
+          {code ? <ShotSyncBox videoId={videoId} shotId={code} label={b?.label ?? ""} figIds={(st?.layout.figures ?? []).map((f) => f.id)} /> : null}
           {cur ? (
             <details className="rounded-xl border border-white/10 bg-neutral-900/60 px-3 py-2 text-xs text-neutral-400">
               <summary className="cursor-pointer select-none">镜头描述</summary>

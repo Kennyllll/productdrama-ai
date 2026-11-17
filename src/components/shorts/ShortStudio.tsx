@@ -52,8 +52,8 @@ import {
   waitingFor,
 } from "@/lib/shorts";
 import { THEMES } from "@/lib/shorts-scenes";
-import { TEXT_FIELDS, TEXT_LABELS, type TextField } from "@/lib/shorts-sync";
-import { DraftFeedback } from "@/components/shorts/DraftFeedback";
+import { type TextField } from "@/lib/shorts-sync";
+import { DraftView, SyncNotice } from "@/components/shorts/RewriteUI";
 import type { Conflict } from "@/lib/shorts";
 import { PromptPreview } from "@/components/shorts/PromptPreview";
 import { ColorKits } from "@/components/workbench/ProductKit";
@@ -1213,43 +1213,15 @@ export function ShortStudio({
                           <p className="text-emerald-300/80">文字和 3D 一致</p>
                         ) : null;
                       return (
-                        <div className="mt-1 space-y-1 rounded border border-amber-400/40 bg-amber-400/5 p-2 text-amber-200">
-                          {sy.changes.length ? (
-                            <>
-                              <p className="font-medium">
-                                文字写好后 3D 改过，文字可能过期：
-                              </p>
-                              <ul className="list-disc pl-4">
-                                {sy.changes.map((x) => (
-                                  <li key={x}>{x}</li>
-                                ))}
-                              </ul>
-                            </>
-                          ) : null}
-                          {sy.issues.length ? (
-                            <>
-                              <p className="font-medium">文字和 3D 对不上：</p>
-                              <ul className="list-disc pl-4">
-                                {sy.issues.map((x) => (
-                                  <li key={x}>{x}</li>
-                                ))}
-                              </ul>
-                            </>
-                          ) : null}
-                          <button
-                            className={btn}
-                            disabled={busy || dirty || s.stage !== "draft"}
-                            onClick={() => rewrite(s.id)}
-                          >
-                            {busy && rw?.shotId === s.id ? "改写中…" : "按 3D 改写这一镜（DeepSeek，每次不到 $0.01）"}
-                          </button>
-                          {rw?.shotId === s.id ? <p className="text-neutral-200">{rw.text}</p> : null}
-                          {s.stage !== "draft" ? (
-                            <p>构图已确认：要改先点“退回构图”。</p>
-                          ) : dirty ? (
-                            <p>先保存分镜再改写。</p>
-                          ) : null}
-                        </div>
+                        <SyncNotice
+                          sync={sy}
+                          busy={busy}
+                          working={busy && rw?.shotId === s.id}
+                          canRewrite={s.stage === "draft" && !dirty}
+                          why={s.stage !== "draft" ? "构图已确认：要改先点“退回构图”" : dirty ? "先保存分镜再改写" : ""}
+                          msg={rw?.shotId === s.id ? rw.text : ""}
+                          onRewrite={() => rewrite(s.id)}
+                        />
                       );
                     })()}
                   </div>
@@ -1305,76 +1277,28 @@ export function ShortStudio({
                   );
                 })()}
                 {proposal?.shotId === s.id ? (
-                  <div id={`proposal-${s.id}`} className="mt-3 scroll-mt-4 space-y-2 rounded-lg border border-sky-400/40 bg-sky-400/5 p-3 text-xs text-neutral-300">
-                    <p className="text-sm font-medium text-sky-200">
-                      按 3D 改写的草稿（还没保存）
-                    </p>
-                    {proposal.notes.length ? (
-                      <ul className="list-disc pl-4 text-sky-100">
-                        {proposal.notes.map((n) => (
-                          <li key={n}>{n}</li>
-                        ))}
-                      </ul>
-                    ) : null}
-                    {TEXT_FIELDS.filter((k) => proposal.fields[k] !== s[k]).map(
-                      (k) => (
-                        <div key={k} className="grid gap-2 md:grid-cols-2">
-                          <div>
-                            <p className="text-neutral-500">
-                              {TEXT_LABELS[k]} · 改前
-                            </p>
-                            <p className="whitespace-pre-wrap rounded bg-red-500/10 p-2 text-red-100/80">
-                              {s[k]}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-neutral-500">
-                              {TEXT_LABELS[k]} · 改后
-                            </p>
-                            <p className="whitespace-pre-wrap rounded bg-emerald-500/10 p-2 text-emerald-100">
-                              {proposal.fields[k]}
-                            </p>
-                          </div>
-                        </div>
-                      ),
-                    )}
-                    {TEXT_FIELDS.every((k) => proposal.fields[k] === s[k]) ? (
-                      <p>AI 认为文字不用改。</p>
-                    ) : null}
-                    {proposal.left.length ? (
-                      <p className="text-amber-300">
-                        改完还剩：{proposal.left.join("；")}
-                      </p>
-                    ) : null}
-                    <DraftFeedback
+                  <div id={`proposal-${s.id}`} className="mt-3 scroll-mt-4">
+                    <DraftView
+                      p={proposal}
+                      old={s}
                       busy={busy}
-                      needs3d={proposal.needs3d}
-                      onSubmit={(f) => rewrite(s.id, f, proposal.fields)}
+                      useDisabled={dirty}
+                      figIds={(s.layout?.figures ?? []).map((f) => f.id)}
+                      figHref={(id) => `/projects/${v.projectId}/shorts/${v.id}/set?shot=${s.id}${id ? `&fig=${id}` : ""}`}
+                      onUse={() => {
+                        const p = proposal;
+                        setProposal(null);
+                        act(
+                          () =>
+                            saveShortVideoAction(v.id, {
+                              shots: shots.map((x) => (x.id === p.shotId ? { ...x, ...p.fields } : x)),
+                            }),
+                          "已按 3D 改写并保存",
+                        );
+                      }}
+                      onDrop={() => setProposal(null)}
+                      onFeedback={(f) => rewrite(s.id, f, proposal.fields)}
                     />
-                    <div className="flex gap-2">
-                      <button
-                        className={primary}
-                        disabled={busy || dirty}
-                        onClick={() => {
-                          const p = proposal;
-                          setProposal(null);
-                          act(
-                            () =>
-                              saveShortVideoAction(v.id, {
-                                shots: shots.map((x) =>
-                                  x.id === p.shotId ? { ...x, ...p.fields } : x,
-                                ),
-                              }),
-                            "已按 3D 改写并保存",
-                          );
-                        }}
-                      >
-                        采用并保存
-                      </button>
-                      <button className={btn} onClick={() => setProposal(null)}>
-                        不用，保持原文
-                      </button>
-                    </div>
                   </div>
                 ) : null}
                 <div className="mt-3 grid gap-3 border-t border-white/10 pt-3 md:grid-cols-2">
