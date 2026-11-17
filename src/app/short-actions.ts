@@ -1364,9 +1364,11 @@ export async function retargetTextAction(videoId: string): Promise<Result<{ note
     const from = kind(rideKindOf(ft.fromKind, ft.fromProduct));
     const to = kind(rideKindOf(p?.rideKind, p?.category));
     const shots = v.shots.map((s) => ({ id: s.id, caption: s.caption, ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, s[k]])) }));
+    // 字幕里没提到产品就原样保留（比如结尾引导评论的关键词）
+    const productWords = /bike|balance|tricycle|trike|scooter|ride|riding|pedal|kriddo|seat|handlebar|平衡|三轮|车/i;
     const { data } = await chatJson({
       system:
-        "You adapt the text of a TikTok-style product video that was written for one product (sourceProduct) to a different product (targetProduct). Change only what depends on the product: its name, type, parts, colors, materials, features, and how a child rides or uses it (a balance bike is pushed along with both feet on the ground and has no pedals; a tricycle is pedaled with the feet on the pedals and steered with the handlebars). Use only facts from targetProduct.facts; never invent features, logos, colors, stickers or accessories. Keep everything else as it is: story beats, people, wardrobe, location, holiday decorations, camera and framing, mood, the casual phone-footage style and roughly the same length. A sentence that does not mention the product stays word for word. Keep each field's scope: framePrompt must not gain positions, poses, distances or camera details. Fields description, camera and productNote are in Simplified Chinese; framePrompt, motionPrompt and caption are in English (caption: short casual American English, keep any 'POV:' prefix). Output json: {\"shots\":[{\"id\":\"\",\"description\":\"\",\"camera\":\"\",\"productNote\":\"\",\"framePrompt\":\"\",\"motionPrompt\":\"\",\"caption\":\"\",\"notes\":[\"one short Simplified Chinese line per change\"]}]} with every input shot, same ids, same order.",
+        "You adapt the text of a TikTok-style product video that was written for one product (sourceProduct) to a different product (targetProduct). Change only what depends on the product: its name, type, parts, colors, materials, features, and how a child rides or uses it (a balance bike is pushed along with both feet on the ground and has no pedals; a tricycle is pedaled with the feet on the pedals and steered with the handlebars). Use only facts from targetProduct.facts; never invent features, logos, colors, stickers or accessories. Keep everything else as it is: story beats, people, wardrobe, location, holiday decorations, camera and framing, mood, the casual phone-footage style and roughly the same length. A sentence that does not mention the product stays word for word. Keep each field's scope: framePrompt must not gain positions, poses, distances or camera details. Fields description, camera and productNote are in Simplified Chinese; framePrompt, motionPrompt and caption are in English (caption: short casual American English, keep any 'POV:' prefix; a caption that does not mention the product, such as a comment keyword call to action, stays exactly as it is). Output json: {\"shots\":[{\"id\":\"\",\"description\":\"\",\"camera\":\"\",\"productNote\":\"\",\"framePrompt\":\"\",\"motionPrompt\":\"\",\"caption\":\"\",\"notes\":[\"one short Simplified Chinese line per change\"]}]} with every input shot, same ids, same order.",
       user: JSON.stringify({ sourceProduct: { name: ft.fromProduct, type: from }, targetProduct: { facts: productText(v.projectId), type: to }, shots }),
       maxTokens: 12_000,
       thinking: false,
@@ -1383,7 +1385,7 @@ export async function retargetTextAction(videoId: string): Promise<Result<{ note
         if (typeof x === "string" && x.trim()) s[k] = x.trim().slice(0, lim[k]);
       }
       if (Array.isArray(d.notes)) d.notes.filter((n): n is string => typeof n === "string" && !!n.trim()).slice(0, 3).forEach((n) => notes.push(`#${i + 1} ${n.trim().slice(0, 120)}`));
-      return typeof d.caption === "string" && d.caption.trim() ? d.caption.trim().slice(0, 160) : s.caption;
+      return typeof d.caption === "string" && d.caption.trim() && productWords.test(s.caption) ? d.caption.trim().slice(0, 160) : s.caption;
     });
     const en = await ensureEnglish(caps);
     v.shots.forEach((s, i) => {
