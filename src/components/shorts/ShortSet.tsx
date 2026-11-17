@@ -260,7 +260,7 @@ export function ShortSet({
             onCaptureProduct={(c, png) => saveShortAngleAction(videoId, c, png)}
             moveExtra={operatorBox}
             operators={ops}
-            autoCapture={autoCapture}
+            autoCapture={autoCapture && cap === 0}
             live={liveLayout}
             captureSignal={cap}
             onDirty={setCamDirty}

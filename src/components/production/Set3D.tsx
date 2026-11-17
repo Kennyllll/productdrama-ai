@@ -513,6 +513,10 @@ export function Set3D({
   useEffect(() => {
     if (!autoCapture || autoDone.current || !onCapture || shot.locked || !modelReady) return;
     autoDone.current = true;
+    // 保存后页面会刷新、组件会重建：同一镜两分钟内只自动保存一次，防止循环
+    const k = `autocap:${code}`;
+    if (Date.now() - Number(sessionStorage.getItem(k) ?? 0) < 120_000) return;
+    sessionStorage.setItem(k, String(Date.now()));
     window.history.replaceState(window.history.state, "", `?shot=${code}`);
     setMsg("正在自动更新 3D 构图…");
     setTimeout(() => saveRef.current(layout), 800);
