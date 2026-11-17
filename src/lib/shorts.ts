@@ -148,6 +148,8 @@ export interface ShortShot {
   frameJobId: string | null;
   videoJobId: string | null;
   checkNote: string;
+  /** 首帧出图后的看图检查（对照提示词和 3D）；jobId 不是当前首帧就作废 */
+  frameCheck?: { jobId: string; pass: boolean; issues: string[]; at: string; failed?: boolean };
   /** 本镜场地（场地库 id + 版本 + 节日主题）；确认构图后锁定版本。旧数据没有时按 video.room 迁移 */
   scene?: ShotScene;
   /** 第几个家庭（1 起）：同一家庭沿用演员和服装；换家庭时旧演员不当参考 */

@@ -205,3 +205,28 @@ export async function locateGeometry(o: { plate: Buffer; support: string; width:
     refs,
   };
 }
+
+/** 短视频首帧：对照提示词和 3D 摆位看图，只报明显看得出的不一致 */
+export async function reviewShortFrame(o: { image: Buffer; productName: string; productFacts: string; framePrompt: string; description: string; facts3d: string; holiday: string; noBox: boolean }): Promise<VisionReview> {
+  const name = o.productName || "product";
+  const prompt = [
+    "You check a generated first frame of a TikTok product video against what it was supposed to show. Only report real, clearly visible problems; no style opinions.",
+    `Product: ${name} (${o.productFacts}).`,
+    `Image prompt that was used: ${o.framePrompt}`,
+    `Shot description (Chinese): ${o.description}`,
+    `3D blocking (the truth for people, poses, product direction and camera): ${o.facts3d}`,
+    `Holiday: ${o.holiday}.`,
+    "Checklist:",
+    "1. People: the number of people and who they are (adult/child, boy/girl) match the 3D blocking; nobody extra, nobody missing, nobody duplicated.",
+    `2. Poses: anyone riding sits on the saddle with both hands on the handlebar grips${o.facts3d.includes("pedal") ? " and both feet on the pedals" : ""}; standing, crouching or pointing people do what the blocking says.`,
+    `3. The ${name} faces the way the blocking says (front toward camera / three-quarter / side) and is plausibly sized next to the people.`,
+    `4. Exactly one ${name}, with the correct structure (count the wheels, round wheels on axles, no melted or missing parts).`,
+    o.holiday === "none" ? "5. No holiday decorations, trees, gifts, bows or holiday outfits." : `5. The holiday look (${o.holiday}) is present and does not cover the product.`,
+    `6. Must not appear: the person filming (only a hand or feet at the frame edge if the prompt says so)${o.noBox ? ", any box, packaging or wrapping" : ""}, garbled text, watermarks, extra logos.`,
+    "7. Human anatomy is correct (hands, fingers, limbs, faces).",
+    'Return JSON only: {"pass": boolean, "issues": string[]}. Each issue is ONE short sentence in Simplified Chinese naming who or what and the problem (e.g. "小孩的脚没有踩在脚踏上").',
+  ].join("\n");
+  const data = (await generate([{ text: prompt }, await jpegPart(o.image, 1536)], 120_000)) as { pass?: unknown; issues?: unknown };
+  const issues = Array.isArray(data.issues) ? data.issues.filter((x): x is string => typeof x === "string" && x.trim() !== "").map((x) => x.trim()).slice(0, 8) : [];
+  return { pass: data.pass === true && issues.length === 0, issues };
+}

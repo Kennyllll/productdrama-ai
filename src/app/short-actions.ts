@@ -6,9 +6,10 @@ import { keyFromPath, putFile, readFile, storageKey } from "@/lib/storage";
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { AiError, chatJson } from "@/lib/ai/client";
+import { getVisionKey, reviewShortFrame } from "@/lib/vision-qa";
 import { createHook, getHook } from "@/lib/hooks-repo";
 import { cleanHookValues, fillCaption, HOOK_ENTRIES } from "@/lib/hooks";
-import { buildHookLayout, DEFAULT_STAGE } from "@/lib/hook-stage";
+import { buildHookLayout, cleanHookPeople, DEFAULT_STAGE, peopleText, VIEW_LABEL, type HookPerson } from "@/lib/hook-stage";
 import { shortConceptPrompt, shortShotsPrompt } from "@/lib/ai/short-prompts";
 import { deleteRequest, estimate, getStatus, HiggsfieldError, submit, uploadFile } from "@/lib/higgsfield";
 import { assetPath, findLocalProject, getProduct, listAssets } from "@/lib/repo";
@@ -195,6 +196,7 @@ function cleanShot(s: Partial<ShortShot>, prev?: ShortShot): ShortShot {
     // 关口状态只能由关口动作改变，编辑时沿用服务器上的值
     stage: prev?.stage ?? "draft",
     issues: prev?.issues ?? [],
+    frameCheck: prev?.frameCheck,
     layout: prev?.layout ?? null,
     compFile: prev?.compFile ?? null,
     frameJobId: prev?.frameJobId ?? null,
@@ -255,7 +257,7 @@ export async function saveShortVideoAction(
 const HOOK_LIM: Record<TextField, number> = { description: 600, camera: 200, productNote: 300, framePrompt: 2000, motionPrompt: 1000 };
 
 /** 从 Hook 库写开头剧本（DeepSeek 文字调用 1 次，约 $0.01，不出图）；只返回草稿，用户点“采用”才变成开头镜头 */
-export async function draftHookAction(videoId: string, libId: string, values: Record<string, string>, entry: string): Promise<Result<{ draft: Record<TextField, string>; caption: string; notes: string[] }>> {
+export async function draftHookAction(videoId: string, libId: string, values: Record<string, string>, entry: string): Promise<Result<{ draft: Record<TextField, string>; caption: string; notes: string[]; people: HookPerson[]; who: string[] }>> {
   try {
     const v = load(videoId);
     const lib = getHook(libId);
@@ -264,17 +266,29 @@ export async function draftHookAction(videoId: string, libId: string, values: Re
     const en = HOOK_ENTRIES.find((x) => x.id === entry) ?? HOOK_ENTRIES.find((x) => x.id === lib.entry) ?? HOOK_ENTRIES[0];
     const first = v.shots.find((s) => !s.hook);
     const rig = rigOf(v);
-    const layout = buildHookLayout(lib.stage ?? DEFAULT_STAGE, (v.shots.find((s) => s.hook) ?? first)?.layout, rig?.gripY ?? 0.51);
+    const base = v.shots.find((s) => s.hook) ?? first;
+    const stage = lib.stage ?? DEFAULT_STAGE;
+    const cast = castOf(v.families, first?.family ?? 1);
+    const filmer = filmerId(v, base ?? {});
+    const members = cast?.members.filter((m) => m.id !== filmer) ?? [];
+    const concept = v.concepts.find((c) => c.id === v.conceptId);
+    const k = Math.max(0.5, Math.min(2, (rig?.gripY ?? 0.51) / 0.51));
     const caption = fillCaption(lib.caption, vals, getProduct(v.projectId)?.name ?? "");
     const th = videoTheme(v);
     const { data } = await chatJson({
       system:
-        'You write the opening hook shot (the first 2-4 seconds) of a North American TikTok product video. Follow the hook recipe and the filled values exactly. The hook must flow straight into the first body shot (nextShot): same location, same people and family, same product color. The holiday is given in holiday and overrides anything written in nextShot; if it is none, there are no holiday decorations, trees, gifts, bows or holiday outfits at all. The person filming holds the phone and is never visible: never describe them in framePrompt or motionPrompt. If productEntry says no box, there is no box, packaging or wrapping anywhere in the frame. Who is in frame, where they are, what they do and where the product is come only from facts3d (the 3D blocking of this hook shot): never copy people or actions from nextShot. Use only product facts from productFacts; never invent features, prices, parts or packaging. The on-screen caption is fixed and added in editing (caption): write the picture so it supports that caption, and never put text into the image. Values marked showsInPicture must be visible in the picture; the others only live in the caption. Return JSON {"description":"中文：画面里有谁、在哪、在做什么、产品怎么出场","camera":"中文：机位和景别","productNote":"中文：产品在画面里的状态","framePrompt":"English first-frame image prompt, concrete and visual, max 900 characters","motionPrompt":"English motion prompt for the clip, max 500 characters","notes":["中文提醒，最多 3 条"]}.',
+        'You write the opening hook shot (the first 2-4 seconds) of a North American TikTok product video. Follow the hook recipe and the filled values exactly. The hook must flow straight into the first body shot (nextShot): same location, same people and family, same product color. The holiday is given in holiday and overrides anything written in nextShot; if it is none, there are no holiday decorations, trees, gifts, bows or holiday outfits at all. The person filming holds the phone and is never visible: never describe them in framePrompt or motionPrompt. If productEntry says no box, there is no box, packaging or wrapping anywhere in the frame. First decide who is in frame (people), following the story (story, brief, nextShotPeople) and the hook recipe: pick only from family by memberId, never the filmer; at most 3 people; only a child can ride the product and at most one rider; return an empty list only when the story and recipe are clearly better with the product alone. presetPeople is the recipe default and only a suggestion. The program places exactly these people in 3D around the product (side = left, right or behind the product) with exactly these poses, and the camera comes from camera3d: describe exactly these people doing exactly these poses and actions, and nobody else. Use only product facts from productFacts; never invent features, prices, parts or packaging. The on-screen caption is fixed and added in editing (caption): write the picture so it supports that caption, and never put text into the image. Values marked showsInPicture must be visible in the picture; the others only live in the caption. Return JSON {"people":[{"memberId":"family 里的 memberId","pose":"stand|crouch|ride|point|reach|hold","onProduct":false,"side":"left|right|behind","action":"中文：这个人在做什么，一句话","actionEn":"the same action in English"}],"description":"中文：画面里有谁、在哪、在做什么、产品怎么出场","camera":"中文：机位和景别","productNote":"中文：产品在画面里的状态","framePrompt":"English first-frame image prompt, concrete and visual, max 900 characters","motionPrompt":"English motion prompt for the clip, max 500 characters","notes":["中文提醒，最多 3 条"]}.',
       user: JSON.stringify({
         hook: { name: lib.name, recipe: lib.about, productEntry: en.en, seconds: lib.seconds },
         values: lib.fields.map((f) => ({ label: f.label, value: vals[f.key], showsInPicture: f.visual })),
         caption,
-        facts3d: [layoutText(layout), blockingText(layout, rig)].join("\n"),
+        camera3d: { distanceM: Math.round(stage.dist * k * 10) / 10, heightM: stage.camH, lensMm: stage.lens, product: VIEW_LABEL[stage.view] },
+        story: concept ? { title: concept.title, people: concept.people, setting: concept.setting, why: concept.why } : null,
+        brief: v.brief || "",
+        family: members.map((m) => ({ memberId: m.id, name: m.name, role: m.role, age: m.age })),
+        filmer: filmer ? (cast?.members.find((m) => m.id === filmer)?.name ?? filmer) : "unnamed",
+        presetPeople: stage.people,
+        nextShotPeople: first?.layout ? figuresOf(first.layout).map((f) => ({ memberId: f.memberId, kind: f.kind, pose: f.pose, onProduct: f.onProduct, action: f.action })) : [],
         holiday: th.theme && th.theme !== "none" ? th.themeText || th.theme : "none",
         productFacts: productText(v.projectId),
         nextShot: first ? { beat: first.beat, ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, first[k]])) } : null,
@@ -287,14 +301,15 @@ export async function draftHookAction(videoId: string, libId: string, values: Re
     const draft = Object.fromEntries(TEXT_FIELDS.map((k) => [k, typeof d[k] === "string" ? String(d[k]).trim().replace(/^English:\s*/i, "").slice(0, HOOK_LIM[k]) : ""])) as Record<TextField, string>;
     if (!draft.description || !draft.framePrompt) throw new AiError("AI 没有写出剧本，请重试");
     const notes = Array.isArray(d.notes) ? d.notes.filter((n): n is string => typeof n === "string" && !!n.trim()).slice(0, 3) : [];
-    return { result: { draft, caption, notes } };
+    const { people, dropped } = cleanHookPeople(d.people, cast?.members, filmer);
+    return { result: { draft, caption, notes: [...dropped, ...notes].slice(0, 5), people, who: peopleText(people, cast?.members) } };
   } catch (e) {
     return fail(e);
   }
 }
 
 /** 采用 Hook 剧本：新建开头（或重写 replaceId 这个开头）。3D 摆位先抄第一个开头，家庭和场地跟正文第一镜（免费） */
-export async function adoptHookAction(videoId: string, libId: string, values: Record<string, string>, entry: string, draft: Partial<Record<TextField, string>>, replaceId?: string): Promise<Result<StudioState & { shotId: string }>> {
+export async function adoptHookAction(videoId: string, libId: string, values: Record<string, string>, entry: string, draft: Partial<Record<TextField, string>>, replaceId?: string, people?: unknown): Promise<Result<StudioState & { shotId: string }>> {
   try {
     const v = load(videoId);
     const lib = getHook(libId);
@@ -330,7 +345,9 @@ export async function adoptHookAction(videoId: string, libId: string, values: Re
       s.special = base?.special;
       v.shots = [...hooks, s, ...body];
     } else v.shots = v.shots.map((x) => (x.id === old.id ? s : x));
-    s.layout = buildHookLayout(lib.stage ?? DEFAULT_STAGE, (old ?? base)?.layout, rigOf(v)?.gripY ?? 0.51);
+    const stage = lib.stage ?? DEFAULT_STAGE;
+    const crew = people === undefined ? stage.people : cleanHookPeople(people, castOf(v.families, s.family ?? 1)?.members, filmerId(v, s)).people;
+    s.layout = buildHookLayout({ ...stage, people: crew }, (old ?? base)?.layout, rigOf(v)?.gripY ?? 0.51);
     s.compFile = null;
     bindScenes(v);
     s.textBasis = basisOf(s, placeOf(v, s));
@@ -720,7 +737,7 @@ export async function issueScopeAction(videoId: string, shotId: string, issueId:
   }
 }
 
-export type StageAction = "confirm_comp" | "reopen_comp" | "frame_ok" | "frame_reject" | "accept" | "rework";
+export type StageAction = "confirm_comp" | "reopen_comp" | "frame_ok" | "frame_ok_force" | "frame_reject" | "accept" | "rework";
 
 /** 关口动作：只有这里能改变镜头的关口状态 */
 export async function shotStageAction(videoId: string, shotId: string, action: StageAction, note = "", issueScope: "shot" | "video" = "shot"): Promise<Result<StudioState>> {
@@ -748,9 +765,13 @@ export async function shotStageAction(videoId: string, shotId: string, action: S
         s.stage = "draft";
         break;
       case "frame_ok":
+      case "frame_ok_force": {
         need(s.stage === "frame_ready" && !!s.frameJobId, "还没有待检查的首帧");
+        const fc = s.frameCheck?.jobId === s.frameJobId ? s.frameCheck : undefined;
+        need(action === "frame_ok_force" || !fc || fc.pass || !!fc.failed, `看图检查没过：${fc?.issues.join("；")}。确认没问题请点“我看过了，仍然通过”`);
         s.stage = "frame_ok";
         break;
+      }
       case "frame_reject":
         need(s.stage === "frame_ready" || s.stage === "frame_ok", "当前没有可退回的首帧");
         s.stage = "comp_ok";
@@ -882,6 +903,38 @@ function refPlan(v: ShortVideo, s: ShortShot): RefPart[] {
 const FRAME_PROMPT_MAX = 4900;
 
 /** 产品的车把 / 座椅接触点：模型页保存的为准；没保存时和 3D 页一样先用 KB002 的（3D 页会按模型尺寸估，服务器这边拿不到尺寸） */
+/** 首帧出图后自动看图：对照提示词和 3D；没 Key 或出错只记下来，不拦生成 */
+async function runFrameCheck(videoId: string, shotId: string, jobId: string, bytes: Buffer) {
+  const at = new Date().toISOString();
+  const v0 = getShortVideo(videoId);
+  const s0 = v0?.shots.find((x) => x.id === shotId);
+  if (!v0 || !s0) return;
+  let res: NonNullable<ShortShot["frameCheck"]>;
+  if (!getVisionKey()) res = { jobId, pass: false, failed: true, issues: ["没做：设置里还没填 Gemini Key"], at };
+  else
+    try {
+      const th = videoTheme(v0);
+      const r = await reviewShortFrame({
+        image: bytes,
+        productName: getProduct(v0.projectId)?.name ?? "",
+        productFacts: productText(v0.projectId),
+        framePrompt: s0.framePrompt,
+        description: s0.description,
+        facts3d: s0.layout ? [layoutText(s0.layout), blockingText(s0.layout, rigOf(v0))].join("\n") : "没有 3D 摆位",
+        holiday: th.theme && th.theme !== "none" ? th.themeText || th.theme : "none",
+        noBox: s0.hook ? s0.hook.entry !== "unbox" : !/\b(box|packag|unbox)/i.test(s0.framePrompt),
+      });
+      res = { jobId, pass: r.pass, issues: r.issues, at };
+    } catch (e) {
+      res = { jobId, pass: false, failed: true, issues: [`没做成：${e instanceof Error ? e.message : "未知错误"}`], at };
+    }
+  const v = getShortVideo(videoId);
+  const s = v?.shots.find((x) => x.id === shotId);
+  if (!v || !s || s.frameJobId !== jobId) return;
+  s.frameCheck = res;
+  saveShortVideo(v);
+}
+
 function rigOf(v: ShortVideo) {
   const m = getProductModel(v.projectId);
   return (m && getRig(m.id)) || KB002_RIG;
@@ -1436,6 +1489,7 @@ async function drive(job: JobRecord): Promise<void> {
         if (job.kind === "frame") {
           s.frameJobId = job.id;
           s.stage = "frame_ready";
+          s.frameCheck = undefined;
         } else {
           s.videoJobId = job.id;
           s.stage = "video_ready";
@@ -1451,6 +1505,7 @@ async function drive(job: JobRecord): Promise<void> {
         });
       }
       await deleteRequest(requestId).catch(() => undefined);
+      if (v && s && job.kind === "frame") await runFrameCheck(v.id, s.id, job.id, bytes);
       return;
     }
     if (r.status === "failed" || r.status === "nsfw" || r.status === "canceled") {

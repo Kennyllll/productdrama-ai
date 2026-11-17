@@ -4,7 +4,7 @@ import { askConfirm, askPrompt } from "@/components/ConfirmHost";
 import { useState, useTransition } from "react";
 import { adoptHookAction, deleteHookShotAction, draftHookAction, saveHookAsLibAction, setHookValuesAction } from "@/app/short-actions";
 import { cleanHookValues, HOOK_ENTRIES, type HookDef } from "@/lib/hooks";
-import { VIEW_LABEL } from "@/lib/hook-stage";
+import { VIEW_LABEL, type HookPerson } from "@/lib/hook-stage";
 import type { ShortShot } from "@/lib/shorts";
 
 type Done = (r: Awaited<ReturnType<typeof deleteHookShotAction>>, ok?: string) => void;
@@ -19,7 +19,7 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
   const def = lib.find((x) => x.id === libId);
   const [values, setValues] = useState<Record<string, string>>(h?.values ?? (def ? cleanHookValues(def, undefined) : {}));
   const [entry, setEntry] = useState(h?.entry ?? def?.entry ?? "assembled");
-  const [draft, setDraft] = useState<{ draft: Record<string, string>; caption: string; notes: string[] } | null>(null);
+  const [draft, setDraft] = useState<{ draft: Record<string, string>; caption: string; notes: string[]; people: HookPerson[]; who: string[] } | null>(null);
   const [msg, setMsg] = useState("");
   const [pending, start] = useTransition();
   const fields = def?.fields ?? Object.keys(values).map((k) => ({ key: k, label: k, example: "", visual: Boolean(h?.visualKeys?.includes(k)) }));
@@ -44,7 +44,7 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
   const adopt = () =>
     start(async () => {
       if (!draft) return;
-      const r = await adoptHookAction(videoId, libId, values, entry, draft.draft, shot?.id ?? targetId);
+      const r = await adoptHookAction(videoId, libId, values, entry, draft.draft, shot?.id ?? targetId, draft.people);
       onDone(r, "已换好开头：正在打开 3D，按 Hook 摆好的构图会自动保存");
       if (!r.error && r.result) window.location.href = setHref(r.result.shotId);
     });
@@ -94,7 +94,7 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
       {def ? <p className="text-neutral-500">{def.about}</p> : null}
       {def?.stage ? (
         <p className="text-sky-200">
-          3D 会自动摆成：产品{VIEW_LABEL[def.stage.view]}，{def.stage.people.length ? def.stage.people.map((p) => (p.onProduct ? "小孩骑在车上" : `${p.kind === "adult" ? "大人" : "小孩"}在车${p.side === "left" ? "左边" : p.side === "behind" ? "后面" : "右边"}`)).join("、") : "不放人，只拍产品"}；摄影机约 {def.stage.dist} 米、高 {def.stage.camH} 米。采用后会打开 3D 自动保存构图，你只要微调。
+          3D 会自动摆成：产品{VIEW_LABEL[def.stage.view]}；摄影机约 {def.stage.dist} 米、高 {def.stage.camH} 米。画面里放谁、做什么，生成剧本时 AI 按这条视频的剧情定。采用后会打开 3D 自动保存构图，你只要微调。
         </p>
       ) : null}
       <div className="grid gap-2 md:grid-cols-2">
@@ -129,6 +129,7 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
       {draft ? (
         <div className="space-y-1 rounded border border-white/10 p-2">
           <p className="font-medium text-white">剧本草稿（还没改视频）</p>
+          <p>出镜：{draft.who.length ? draft.who.join("；") : "不放人，只拍产品"}（采用后 3D 按这个摆）</p>
           <p>画面：{draft.draft.description}</p>
           <p>机位：{draft.draft.camera}</p>
           <p>产品：{draft.draft.productNote}</p>

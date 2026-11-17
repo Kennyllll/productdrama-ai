@@ -1358,11 +1358,27 @@ export function ShortStudio({
                           对照 3D 构图：机位、产品朝向、大小一致才算通过
                         </span>
                       ) : null}
-                      {gate(
-                        "frame_ok",
-                        "首帧通过",
-                        s.stage === "frame_ready",
-                      )}
+                      {(() => {
+                        const fc = s.frameCheck?.jobId === s.frameJobId ? s.frameCheck : undefined;
+                        const bad = !!fc && !fc.pass && !fc.failed;
+                        return (
+                          <>
+                            {gate(bad ? "frame_ok_force" : "frame_ok", bad ? "我看过了，仍然通过" : "首帧通过", s.stage === "frame_ready")}
+                            {fc && (s.stage === "frame_ready" || s.stage === "frame_ok") ? (
+                              fc.pass ? (
+                                <span className="self-center text-xs text-emerald-300">看图检查通过：图和提示词、3D 对得上</span>
+                              ) : (
+                                <div className={`w-full rounded border p-2 text-xs ${fc.failed ? "border-amber-400/40 text-amber-200" : "border-rose-400/50 bg-rose-400/5 text-rose-200"}`}>
+                                  <p className="font-medium">{fc.failed ? "看图检查" : `看图检查发现 ${fc.issues.length} 个问题，先看图再决定`}</p>
+                                  {fc.issues.map((x, i) => (
+                                    <p key={i}>· {x}</p>
+                                  ))}
+                                </div>
+                              )
+                            ) : null}
+                          </>
+                        );
+                      })()}
                       {gate(
                         "frame_reject",
                         "首帧不行",
@@ -1817,6 +1833,9 @@ function Approval({
                 : `$${q.unitUsd}/张`,
             )}
             {row("本次费用", usd(q.costUsd), "text-amber-300 font-semibold")}
+            {pending.kind === "frame"
+              ? row("看图检查", "出图后自动看 1 次：对照提示词和 3D（Gemini，约 $0.01 以内，不算在上面）")
+              : null}
             {row("这是本镜第几次", `第 ${q.attempt} 次`)}
             {row("本镜累计（含本次）", usd(q.shotSpent + q.costUsd))}
             {row("本条视频累计（含本次）", usd(q.videoSpent + q.costUsd))}
