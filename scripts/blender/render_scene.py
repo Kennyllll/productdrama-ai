@@ -63,7 +63,8 @@ apply(Mr @ Mz); grips = [Mr @ Mz @ p for p in grips]
 V = np.concatenate([v for _, v in verts()])
 zmin = V[:, 2].min()
 P = mathutils.Vector((*g("place"), 0))
-T = mathutils.Matrix.Translation(P + n * 0.6 - mathutils.Vector((0, 0, zmin)))
+# lift：整车离地（腾空、摔倒中途）
+T = mathutils.Matrix.Translation(P + n * 0.6 - mathutils.Vector((0, 0, zmin - g("lift", 0))))
 apply(T); grips = [T @ p for p in grips]
 # 平移到最靠墙的顶点刚好贴墙（留 3 mm）
 best = None
@@ -74,9 +75,30 @@ for o, v in verts():
 shift = 0 if g("free") else -(best[0] - 0.003)
 T2 = mathutils.Matrix.Translation(n * shift); apply(T2); grips = [T2 @ p for p in grips]
 contact = mathutils.Vector(best[2]) + n * shift
+print("GRIPS_W", [[round(v, 3) for v in p] for p in grips])
 
 # 3D 人偶（MPFB / MakeHuman CC0）：IK 把手腕对到握把、脚对到地面、臀部对到座椅；AI 只照着它画人的外观
 MQ = g("mannequin"); mq = []
+# 独立站立的人偶（不握车）：定位置、朝向和转头，用来锁近景的视线方向
+FG = g("figure")
+if FG:
+    with bpy.data.libraries.load(FG["blend"]) as (src, dst): dst.objects = list(src.objects)
+    for o in dst.objects: bpy.context.collection.objects.link(o)
+    mq += [o for o in dst.objects if o.type == "MESH"]
+    frig = next(o for o in dst.objects if o.type == "ARMATURE"); fpb = frig.pose.bones
+    rx, ry = FG.get("tilt_deg", [0, 0])
+    frig.location = FG["at"]; frig.rotation_euler = (math.radians(rx), math.radians(ry), math.radians(FG.get("yaw_deg", 0)))
+    for b_, k_ in (("neck02", 0.4), ("head", 0.6)):
+        if b_ in fpb:
+            fpb[b_].rotation_mode = "XYZ"
+            fpb[b_].rotation_euler.x = math.radians(FG.get("head_pitch_deg", 0)) * k_
+            fpb[b_].rotation_euler.y = math.radians(FG.get("head_yaw_deg", 0)) * k_
+    # 自由姿势（摔倒、坐起等）：按骨骼名给局部旋转角度
+    for b_, r_ in FG.get("bones", {}).items():
+        fpb[b_].rotation_mode = "XYZ"; fpb[b_].rotation_euler = [math.radians(a_) for a_ in r_]
+    bpy.context.view_layer.update()
+    for b_ in ("head", "root", "foot.L", "foot.R", "lowerarm02.L", "lowerarm02.R"):
+        if b_ in fpb: print("FIG", b_, [round(v, 2) for v in frig.matrix_world @ fpb[b_].tail])
 if MQ:
     with bpy.data.libraries.load(MQ["blend"]) as (src, dst): dst.objects = list(src.objects)
     for o in dst.objects: bpy.context.collection.objects.link(o)
@@ -107,6 +129,10 @@ if MQ:
         hip0 = (W("upperleg01.L") + W("upperleg01.R")) / 2; ank0 = W("foot.L").z
         hip = st - bf * MQ.get("seat_back", 0.02) + V3((0, 0, MQ.get("hip_above_seat", 0.07)))
         mrig.location = hip - hip0; bpy.context.view_layer.update()
+        # body_roll_deg：人跟着车一起侧倾（绕车头方向、过臀部）
+        if MQ.get("body_roll_deg"):
+            mrig.matrix_world = mathutils.Matrix.Translation(hip) @ mathutils.Matrix.Rotation(math.radians(MQ["body_roll_deg"]), 4, bf) @ mathutils.Matrix.Translation(-hip) @ mrig.matrix_world
+            bpy.context.view_layer.update()
         neck0 = W("neck01").dot(fwd); lean = math.radians(MQ.get("lean_deg", 20)) / 3
         for b_ in ("spine01", "spine02", "spine03"): pb[b_].rotation_mode = "XYZ"; pb[b_].rotation_euler.x = lean
         bpy.context.view_layer.update()
@@ -115,7 +141,7 @@ if MQ:
             bpy.context.view_layer.update()
         targets = {}
         for s_, sg in (("L", 1), ("R", -1)):
-            ft = V3((hip.x, hip.y, ank0)) + left * sg * MQ.get("stance", 0.13) + bf * MQ.get("foot_fwd", 0.1)
+            ft = V3((hip.x, hip.y, ank0 + MQ.get(f"foot_lift_{s_}", MQ.get("foot_lift", 0)))) + left * sg * MQ.get(f"stance_{s_}", MQ.get("stance", 0.13)) + bf * MQ.get("foot_fwd", 0.1)
             ik(f"lowerleg02.{s_}", ft, 4, pole=hip + fwd * 0.6 + left * sg * 0.15, pole_deg=MQ.get("knee_pole_deg", -90)); targets[f"lowerleg02.{s_}"] = ft
     else:
         # 站姿：站在车把后面、紧贴车架外侧（离墙那侧）
@@ -275,7 +301,12 @@ if MQ:
                         if b_ and f > 1: b_.lock_ik_y = True; b_.lock_ik_z = True
                     ik(b3, tgt, 3); targets[b3] = tgt
             bpy.context.view_layer.update()
-        print("MQ_PALM_GAP_MM", {s_: round((W(f"wrist.{s_}").lerp(W(f"finger3-1.{s_}"), fr) - gpa[s_] - V3((0, 0, lift))).length * 1000) for s_ in ek})
+        gaps_ = {s_: round((W(f"wrist.{s_}").lerp(W(f"finger3-1.{s_}"), fr) - gpa[s_] - V3((0, 0, lift))).length * 1000) for s_ in ek}
+        print("MQ_PALM_GAP_MM", gaps_)
+        print("MQ_GRIPS", {s_: [round(v, 3) for v in gpa[s_]] for s_ in ek})
+        # 手没握到车把 = 车看起来自己立着，直接报错不出图
+        if max(gaps_.values()) > MQ.get("max_palm_gap_mm", 10):
+            raise RuntimeError(f"CONTACT_FAIL palm gap {gaps_} mm > {MQ.get('max_palm_gap_mm', 10)} mm")
     print("MQ_REACH_MM", {k: round((W(k, True) - t).length * 1000) for k, t in targets.items()})
     # 掌心朝向：弯曲的指尖在掌心一侧；z 越接近 -1 越是掌心朝下
     palm = {}
@@ -285,6 +316,7 @@ if MQ:
         tip = sum((W(f"finger{f}-3.{s_}", True) for f in range(2, 6)), V3()) / 4 - W(f"wrist.{s_}", True)
         pv = (tip - hy * tip.dot(hy)).normalized(); palm[s_] = round(pv.z, 2)
     print("MQ_PALM_Z", palm)
+    if "head" in pb: print("MQ_HEAD", [round(v, 3) for v in W("head")], [round(v, 3) for v in W("head", True)])
     if MQ.get("pose_only"): raise SystemExit(0)
     # 穿模检查：人偶顶点有多少落在车的实体里面（按身体部位统计）
     from mathutils.bvhtree import BVHTree
@@ -341,7 +373,7 @@ if ST:
         bpy.ops.mesh.primitive_cube_add(location=[(a + b) / 2 for a, b in zip(lo, hi)])
         ob = bpy.context.active_object; ob.name = name; ob.scale = [(b - a) / 2 for a, b in zip(lo, hi)]
         ob.data.materials.append(m); setobjs.append(ob); return ob
-    D = A.y; Wd = ST.get("width", 6.0); Hc = ST.get("ceiling", 2.7); Dp = ST.get("depth", 6.5); hx = Wd / 2
+    D = ST.get("back_y", A.y); Wd = ST.get("width", 6.0); Hc = ST.get("ceiling", 2.7); Dp = ST.get("depth", 6.5); hx = Wd / 2
     drywall = mat("drywall", ST.get("wall_rgb", (0.62, 0.58, 0.52)), 0.85, 0.04, 30)
     concrete = mat("concrete", (0.42, 0.40, 0.37), 0.7, 0.18, 6)
     stem = mat("stem", (0.48, 0.46, 0.42), 0.9, 0.22, 12)
@@ -353,10 +385,20 @@ if ST:
     box("right", (hx, D - Dp, 0), (hx + 0.12, D + 0.12, Hc), drywall)
     # 左墙：中间开一个车库门洞（晨光从这里进来）
     o0, o1, oh = D - ST.get("open_from", 4.8), D - ST.get("open_to", 0.9), ST.get("open_h", 2.1)
-    box("left_a", (-hx - 0.12, D - Dp, 0), (-hx, o0, Hc), drywall)
-    box("left_b", (-hx - 0.12, o1, 0), (-hx, D + 0.12, Hc), drywall)
-    box("left_top", (-hx - 0.12, o0, oh), (-hx, o1, Hc), drywall)
-    box("jamb", (-hx - 0.02, o1 - 0.1, 0), (-hx + 0.04, o1, oh), trim)
+    FD = ST.get("front_door")
+    if FD:
+        # 车库门开在前墙（正对后墙），左墙是实墙；给车库内朝外的反打机位用
+        fy, f0, f1 = D - Dp, FD.get("x0", -1.4), FD.get("x1", 1.6)
+        box("left_s", (-hx - 0.12, D - Dp, 0), (-hx, D + 0.12, Hc), drywall)
+        box("front_a", (-hx - 0.12, fy - 0.12, 0), (f0, fy, Hc), drywall)
+        box("front_b", (f1, fy - 0.12, 0), (hx + 0.12, fy, Hc), drywall)
+        box("front_top", (f0, fy - 0.12, FD.get("h", oh)), (f1, fy, Hc), drywall)
+        box("door_panel", (f0, fy - 0.05, FD.get("h", oh)), (f1, fy + 0.6, FD.get("h", oh) + 0.04), trim)
+    else:
+        box("left_a", (-hx - 0.12, D - Dp, 0), (-hx, o0, Hc), drywall)
+        box("left_b", (-hx - 0.12, o1, 0), (-hx, D + 0.12, Hc), drywall)
+        box("left_top", (-hx - 0.12, o0, oh), (-hx, o1, Hc), drywall)
+        box("jamb", (-hx - 0.02, o1 - 0.1, 0), (-hx + 0.04, o1, oh), trim)
     # 透视参照：石膏板接缝（每 1.22 m 一条竖缝）+ 后墙上的金属架。斜看时墙面只剩一片光墙，AI 会按熟悉构图重画、改掉机位
     seam = mat("seam", (0.5, 0.47, 0.42), 0.9)
     for sx in ST.get("seams", [-2.44, -1.22, 1.22, 2.44]):
@@ -384,8 +426,21 @@ if ST:
     box("drive", (-hx - 12, D - Dp - 3, -0.1), (-hx - 1, D + 6, -0.02), concrete)
     lawn = mat("lawn", (0.18, 0.26, 0.08), 0.9, 0.3, 3)
     box("lawn", (-hx - 30, D - Dp - 10, -0.12), (-hx - 12, D + 20, -0.03), lawn)
+    if FD:
+        box("drive_f", (-hx, D - Dp - 14, -0.1), (hx, D - Dp, -0.02), concrete)
+        box("lawn_f", (-hx - 30, D - Dp - 30, -0.12), (hx + 30, D - Dp - 0.5, -0.03), lawn)
+
+# 构图代理道具（摩托、人物剪影等）：{"lo":[x,y,z],"hi":[x,y,z],"rgb":[r,g,b]}，只定位置和大小；有没有 set 都生效
+for k, p_ in enumerate(g("props", [])):
+    bpy.ops.mesh.primitive_cube_add(location=[(a + b) / 2 for a, b in zip(p_["lo"], p_["hi"])])
+    po_ = bpy.context.active_object; po_.name = f"prop{k}"; po_.scale = [(b - a) / 2 for a, b in zip(p_["lo"], p_["hi"])]
+    pm_ = bpy.data.materials.new(f"prop{k}"); pm_.use_nodes = True
+    pm_.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (*p_.get("rgb", (0.3, 0.3, 0.3)), 1)
+    pm_.node_tree.nodes["Principled BSDF"].inputs["Roughness"].default_value = 0.6
+    po_.data.materials.append(pm_); setobjs.append(po_)
 
 cam = bpy.data.cameras.new("cam"); cam.lens = g("lens_mm", 35); cam.sensor_width = 36; cam.sensor_fit = "HORIZONTAL"
+cam.clip_start = g("clip_start", 0.1)  # POV: camera inside the rider's head clips the head away
 co = bpy.data.objects.new("cam", cam); bpy.context.collection.objects.link(co)
 co.location = (0, 0, g("cam_height", 0.8)); co.rotation_euler = (math.radians(90 - g("pitch_deg", 5)), 0, 0)
 # 斜 45° 左右看墙（cam_pos + look_at）：只有沿墙方向斜看，车向墙的侧倾和车把碰墙才看得出来
@@ -429,7 +484,14 @@ s = bpy.context.scene
 s.render.engine = "CYCLES"; s.cycles.samples = g("samples", 128); s.cycles.device = "CPU"; s.cycles.use_denoising = True
 s.view_settings.view_transform = "AgX"; s.view_settings.exposure = g("exposure", 0.0)
 s.render.resolution_x = g("width", 1600); s.render.resolution_y = g("height", 900)
-s.render.film_transparent = not ST
+# opaque_bg：没有布景时也渲成不透明（地面实体、墙隐藏），给构图静帧用
+OB = g("opaque_bg")
+if OB and not ST:
+    floor.is_shadow_catcher = False; wallo.hide_render = True
+    floor.data.materials.append(mat_ := bpy.data.materials.new("ground")); mat_.use_nodes = True
+    mat_.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (*OB.get("ground_rgb", (0.35, 0.34, 0.32)), 1)
+    bg.inputs[0].default_value = (*OB.get("sky_rgb", (0.75, 0.78, 0.82)), 1); bg.inputs[1].default_value = OB.get("sky_strength", 1.0)
+s.render.film_transparent = not ST and not OB
 s.render.image_settings.file_format = "PNG"; s.render.image_settings.color_mode = "RGBA"; s.render.image_settings.color_depth = "16"
 
 # 动画：车和人偶整体往前滑，轮子按滑行距离滚动（不打滑），脚抬离地面，相机慢慢推近并跟着车

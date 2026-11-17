@@ -77,7 +77,7 @@ async function hf(pathname: string, opts: { method?: string; body?: unknown; ide
   if (!res.ok) {
     const d = data as { detail?: unknown; message?: unknown } | null;
     const detail = typeof d?.detail === "string" ? d.detail : typeof d?.message === "string" ? d.message : "";
-    throw new HiggsfieldError(`${STATUS_MESSAGES[res.status] ?? `Higgsfield 返回错误（HTTP ${res.status}）`}${detail ? `：${detail.slice(0, 200)}` : ""}`, res.status);
+    throw new HiggsfieldError(`${STATUS_MESSAGES[res.status] ?? `Higgsfield 返回错误（HTTP ${res.status}）`}${detail ? `：${detail.length > 300 ? `${detail.slice(0, 60)}…${detail.slice(-240)}` : detail}` : ""}`, res.status);
   }
   return data;
 }
@@ -99,8 +99,9 @@ export async function estimate(endpoint: string, input: Record<string, unknown>)
   return { usd: Number(r?.usd ?? NaN), description: typeof r?.pricing_description === "string" ? r.pricing_description : "" };
 }
 
-export function submit(endpoint: string, input: Record<string, unknown>): Promise<HfRequest> {
-  return hf(`/${endpoint}`, { method: "POST", body: input, idempotencyKey: randomUUID() }) as Promise<HfRequest>;
+/** idempotencyKey：同一个键重复提交不会重复扣费（断线重连时用原来的键） */
+export function submit(endpoint: string, input: Record<string, unknown>, idempotencyKey: string = randomUUID()): Promise<HfRequest> {
+  return hf(`/${endpoint}`, { method: "POST", body: input, idempotencyKey }) as Promise<HfRequest>;
 }
 
 export function getStatus(requestId: string): Promise<HfRequest> {

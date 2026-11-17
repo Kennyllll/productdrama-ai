@@ -170,6 +170,11 @@ export default async function ShotsPage({ params, searchParams }: { params: Prom
                 </div>
               ) : null}
 
+              {files.length ? (
+              <details className="mt-4">
+                <summary className="cursor-pointer select-none text-xs text-neutral-400">
+                  素材和版本（{files.length}）
+                </summary>
               {KIND_ORDER.map((k) => {
                 const fs = files.filter((f) => f.kind === k).sort((a, b) => (b.status === "final" ? 1 : 0) - (a.status === "final" ? 1 : 0));
                 if (!fs.length) return null;
@@ -182,13 +187,15 @@ export default async function ShotsPage({ params, searchParams }: { params: Prom
                   </div>
                 );
               })}
+              </details>
+              ) : null}
 
               {c.prompts.length ? (
                 <details className="mt-3">
                   <summary className="cursor-pointer text-xs text-neutral-400">提示词（{c.prompts.length}）</summary>
                   <div className="mt-2 space-y-2">
-                    {c.prompts.map((p) => (
-                      <div key={p.label}>
+                    {c.prompts.map((p, pi) => (
+                      <div key={`${pi}-${p.label}`}>
                         <p className="text-[11px] text-neutral-500">{p.label}</p>
                         <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-black/40 p-2 text-xs text-neutral-300">{p.text}</pre>
                       </div>

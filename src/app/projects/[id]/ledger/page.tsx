@@ -6,14 +6,23 @@ import { findLocalProject } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
 
-const KIND: Record<string, string> = { first_frame: "首帧", video: "视频", video_edit: "视频编辑", sound: "声音" };
+const KIND: Record<string, string> = { first_frame: "首帧", video: "视频", video_edit: "视频编辑", sound: "声音", model3d: "3D 建模" };
 const usd = (n: number) => `$${n.toFixed(2)}`;
 const sum = (xs: LedgerEntry[]) => xs.reduce((s, x) => s + x.usd, 0);
 
-export default async function LedgerPage({ params }: { params: Promise<{ id: string }> }) {
+const FILTERS = [
+  ["all", "全部"],
+  ["shorts", "短视频"],
+  ["long", "长视频"],
+] as const;
+
+export default async function LedgerPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ f?: string }> }) {
   const { id } = await params;
+  const { f: fRaw } = await searchParams;
   if (!findLocalProject(id)) notFound();
-  const all = listLedger(id);
+  const f = fRaw === "shorts" || fRaw === "long" ? fRaw : "all";
+  const every = listLedger(id);
+  const all = every.filter((l) => (f === "shorts" ? l.episode === 0 && l.kind !== "usage_day" : f === "long" ? l.episode !== 0 || l.kind === "usage_day" : true));
   const jobs = all.filter((l) => l.kind !== "usage_day");
   const usage = all.filter((l) => l.kind === "usage_day");
   const used = jobs.filter((l) => l.used);
@@ -24,7 +33,14 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
 
   return (
     <>
-      <PageHeader title="费用账本" description="每个生成任务一条记录：属于哪个镜头、用的什么模型、花了多少、最后有没有用上。" />
+      <PageHeader title="费用" description="每个生成任务一条记录：属于哪个镜头、用的什么模型、花了多少、最后有没有用上。" />
+      <div className="mb-4 flex gap-1">
+        {FILTERS.map(([k, label]) => (
+          <Link key={k} href={k === "all" ? "?" : `?f=${k}`} className={`rounded-lg px-3 py-1 text-sm ${f === k ? "bg-amber-400/15 text-amber-200" : "text-neutral-400 hover:bg-white/5"}`}>
+            {label}
+          </Link>
+        ))}
+      </div>
       {jobs.length === 0 ? (
         <Card title="还没有记录">
           <p className="text-sm text-neutral-300">这个项目还没有生成任务。</p>
@@ -46,6 +62,9 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
             </Card>
           </div>
 
+          <details>
+          <summary className="cursor-pointer select-none text-sm text-neutral-400">怎么算的、每日用量</summary>
+          <div className="mt-3 space-y-6">
           <Card title="怎么算的">
             <ul className="list-inside list-disc space-y-1 text-sm text-neutral-300">
               <li>单价用 Higgsfield 估价接口的标准价：Seedance 2.5 720p 每秒 $0.2647，首帧约 $0.10 一张。时长读每个任务的输入参数，读不到按 5 秒算</li>
@@ -83,6 +102,8 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
               </table>
             </Card>
           ) : null}
+          </div>
+          </details>
 
           <Card title="按镜头">
             <table className="w-full text-sm">
@@ -128,7 +149,9 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
             </table>
           </Card>
 
-          <Card title={`全部任务（${jobs.length}）`}>
+          <details>
+          <summary className="cursor-pointer select-none text-sm text-neutral-400">全部任务明细（{jobs.length}）</summary>
+          <Card className="mt-3">
             <div className="max-h-[480px] overflow-y-auto">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-neutral-900 text-left text-xs text-neutral-500">
@@ -158,6 +181,7 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
               </table>
             </div>
           </Card>
+          </details>
         </div>
       )}
     </>

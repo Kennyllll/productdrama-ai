@@ -1,0 +1,1146 @@
+"use server";
+
+import fs from "node:fs";
+import { productPhotos } from "@/lib/product-photos";
+import { keyFromPath, putFile, readFile, storageKey } from "@/lib/storage";
+import { randomUUID } from "node:crypto";
+import { revalidatePath } from "next/cache";
+import { AiError, chatJson } from "@/lib/ai/client";
+import { shortConceptPrompt, shortShotsPrompt } from "@/lib/ai/short-prompts";
+import { deleteRequest, estimate, getStatus, HiggsfieldError, submit, uploadFile } from "@/lib/higgsfield";
+import { assetPath, findLocalProject, getProduct, listAssets } from "@/lib/repo";
+import {
+  findTemplate,
+  FRAME_MODEL,
+  FRAME_USD_FALLBACK,
+  paramsKey,
+  quoteJob,
+  VIDEO_MIN_SEC,
+  VIDEO_MODEL,
+  VIDEO_USD_PER_SEC,
+  type GenJob,
+  type JobKind,
+  type Quote,
+  type ShortConcept,
+  type ShortShot,
+  type ShortVideo,
+  type VideoResolution,
+  operatorPrompt,
+  waitingFor,
+  type ShotHook,
+} from "@/lib/shorts";
+import { lastFrame, renderShort } from "@/lib/shorts-render";
+import { cleanLayout, guessRoom, layoutText, moveText, PRODUCT_REF_VIEWS } from "@/lib/shorts-set";
+import { sceneText } from "@/lib/shorts-scenes";
+import { ensureScenes, getScene, legacyShotScene, saveScene, versionOf } from "@/lib/shorts-scenes-repo";
+import { cadDir, getColor, getProductModel, modelFor, modelPath } from "@/lib/model-repo";
+import { addRule, type SetLayout } from "@/lib/production-repo";
+import { figuresOf, KB002_RIG } from "@/lib/figures";
+import { basisOf, shotChecks, shotSync, TEXT_FIELDS, type ShotSync, type TextField } from "@/lib/shorts-sync";
+import { placeOf, syncOf } from "@/lib/shorts-sync-state";
+import { opCompKey, operatorShows, opMissing, parseOp } from "@/lib/shorts-operator";
+import { blockingText, itemSight } from "@/lib/shorts-blocking";
+import path from "node:path";
+import {
+  addLedgerEntry,
+  createShortVideo,
+  deleteShortVideo,
+  getJob,
+  getShortVideo,
+  hookFinalPath,
+  finalPath,
+  insertJob,
+  jobFilePath,
+  listJobs,
+  listShortVideos,
+  saveJobOutput,
+  saveShortVideo,
+  toJobView,
+  videoDir,
+  updateJob,
+  type JobRecord,
+} from "@/lib/shorts-repo";
+import { runKey, runningOf, runs, type RunInfo } from "@/lib/shorts-runs";
+import { getRig } from "@/lib/product-rig-repo";
+import { promptConflicts } from "@/lib/shorts-conflicts";
+
+type Result<T> = { error?: string; result?: T };
+const fail = (e: unknown) => ({ error: e instanceof HiggsfieldError || e instanceof AiError || e instanceof Error ? e.message : "操作失败" });
+
+export interface StudioState {
+  /** 后台生成中（含失败原因，用户点“知道了”才清掉） */
+  running: Record<string, RunInfo>;
+  video: ShortVideo;
+  jobs: GenJob[];
+  /** 每镜文字和 3D 的同步检查 */
+  sync: Record<string, ShotSync>;
+}
+
+const state = (videoId: string): StudioState => {
+  const video = getShortVideo(videoId)!;
+  return { video, jobs: listJobs(videoId).map(toJobView), sync: syncOf(video), running: runningOf(videoId, (id) => getJob(id)?.status === "completed") };
+};
+
+function load(videoId: string): ShortVideo {
+  const v = getShortVideo(videoId);
+  if (!v || !findLocalProject(v.projectId)) throw new Error("短视频不存在");
+  return v;
+}
+
+const refresh = (v: { projectId: string; id: string }) => revalidatePath(`/projects/${v.projectId}/shorts/${v.id}`);
+
+function productText(projectId: string): string {
+  const p = getProduct(projectId);
+  if (!p) return "（产品资料为空）";
+  return [
+    `名称：${p.name || "未填写"}；品类：${p.category || "未填写"}`,
+    p.sellingPoints.length ? `卖点：${p.sellingPoints.join("；")}` : "",
+    ...p.bible.filter((f) => f.value.trim()).map((f) => `${f.label}：${f.value}`),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+const hasPackaging = (projectId: string) => listAssets(projectId).some((a) => a.kind === "packaging_photo");
+function requirePackaging(projectId: string, templateId: string) {
+  if (findTemplate(templateId).needsPackaging && !hasPackaging(projectId)) throw new Error("开箱视频要先在产品页上传真实包装照片，包装不让 AI 编");
+}
+
+export async function createShortVideoAction(projectId: string, title: string, templateId: string): Promise<Result<string>> {
+  try {
+    if (!findLocalProject(projectId)) throw new Error("项目不存在");
+    requirePackaging(projectId, templateId);
+    const t = title.trim().slice(0, 60) || `${findTemplate(templateId).label} · ${listShortVideos(projectId).length + 1}`;
+    const id = createShortVideo(projectId, t, findTemplate(templateId).id);
+    revalidatePath(`/projects/${projectId}/shorts`);
+    return { result: id };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function deleteShortVideoAction(videoId: string): Promise<Result<true>> {
+  try {
+    const v = load(videoId);
+    if (listJobs(videoId).some((j) => j.status === "submitting" || j.status === "submitted")) throw new Error("还有任务在生成中，等结束再删");
+    deleteShortVideo(videoId);
+    revalidatePath(`/projects/${v.projectId}/shorts`);
+    return { result: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+const clampNum = (n: unknown, lo: number, hi: number, d: number) => (typeof n === "number" && Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d);
+const str = (s: unknown, max: number) => (typeof s === "string" ? s.slice(0, max) : "");
+
+function cleanHook(h: unknown, useSeconds: number): ShotHook {
+  const x = (h ?? {}) as Partial<ShotHook>;
+  const cut = typeof x.cut === "number" && x.cut >= 0.3 && x.cut <= useSeconds - 0.3 ? Math.round(x.cut * 10) / 10 : undefined;
+  return { name: str(x.name, 30).trim() || "开头", cut, zoomB: cut ? Math.round(clampNum(x.zoomB, 1, 1.5, 1) * 100) / 100 : undefined };
+}
+
+function cleanShot(s: Partial<ShortShot>, prev?: ShortShot): ShortShot {
+  const genSeconds = Math.round(clampNum(s.genSeconds, VIDEO_MIN_SEC, 12, VIDEO_MIN_SEC));
+  return {
+    id: prev?.id ?? (typeof s.id === "string" && /^[a-z0-9-]{4,40}$/.test(s.id) ? s.id : randomUUID().slice(0, 8)),
+    beat: str(s.beat, 40),
+    useSeconds: Math.round(clampNum(s.useSeconds, 1, genSeconds, Math.min(3, genSeconds)) * 10) / 10,
+    trimStart: Math.round(clampNum(s.trimStart, 0, 11, 0) * 10) / 10,
+    genSeconds,
+    description: str(s.description, 600),
+    camera: str(s.camera, 200),
+    caption: str(s.caption, 160),
+    productNote: str(s.productNote, 300),
+    compositeNote: str(s.compositeNote, 300),
+    operator: str(s.operator, 200),
+    framePrompt: str(s.framePrompt, 2000),
+    motionPrompt: str(s.motionPrompt, 1000),
+    // 关口状态只能由关口动作改变，编辑时沿用服务器上的值
+    stage: prev?.stage ?? "draft",
+    issues: prev?.issues ?? [],
+    layout: prev?.layout ?? null,
+    compFile: prev?.compFile ?? null,
+    frameJobId: prev?.frameJobId ?? null,
+    videoJobId: prev?.videoJobId ?? null,
+    checkNote: str(s.checkNote, 400),
+    textBasis: prev?.textBasis,
+    // 场地、家庭、镜头特殊要求由场地地图管理，保存分镜时沿用服务器上的值
+    scene: prev?.scene,
+    family: prev?.family,
+    special: prev?.special,
+    hook: s.hook ? cleanHook(s.hook, genSeconds) : s.hook === undefined ? prev?.hook : undefined,
+  };
+}
+
+export async function saveShortVideoAction(
+  videoId: string,
+  patch: { title?: string; brief?: string; templateId?: string; resolution?: VideoResolution; conceptId?: string | null; shots?: Partial<ShortShot>[]; exportHooks?: string[]; colorId?: string | null },
+): Promise<Result<StudioState>> {
+  try {
+    const v = load(videoId);
+    if (patch.colorId !== undefined) {
+      const c = patch.colorId ? getColor(patch.colorId) : null;
+      if (patch.colorId && (!c || c.projectId !== v.projectId)) throw new Error("颜色款不存在");
+      if ((v.colorId ?? null) !== (c?.id ?? null) && v.shots.some((s) => s.stage !== "draft" || s.frameJobId)) throw new Error("已经有镜头确认或出过首帧，不能换颜色款：新建一条视频用新颜色");
+      v.colorId = c?.id ?? null;
+    }
+    if (patch.title !== undefined) v.title = patch.title.trim().slice(0, 60) || v.title;
+    if (patch.brief !== undefined) v.brief = patch.brief.slice(0, 1000);
+    if (patch.templateId !== undefined) v.templateId = findTemplate(patch.templateId).id;
+    if (patch.resolution !== undefined && patch.resolution in VIDEO_USD_PER_SEC) v.resolution = patch.resolution;
+    if (patch.conceptId !== undefined) v.conceptId = v.concepts.some((c) => c.id === patch.conceptId) ? patch.conceptId : null;
+    if (patch.shots) {
+      const jobs = listJobs(videoId);
+      const keep = new Set(patch.shots.map((s) => s.id));
+      const removed = v.shots.filter((s) => !keep.has(s.id));
+      if (removed.some((s) => jobs.some((j) => j.shotId === s.id && (j.status === "submitting" || j.status === "submitted")))) throw new Error("生成中的镜头不能删除");
+      const old = v.shots;
+      const next = patch.shots.slice(0, 16).map((s) => cleanShot(s, old.find((p) => p.id === s.id)));
+      v.shots = [...next.filter((s) => s.hook), ...next.filter((s) => !s.hook)];
+      v.hooksReady = true;
+      // 文字改过（或第一次保存）：记下这份文字对应的 3D
+      for (const s of v.shots) {
+        const p = old.find((x) => x.id === s.id);
+        if (p && s.stage === "draft" && opCompKey(parseOp(p.operator)) !== opCompKey(parseOp(s.operator))) s.compFile = null;
+        if (!p?.textBasis || TEXT_FIELDS.some((k) => p[k] !== s[k])) s.textBasis = basisOf(s, placeOf(v, s));
+      }
+    }
+    if (patch.exportHooks) v.exportHooks = patch.exportHooks.filter((id) => v.shots.some((s) => s.hook && s.id === id));
+    saveShortVideo(v);
+    refresh(v);
+    return { result: state(videoId) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 新建一个开头：文字和 3D 摆位先抄第一个开头，家庭和场地跟正文第一镜，保证接得上（免费） */
+export async function addHookAction(videoId: string): Promise<Result<StudioState>> {
+  try {
+    const v = load(videoId);
+    const hooks = v.shots.filter((s) => s.hook);
+    const body = v.shots.filter((s) => !s.hook);
+    if (v.shots.length >= 16) throw new Error("镜头太多了（最多 16 个）");
+    const base = hooks[0] ?? body[0];
+    const link = body[0] ?? base;
+    const s = cleanShot({ ...(base ?? {}), id: undefined, hook: { name: `开头 ${hooks.length + 1}` }, beat: "开头", checkNote: "" });
+    s.layout = base?.layout ?? null;
+    s.scene = link?.scene ? { ...link.scene } : undefined;
+    s.family = link?.family;
+    s.special = base?.special;
+    s.textBasis = basisOf(s, placeOf(v, s));
+    v.shots = [...hooks, s, ...body];
+    v.hooksReady = true;
+    saveShortVideo(v);
+    refresh(v);
+    return { result: state(videoId) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 用户主动调整预算；不能低于已花费 */
+export async function setBudgetAction(videoId: string, usd: number | null): Promise<Result<StudioState>> {
+  try {
+    const v = load(videoId);
+    const spent = listJobs(videoId)
+      .filter((j) => !j.isTest)
+      .reduce((s, j) => s + (j.status === "failed" ? 0 : (j.actualUsd ?? j.estUsd)), 0);
+    if (usd !== null && (!Number.isFinite(usd) || usd < spent)) throw new Error(`预算不能低于已花费 $${spent.toFixed(2)}`);
+    v.budgetUsd = usd === null ? null : Math.round(usd * 100) / 100;
+    saveShortVideo(v);
+    refresh(v);
+    return { result: state(videoId) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+const CJK = /[\u3400-\u9fff]/;
+
+/** 字幕必须是英文（面向北美）；AI 偶尔会写成中文，发现就再翻译一次 */
+async function ensureEnglish(texts: string[]): Promise<string[]> {
+  const idx = texts.map((t, i) => (CJK.test(t) ? i : -1)).filter((i) => i >= 0);
+  if (!idx.length) return texts;
+  const { data } = await chatJson({
+    system: "You write on-screen captions for North American TikTok product videos. Translate each caption into short, natural, casual American English (max 12 words). Keep any 'POV:' prefix and any quoted comment keyword. Output json: {\"captions\":[\"...\"]} in the same order.",
+    user: JSON.stringify(idx.map((i) => texts[i])),
+    maxTokens: 2000,
+    thinking: false,
+    timeoutMs: 120_000,
+  });
+  const out = (data as { captions?: unknown[] })?.captions;
+  const next = [...texts];
+  idx.forEach((i, k) => {
+    const t = Array.isArray(out) && typeof out[k] === "string" ? (out[k] as string).slice(0, 160) : "";
+    if (t && !CJK.test(t)) next[i] = t;
+  });
+  return next;
+}
+
+export async function aiConceptsAction(videoId: string): Promise<Result<StudioState>> {
+  try {
+    const v = load(videoId);
+    requirePackaging(v.projectId, v.templateId);
+    const t = findTemplate(v.templateId);
+    const others = listShortVideos(v.projectId)
+      .filter((x) => x.id !== v.id)
+      .flatMap((x) => x.concepts.filter((c) => c.id === x.conceptId).map((c) => `${c.title}（${c.hookCaption}）`));
+    const { system, user } = shortConceptPrompt(t, productText(v.projectId), v.brief, others);
+    const { data } = await chatJson({ system, user, maxTokens: 8000, thinking: false, timeoutMs: 180_000 });
+    const list = (data as { concepts?: Partial<ShortConcept>[] })?.concepts;
+    if (!Array.isArray(list) || !list.length) throw new AiError("AI 没有返回创意，请重试");
+    v.concepts = list.slice(0, 5).map((c) => ({
+      id: randomUUID().slice(0, 8),
+      title: str(c.title, 60),
+      hookCaption: str(c.hookCaption, 160),
+      ctaCaption: str(c.ctaCaption, 160),
+      audience: str(c.audience, 200),
+      setting: str(c.setting, 300),
+      people: str(c.people, 400),
+      why: str(c.why, 300),
+    }));
+    const caps = await ensureEnglish(v.concepts.flatMap((c) => [c.hookCaption, c.ctaCaption]));
+    v.concepts.forEach((c, i) => {
+      c.hookCaption = caps[i * 2];
+      c.ctaCaption = caps[i * 2 + 1];
+    });
+    v.conceptId = null;
+    saveShortVideo(v);
+    refresh(v);
+    return { result: state(videoId) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function aiShotsAction(videoId: string): Promise<Result<StudioState>> {
+  try {
+    const v = load(videoId);
+    const c = v.concepts.find((x) => x.id === v.conceptId);
+    if (!c) throw new Error("先选一个创意");
+    requirePackaging(v.projectId, v.templateId);
+    const jobs = listJobs(videoId);
+    if (jobs.some((j) => j.status !== "failed")) throw new Error("这条视频已经花过钱，重新生成分镜会让已生成素材作废；请新建一条视频");
+    const t = findTemplate(v.templateId);
+    const { system, user } = shortShotsPrompt(t, productText(v.projectId), c, v.resolution, t.look);
+    const { data } = await chatJson({ system, user, maxTokens: 12_000, thinking: false, timeoutMs: 240_000 });
+    const list = (data as { shots?: Partial<ShortShot>[] })?.shots;
+    if (!Array.isArray(list) || !list.length) throw new AiError("AI 没有返回分镜，请重试");
+    v.shots = list.slice(0, 8).map((s, i) => cleanShot({ ...s, id: undefined, hook: i === 0 ? { name: "原版" } : undefined }));
+    v.hooksReady = true;
+    v.exportHooks = [];
+    const caps = await ensureEnglish(v.shots.map((s) => s.caption));
+    v.shots.forEach((s, i) => (s.caption = caps[i]));
+    v.room = guessRoom(c.setting);
+    v.budgetUsd = null;
+    saveShortVideo(v);
+    refresh(v);
+    return { result: state(videoId) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 对照新旧版本后标记返工问题：只有出了新版本才能标 */
+export async function issueStatusAction(videoId: string, shotId: string, issueId: string, status: "open" | "fixed"): Promise<Result<StudioState>> {
+  try {
+    const v = load(videoId);
+    const s = v.shots.find((x) => x.id === shotId);
+    const it = s?.issues?.find((x) => x.id === issueId);
+    if (!s || !it) throw new Error("问题不存在");
+    if (s.stage !== "video_ready" || !s.videoJobId || s.videoJobId === it.fromJobId) throw new Error("要等新版视频出来，和旧版对照后再标");
+    it.status = status;
+    saveShortVideo(v);
+    refresh(v);
+    return { result: state(videoId) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 返工问题的范围：只管这一镜 / 整条视频都要注意。免费，不改镜头状态 */
+export async function issueScopeAction(videoId: string, shotId: string, issueId: string, scope: "shot" | "video"): Promise<Result<StudioState>> {
+  try {
+    const v = load(videoId);
+    const s = v.shots.find((x) => x.id === shotId);
+    const it = s?.issues?.find((x) => x.id === issueId);
+    if (!s || !it) throw new Error("问题不存在");
+    if ((it.scope ?? "shot") === scope) return { result: state(videoId) };
+    it.scope = scope;
+    if (scope === "video") addRule(v.projectId, { layer: "process", level: "warn", text: `短视频返工问题（整条视频都要注意）：${it.text}`, source: `${v.title} #${v.shots.indexOf(s) + 1}` });
+    saveShortVideo(v);
+    refresh(v);
+    return { result: state(videoId) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export type StageAction = "confirm_comp" | "reopen_comp" | "frame_ok" | "frame_reject" | "accept" | "rework";
+
+/** 关口动作：只有这里能改变镜头的关口状态 */
+export async function shotStageAction(videoId: string, shotId: string, action: StageAction, note = "", issueScope: "shot" | "video" = "shot"): Promise<Result<StudioState>> {
+  try {
+    const v = load(videoId);
+    const s = v.shots.find((x) => x.id === shotId);
+    if (!s) throw new Error("镜头不存在");
+    const busy = listJobs(videoId).some((j) => j.shotId === shotId && (j.status === "submitting" || j.status === "submitted"));
+    if (busy) throw new Error("本镜有任务在生成中");
+    const need = (ok: boolean, msg: string) => {
+      if (!ok) throw new Error(msg);
+    };
+    switch (action) {
+      case "confirm_comp":
+        need(s.stage === "draft", "构图已确认过");
+        need(!waitingFor(v, s.id), `按顺序做：先把 #${waitingFor(v, s.id)} 做到“采用”`);
+        need(s.framePrompt.trim().length > 20 && s.description.trim().length > 0, "构图描述和首帧提示词还没写好");
+        need(!opMissing(s.operator), "拍摄者：勾了“空着的手入镜”，要先选动作");
+        need(!!s.layout && !!s.compFile && fs.existsSync(path.join(videoDir(v.projectId, v.id), s.compFile)), "先在 3D 布景里摆好机位，并保存 3D 构图");
+        s.stage = "comp_ok";
+        break;
+      case "reopen_comp":
+        need(s.stage !== "accepted", "已采用的镜头请先退回返工");
+        s.stage = "draft";
+        break;
+      case "frame_ok":
+        need(s.stage === "frame_ready" && !!s.frameJobId, "还没有待检查的首帧");
+        s.stage = "frame_ok";
+        break;
+      case "frame_reject":
+        need(s.stage === "frame_ready" || s.stage === "frame_ok", "当前没有可退回的首帧");
+        s.stage = "comp_ok";
+        break;
+      case "accept":
+        need(s.stage === "video_ready" && !!s.videoJobId, "还没有待审的视频");
+        need(!(s.issues ?? []).some((x) => x.status === "open"), "还有返工问题没确认：对照新旧版本逐条标“已解决”后才能采用");
+        s.stage = "accepted";
+        break;
+      case "rework": {
+        need(s.stage === "video_ready" || s.stage === "accepted", "当前没有可返工的视频");
+        const items = note.split(/[；;\n]+/).map((x) => x.trim()).filter(Boolean);
+        need(items.length > 0, "返工要写清楚问题（多条用分号隔开），新版本出来后逐条对照");
+        s.issues = [...(s.issues ?? []), ...items.map((text) => ({ id: randomUUID().slice(0, 8), text: text.slice(0, 200), fromJobId: s.videoJobId, status: "open" as const, scope: issueScope }))];
+        if (issueScope === "video") for (const text of items) addRule(v.projectId, { layer: "process", level: "warn", text: `短视频返工问题（整条视频都要注意）：${text.slice(0, 200)}`, source: `${v.title} #${v.shots.indexOf(s) + 1}` });
+        s.stage = "frame_ok";
+        break;
+      }
+    }
+    if (note.trim()) s.checkNote = note.trim().slice(0, 400);
+    saveShortVideo(v);
+    refresh(v);
+    return { result: state(videoId) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+const FRAME_STYLE: Record<string, string> = {
+  ugc: "Vertical 9:16 smartphone photo, looks like a real parent filmed it at home: natural indoor light, slight handheld angle, everyday clutter, true-to-life skin and fabrics. Photorealistic, not staged, no cinematic grading.",
+  cinematic: "Vertical 9:16 cinematic film still, shot on cinema camera, motivated lighting, shallow depth of field, fine film grain. Photorealistic.",
+};
+
+/** 本镜场地（旧数据没有就按 video.room 迁移到场地库 v1） */
+function shotScene(v: ShortVideo, s: ShortShot) {
+  const scenes = ensureScenes(v.projectId, listShortVideos(v.projectId));
+  const sh = s.scene ?? legacyShotScene(scenes, v.room);
+  const sc = getScene(sh.id);
+  return sc ? { sc, ver: versionOf(sc, sh.v), sh } : null;
+}
+
+const famOf = (s: ShortShot) => s.family ?? 1;
+
+/** 场地 / 镜头特殊要求 */
+function specialText(v: ShortVideo, s: ShortShot): string {
+  const sc = shotScene(v, s)?.sc;
+  return [sc?.special.trim(), s.special?.trim()].filter(Boolean).map((x) => `Special requirements (must follow): ${x}`).join("\n");
+}
+
+/** 选了颜色款：产品颜色以该颜色款的实物照为准 */
+function colorText(v: ShortVideo): string {
+  const c = v.colorId ? getColor(v.colorId) : null;
+  return c ? `Product color variant "${c.name}": the product reference photos show this exact color version; match every colored part, finish and sticker to them, not to any other color.` : "";
+}
+
+interface RefPart {
+  text: string;
+  file: () => Promise<string | null>;
+}
+
+const stillOf = async (v: ShortVideo, shot: ShortShot) => {
+  const j = getJob(shot.videoJobId!);
+  const src = j && jobFilePath(j);
+  if (!src || !fs.existsSync(src)) throw new Error("参考镜头的视频文件不存在，无法做连续性参考");
+  return lastFrame(src, path.join(videoDir(v.projectId, v.id), `last-${shot.videoJobId}.png`));
+};
+
+/**
+ * 首帧参考图（按顺序编号）：3D 构图 → 同角度产品渲染 → 连续性参考。
+ * 同场地同家庭：上一镜画面（人和房间）；回到旧场地：该场地最后一个已采用镜头（只看房间）；
+ * 同一家人换场地：该家庭最后一个已采用镜头（只看人）；新场地有空场景参考图就用它；另一个家庭不带旧演员。
+ */
+function refPlan(v: ShortVideo, s: ShortShot): RefPart[] {
+  const out: RefPart[] = [];
+  const dir = (l: NonNullable<ShortShot["layout"]>) => Math.atan2(l.lookAt[1] - l.camPos[1], l.lookAt[0] - l.camPos[0]);
+  const turned = (x: ShortShot) => !!(s.layout && x.layout) && Math.abs(((dir(s.layout!) - dir(x.layout!) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI) > Math.PI / 3;
+  const comp = s.compFile ? path.join(videoDir(v.projectId, v.id), s.compFile) : null;
+  if (comp) {
+    out.push({
+      text: "is a simple 3D blocking render of this exact shot: match its camera angle, lens, framing, and the product's position, size and orientation exactly; furniture sits where the blocking puts it. Replace the untextured shapes with a real, lived-in home matching the description; the translucent mannequins or capsule mark where people are. Plain sky or empty flat ground at the edges of the render is just unfinished 3D: fill it as the location text describes.",
+      file: async () => (fs.existsSync(comp) ? comp : null),
+    });
+    if (angleRefPath(v, s))
+      out.push({
+        text:
+          modelFor(v.projectId, v.colorId)?.source === "fal"
+            ? "is a plain gray shape render of the product from exactly this shot's camera angle: copy only its shape, pose and which side faces the camera, never mirrored or turned. It is gray on purpose; take every color, logo and sticker only from the real product photos."
+            : "is the real product rendered from exactly this shot's camera angle: in the photo the product must face exactly this way and show this same side, never mirrored or turned.",
+        file: () => angleRef(v, s),
+      });
+  }
+  const me = shotScene(v, s);
+  const i = v.shots.indexOf(s);
+  const done = v.shots.slice(0, Math.max(0, i)).filter((x) => x.stage === "accepted" && x.videoJobId);
+  // 开头接的是正文：按正文顺序找参考（离开头最近的正文镜头优先）；正文镜头找前面最近的
+  const cands = s.hook ? v.shots.filter((x) => !x.hook && x.stage === "accepted" && x.videoJobId) : [...done].reverse();
+  const sceneId = (x: ShortShot) => (x.scene ?? (me ? legacyShotScene([me.sc], v.room) : null))?.id;
+  const place = cands.find((x) => me && sceneId(x) === me.sc.id && (shotScene(v, x)?.sh.theme ?? "") === me.sh.theme);
+  const people = cands.find((x) => famOf(x) === famOf(s));
+  if (place && people && place === people) {
+    out.push({
+      text: `is the last frame of ${place === done[done.length - 1] ? "the previous shot" : "an earlier shot"} in this same video. Use it only for identity: same people (faces, age, hair, wardrobe), ${turned(place) ? "same decor style and lighting (this shot's camera faces a different direction: ignore that frame's background and follow Image 1 and the location text for what is behind the people)" : "same home, decor and lighting"}, same product with the same accessories. This is a different moment of the same real TikTok clip, cut together by a parent: a new angle and action as described, not a copy of that frame.`,
+      file: () => stillOf(v, place),
+    });
+  } else {
+    if (place)
+      out.push({
+        text: `is a frame from an earlier shot in this same location. Use it only for the place: same architecture, furniture, decor and lighting.${turned(place) ? " This shot's camera faces a different direction: ignore that frame's background and follow Image 1 and the location text for what is behind the people." : ""} ${famOf(place) !== famOf(s) ? "Ignore the people in it: this shot shows a different family with different people." : "Ignore the people's poses."}`,
+        file: () => stillOf(v, place),
+      });
+    else if (me?.ver.refJobId)
+      out.push({
+        text: "is a reference photo of this location with nobody in it. Match its architecture, furniture style, colors and lighting.",
+        file: async () => {
+          const j = getJob(me.ver.refJobId!);
+          const f = j && jobFilePath(j);
+          return f && fs.existsSync(f) ? f : null;
+        },
+      });
+    if (people)
+      out.push({
+        text: "is a frame from an earlier shot with the same family in a different place. Use it only for the people: same faces, age, hair and wardrobe, and the same product with the same accessories. Ignore its room and background: this shot is in a different location.",
+        file: () => stillOf(v, people),
+      });
+  }
+  return out;
+}
+
+const FRAME_PROMPT_MAX = 4900;
+
+/** 产品的车把 / 座椅接触点：模型页保存的为准；没保存时和 3D 页一样先用 KB002 的（3D 页会按模型尺寸估，服务器这边拿不到尺寸） */
+function rigOf(v: ShortVideo) {
+  const m = getProductModel(v.projectId);
+  return (m && getRig(m.id)) || KB002_RIG;
+}
+
+function framePromptOf(v: ShortVideo, s: ShortShot): string {
+  const p = getProduct(v.projectId);
+  const look = findTemplate(v.templateId).look;
+  const me = shotScene(v, s);
+  const plan = refPlan(v, s);
+  const i = v.shots.indexOf(s);
+  const prior = s.hook ? v.shots.filter((x) => !x.hook) : v.shots.slice(0, Math.max(0, i));
+  const otherFamily = prior.some((x) => famOf(x) !== famOf(s)) && !prior.some((x) => famOf(x) === famOf(s));
+  const NOTES = "@@NOTES@@";
+  const parts = [
+    me?.sc.outdoor ? (FRAME_STYLE[look] ?? FRAME_STYLE.ugc).replace("filmed it at home: natural indoor light", "filmed it outside the house: natural outdoor daylight") : (FRAME_STYLE[look] ?? FRAME_STYLE.ugc),
+    ...plan.map((r, k) => `Image ${k + 1} ${r.text}`),
+    s.layout ? layoutText(s.layout) : "",
+    s.layout ? `3D BLOCKING (authoritative: the positions, poses and orientation below override any conflicting wording later in this prompt): ${blockingText(s.layout, rigOf(v))}` : "",
+    me ? sceneText(me.sc, me.ver, me.sh, s.layout ? itemSight(s.layout) : undefined) : "",
+    otherFamily ? "This shot shows a different family from the earlier shots: different people and a different home; only the product is the same model." : "",
+    specialText(v, s),
+    NOTES,
+    operatorPrompt(s.operator, s.layout),
+    s.productNote.trim()
+      ? `Product: ${p?.name || "the product"} — use the product reference photos: keep exact geometry, proportions, colors, materials and logo placement; do not redesign, recolor or add parts.`
+      : "",
+    colorText(v),
+    s.compositeNote.trim() ? "Any screen, projection or printed graphic on the product is left plain/blank; it will be composited later." : "",
+    findTemplate(v.templateId).needsPackaging
+      ? "Any packaging must match the packaging reference photos exactly; do not invent box designs or print."
+      : "The product appears fully assembled and out of any box. No cardboard boxes, shipping boxes, product packaging or unwrapping anywhere in the image.",
+    "No text, captions, watermarks or UI overlays in the image.",
+  ].filter(Boolean);
+  // Sunburst 的 prompt 上限 5000 字符：超了先缩短「画面细节」，其余规则一个字不删
+  const lead = "Shot notes (wardrobe, expression, light and mood only; positions, actions and background come from above): ";
+  const notes = s.framePrompt.trim().replace(/^English:\s*/i, "");
+  const rest = parts.filter((x) => x !== NOTES).join("\n").length + 1;
+  const room = FRAME_PROMPT_MAX - rest - lead.length;
+  const fit = notes.length <= room ? notes : room > 80 ? `${notes.slice(0, room - 1).replace(/\s+\S*$/, "")}…` : "";
+  return parts.map((x) => (x === NOTES ? (fit ? lead + fit : "") : x)).filter(Boolean).join("\n");
+}
+
+/** 空场景参考图：只有房间和主题布置，没有人、没有产品 */
+function scenePromptOf(me: NonNullable<ReturnType<typeof shotScene>>): string {
+  return [
+    me.sc.outdoor
+      ? "Vertical 9:16 ordinary smartphone photo of this empty outdoor place, taken at adult eye level, natural everyday daylight, real lived-in neighborhood, not a showroom or 3D render."
+      : "Vertical 9:16 ordinary smartphone photo of an empty room, taken at adult eye level from the open side of the room, everyday indoor light, lived-in but tidy, real home, not a showroom or 3D render.",
+    sceneText(me.sc, me.ver, me.sh),
+    me.sc.special.trim() ? `Special requirements (must follow): ${me.sc.special.trim()}` : "",
+    "Nobody in the photo: no people, no hands, no pets. No bicycles, balance bikes or ride-on toys. No cardboard boxes, shipping boxes or packaging. No text, logos or watermarks.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function videoPromptOf(v: ShortVideo, s: ShortShot): string {
+  const op = operatorPrompt(s.operator, s.layout);
+  const sp = specialText(v, s);
+  return `${s.motionPrompt.trim()}\n${sp ? `${sp}\n` : ""}${moveText(s.layout)}\n${op ? `${op}${operatorShows(s.operator, s.layout) ? " Keep what shows of them partly visible and moving naturally through the clip." : ""}\n` : ""}Keep the product's shape, colors and logo exactly as in the first frame. Same people, wardrobe, room and lighting as the first frame throughout; no new people appear. Looks like real phone footage a parent shot for TikTok: natural speed, no slow motion, no smooth cinematic camera glide, casual unposed behavior. No text overlays.`;
+}
+
+interface Prepared {
+  v: ShortVideo;
+  s: ShortShot;
+  kind: JobKind;
+  seconds: number;
+  prompt: string;
+  hash: string;
+  unit: number;
+  quote: Quote;
+}
+
+async function prepare(videoId: string, shotId: string, kind: JobKind, seconds: number, reason: string, overLimit: boolean): Promise<Prepared> {
+  const v = load(videoId);
+  const s = v.shots.find((x) => x.id === shotId);
+  if (!s) throw new Error("镜头不存在");
+  const jobs = listJobs(videoId).map(toJobView);
+  const secs = kind === "video" ? Math.round(seconds) : 0;
+  const me = kind === "scene" ? shotScene(v, s) : null;
+  if (kind === "scene" && !me) throw new Error("本镜还没有场地");
+  const prompt = kind === "video" ? videoPromptOf(v, s) : kind === "scene" ? scenePromptOf(me!) : framePromptOf(v, s);
+  if (kind !== "video" && prompt.length > 5000) throw new Error(`提示词 ${prompt.length} 字符，超过 Sunburst 的 5000 上限：先删减场地或镜头的特殊要求`);
+  const hash = paramsKey(kind, { prompt, seconds: secs, resolution: kind === "video" ? v.resolution : "", frameJobId: kind === "video" ? s.frameJobId : kind === "scene" ? `${me!.sc.id}:v${me!.ver.v}` : s.compFile });
+  let unit: number = kind === "video" ? VIDEO_USD_PER_SEC[v.resolution] : FRAME_USD_FALLBACK;
+  // 估价接口免费；能拿到金额就以它为准
+  try {
+    const est =
+      kind === "video"
+        ? await estimate(VIDEO_MODEL, { image_url: "https://example.com/a.jpg", duration: secs || VIDEO_MIN_SEC, resolution: v.resolution, generate_audio: false })
+        : await estimate(FRAME_MODEL, { prompt: "estimate", quality: "high", resolution: "2k", aspect_ratio: "9:16" });
+    if (Number.isFinite(est.usd) && est.usd > 0) unit = kind === "video" ? est.usd / (secs || VIDEO_MIN_SEC) : est.usd;
+  } catch {
+    /* 估价失败时用实测单价 */
+  }
+  const quote = quoteJob({ kind, shot: s, video: v, jobs, paramsHash: hash, unitUsd: Math.round(unit * 10000) / 10000, seconds: secs, reason, overLimit });
+  if (kind !== "scene") {
+    const own = promptConflicts(s, rigOf(v));
+    const extra = kind === "frame" ? shotChecks(s, basisOf(s, placeOf(v, s))).filter((m) => !own.some((c) => c.msg === m)) : [];
+    quote.conflicts = [...own, ...extra.map((msg) => ({ msg, fix: "text" as const }))];
+  }
+  return { v, s, kind, seconds: secs, prompt, hash, unit, quote };
+}
+
+export async function quoteJobAction(videoId: string, shotId: string, kind: JobKind, seconds: number, reason: string, overLimit: boolean): Promise<Result<Quote>> {
+  try {
+    return { result: (await prepare(videoId, shotId, kind, seconds, reason, overLimit)).quote };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 原模型的渲染图在 short-refs/，颜色款的在 short-refs/<colorId>/ */
+const refDir = (projectId: string, colorId?: string | null) => path.join(cadDir(projectId), "short-refs", ...(colorId ? [colorId] : []));
+
+/** 产品参考图：选了颜色款用该颜色的实物照，否则用产品照；都没有就用 3D 模型渲染的参考图。车身贴纸跟在 Logo 后面 */
+export async function productRefFiles(projectId: string, colorId?: string | null): Promise<{ file: string; mime: string }[]> {
+  const assets = listAssets(projectId).filter((a) => a.mime !== "image/svg+xml" && fs.existsSync(assetPath(a)));
+  const ref = (a: (typeof assets)[number]) => ({ file: assetPath(a), mime: a.mime });
+  const color = colorId ? assets.filter((a) => a.kind === "color_photo" && a.colorId === colorId) : [];
+  const photos = (color.length ? color : productPhotos(assets)).slice(0, 5).map(ref);
+  const renders = PRODUCT_REF_VIEWS.map((r) => path.join(refDir(projectId, colorId), `${r.name}.png`)).filter((f) => fs.existsSync(f)).map((file) => ({ file, mime: "image/png" }));
+  const logo = assets.filter((a) => a.kind === "logo").slice(0, 1).map(ref);
+  const stickers = assets.filter((a) => a.kind === "sticker").slice(0, 3).map(ref);
+  const product = photos.length ? photos : renders;
+  return product.length ? [...product, ...logo, ...stickers] : [];
+}
+
+/** 用 3D 模型按本镜机位角度渲染的产品参考图（免费），锁住产品朝向 */
+function angleRefPath(v: ShortVideo, s: ShortShot): string | null {
+  if (!s.compFile || !s.layout?.bike) return null;
+  const m = modelFor(v.projectId, v.colorId);
+  if (!m || !fs.existsSync(modelPath(m))) return null;
+  return path.join(videoDir(v.projectId, v.id), `angle-${m.colorId ? `${m.id.slice(0, 8)}-` : ""}${s.compFile.replace(/\.png$/, "")}.png`);
+}
+
+/** 保存 3D 构图时浏览器顺带截下来（不再用 Blender）；没有就要重新保存构图 */
+async function angleRef(v: ShortVideo, s: ShortShot): Promise<string | null> {
+  const out = angleRefPath(v, s);
+  return out && fs.existsSync(out) ? out : null;
+}
+
+/** 保存同角度产品参考图（浏览器 3D 截图，PNG data URL），跟着当前 3D 构图走 */
+export async function saveShortAngleAction(videoId: string, shotId: string, dataUrl: string): Promise<{ error?: string }> {
+  try {
+    const { v, s } = draftShot(videoId, shotId);
+    const out = angleRefPath(v, s);
+    if (!out) throw new Error("先保存带产品的 3D 构图");
+    const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+    const bytes = m ? Buffer.from(m[1], "base64") : null;
+    if (!bytes || bytes.length < 1000 || bytes.length > 8 * 1024 * 1024) throw new Error("产品参考图无效");
+    putFile(keyFromPath(out), bytes);
+    return {};
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+async function frameRefs(v: ShortVideo, s: ShortShot): Promise<string[]> {
+  const files = await productRefFiles(v.projectId, v.colorId);
+  if (!files.length) throw new Error("没有产品参考图：先上传产品照，或在短视频列表页用 3D 模型渲染参考图（免费）");
+  const urls: string[] = [];
+  for (const r of refPlan(v, s)) {
+    const f = await r.file();
+    if (!f) throw new Error("参考图文件不存在，请重新保存 3D 构图");
+    urls.push(await uploadFile(readFile(keyFromPath(f)), "image/png"));
+  }
+  if (findTemplate(v.templateId).needsPackaging) {
+    const pk = listAssets(v.projectId).filter((a) => a.kind === "packaging_photo" && fs.existsSync(assetPath(a))).slice(0, 3);
+    if (!pk.length) throw new Error("开箱视频要先在产品页上传真实包装照片");
+    for (const a of pk) urls.push(await uploadFile(readFile(keyFromPath(assetPath(a))), a.mime));
+  }
+  for (const f of files) urls.push(await uploadFile(readFile(keyFromPath(f.file)), f.mime));
+  return urls;
+}
+
+/** 免费：保存浏览器用 3D 模型渲染的一张产品参考图（PNG data URL） */
+export async function saveProductRefAction(projectId: string, name: string, dataUrl: string): Promise<{ error?: string }> {
+  try {
+    if (!findLocalProject(projectId)) throw new Error("项目不存在");
+    if (!PRODUCT_REF_VIEWS.some((r) => r.name === name)) throw new Error("参考图名称不对");
+    const m = modelFor(projectId, null);
+    if (!m || !fs.existsSync(modelPath(m))) throw new Error("请先在产品页上传 GLB 模型");
+    const x = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+    const bytes = x ? Buffer.from(x[1], "base64") : null;
+    if (!bytes || bytes.length < 1000 || bytes.length > 8 * 1024 * 1024) throw new Error("参考图无效");
+    putFile(keyFromPath(path.join(refDir(projectId, m.colorId), `${name}.png`)), bytes);
+    revalidatePath(`/projects/${projectId}/shorts`);
+    return {};
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 人偶「动作」栏：中文原话译成英文（DeepSeek，不到 $0.01）；没改过的沿用上次的译文 */
+async function translateActions(l: SetLayout, prev: SetLayout | null) {
+  const old = new Map(prev ? figuresOf(prev).map((f) => [f.id, f] as const) : []);
+  const todo = (l.figures ?? []).filter((f) => {
+    const o = old.get(f.id);
+    if (f.action && o?.action === f.action && o.actionEn) f.actionEn = o.actionEn;
+    else delete f.actionEn;
+    return !!f.action && !f.actionEn;
+  });
+  if (!todo.length) return;
+  const { data } = await chatJson({
+    system: "Translate each Chinese line, describing what one person is doing in a photo, into one short literal English phrase for an image model, starting with a present participle (e.g. 'gripping the handlebars with both hands to hold the bike steady'). Add nothing that is not in the Chinese. Output json: {\"items\":[\"...\"]} in the same order.",
+    user: JSON.stringify(todo.map((f) => f.action)),
+    maxTokens: 800,
+  });
+  const items = (data as { items?: unknown } | null)?.items;
+  todo.forEach((f, k) => {
+    const t = Array.isArray(items) ? items[k] : null;
+    if (typeof t !== "string" || !t.trim()) throw new Error("人偶「动作」栏翻译失败，请再点一次保存");
+    f.actionEn = t.trim().slice(0, 400);
+  });
+}
+
+function draftShot(videoId: string, shotId: string) {
+  const v = load(videoId);
+  const s = v.shots.find((x) => x.id === shotId);
+  if (!s) throw new Error("镜头不存在");
+  if (s.stage !== "draft") throw new Error("构图已确认：要改机位先在工作台点“退回构图”");
+  return { v, s };
+}
+
+/** 保存机位 / 运镜；机位变了，之前截的 3D 构图作废 */
+export async function saveShortLayoutAction(videoId: string, shotId: string, layout: SetLayout | null): Promise<{ error?: string }> {
+  try {
+    const { v, s } = draftShot(videoId, shotId);
+    const l = layout ? cleanLayout(layout) : null;
+    if (layout && !l) throw new Error("布景数据不完整");
+    if (l) await translateActions(l, s.layout);
+    s.layout = l;
+    s.compFile = null;
+    saveShortVideo(v);
+    refresh(v);
+    return {};
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 按 3D 改写这一镜的文字（DeepSeek 文字调用，每次不到 $0.01）；只返回草稿，用户确认后才保存 */
+/** 只读：按已保存的内容，拼出生成时会发给模型的完整提示词（免费） */
+export async function promptPreviewAction(
+  videoId: string,
+  shotId: string,
+): Promise<Result<{ frame: string; video: string }>> {
+  try {
+    const v = getShortVideo(videoId);
+    const s = v?.shots.find((x) => x.id === shotId);
+    if (!v || !s) return { error: "镜头不存在" };
+    return { result: { frame: framePromptOf(v, s), video: videoPromptOf(v, s) } };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export async function rewriteShotAction(
+  videoId: string,
+  shotId: string,
+  opts: { feedback?: string; draft?: Partial<Record<TextField, string>> } = {},
+): Promise<Result<{ fields: Record<TextField, string>; notes: string[]; left: string[]; needs3d: string[] }>> {
+  try {
+    const v = load(videoId);
+    const s = v.shots.find((x) => x.id === shotId);
+    if (!s) throw new Error("镜头不存在");
+    if (s.stage !== "draft") throw new Error("构图已确认：要改文字先点“退回构图”");
+    if (!s.layout) throw new Error("先在场地地图摆好机位");
+    const me = shotScene(v, s);
+    const place = me ? { name: me.sc.name, outdoor: me.sc.outdoor, sh: me.sh } : null;
+    const sync = shotSync(s, place);
+    const figs = figuresOf(s.layout).map((f) => `${f.kind}${f.onProduct ? " (riding / sitting on the product)" : ""}, ${f.action ? `action written by the user (authoritative): ${f.action}` : `no action written yet; pose preset ${f.pose}${f.custom ? ", hands and feet adjusted by hand in 3D" : ""}`}`);
+    const facts = [
+      me ? sceneText(me.sc, me.ver, me.sh, itemSight(s.layout)) : "",
+      me ? (me.sc.outdoor ? "This location is outdoors." : "This location is indoors.") : "",
+      `People in the 3D blocking (exactly these, nobody else in frame): ${figs.length ? figs.join("; ") : "none"}.`,
+      layoutText(s.layout),
+      blockingText(s.layout, rigOf(v)),
+      operatorPrompt(s.operator, s.layout) || "The person filming is not visible.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const old = Object.fromEntries(TEXT_FIELDS.map((k) => [k, s[k]])) as Record<TextField, string>;
+    const feedback = String(opts.feedback ?? "").trim().slice(0, 1000);
+    const draft = Object.fromEntries(TEXT_FIELDS.map((k) => [k, typeof opts.draft?.[k] === "string" ? String(opts.draft[k]).slice(0, 2000) : old[k]])) as Record<TextField, string>;
+    const userRule = feedback
+      ? " The user also wrote feedback in plain Chinese (userFeedback); start from currentDraft and apply it. For details the 3D cannot show (hand gestures such as pointing instead of reaching, what a hand grips or holds, facial expression, gaze, wardrobe, mood, light, small props, the motion), follow the user. For things the 3D fixes (who is in frame and how many, where each person and the product are, product orientation and pose, location, camera position and lens), do NOT apply them: every field must still state the 3D facts exactly (e.g. if the 3D puts the adult to the right of the product, the text says right even when the user asked for left), and add one short Simplified Chinese line to needs3d per such request, saying what to change in the 3D. Also add one notes line per request you actually applied; requests you could not apply go only to needs3d."
+      : "";
+    const { data } = await chatJson({
+      system: "You keep one shot of a TikTok-style product video in sync with its 3D blocking. The 3D facts are the truth: location, people, camera lens and height, product orientation and the person filming. Check EVERY sentence of every field against the 3D facts: who is in frame, where each person and the product sit in the frame (left / center / right, near / far), poses and actions, product orientation and pose, location, background and holiday decorations, camera. The listed changes and conflicts come from a simple keyword check and are often incomplete, so also fix sentences that were not listed. A 3D pose name only describes the body position: never invent props or intentions from it (a reaching hand is not handing something over). Mention background or holiday decorations only if the location facts list them. Rewrite whatever does not match; keep all continuity details (same people, wardrobe, props, product details), the casual phone-footage style and roughly the same length. Never add a person who is not in the 3D people list; if the text mentions someone who is not there, remove them and make clear the remaining people are the only ones in frame. The person filming holds the phone and is never the subject: never call it a selfie (no 'selfie', no 自拍). Never mention the 3D blocking itself (no mannequins, gray boxes or markers). Keep the camera field consistent with the lens and camera height. Where people are and what they do come only from the 3D facts (positions plus each person's written action); the image prompt adds those automatically. So framePrompt holds only what the 3D cannot carry: wardrobe, facial expression and gaze, light, mood and small details of the people and the product; it must not describe positions, left / right, distances, poses, hand or body actions, camera or background layout. description and motionPrompt may describe actions, but only as the 3D facts give them. If a person has no written action, describe them only by the pose preset and add a needs3d line asking the user to write that person's action in the 3D figure's 动作 field (e.g. '人偶1·小孩：在 3D 的「动作」栏写这个人在做什么'). Fields description, camera and productNote are in Simplified Chinese; framePrompt and motionPrompt are in English. Output json: {\"description\":\"\",\"camera\":\"\",\"productNote\":\"\",\"framePrompt\":\"\",\"motionPrompt\":\"\",\"notes\":[\"one short Simplified Chinese line per change\"],\"needs3d\":[]}" + userRule + (feedback ? " This overrides the rule above for body and hand actions: what a person does with their body or hands (pointing, gripping the handlebars, waving, holding something) belongs only in that person's 3D 动作 field. If the feedback asks for an action that differs from that person's written action in the 3D facts, do not write it into any field; add a needs3d line such as '人偶2·大人 的「动作」栏改成：……'." : ""),
+      user: JSON.stringify(feedback ? { facts3d: facts, changedSinceWritten: sync.changes, conflicts: sync.issues, shot: old, currentDraft: draft, userFeedback: feedback } : { facts3d: facts, changedSinceWritten: sync.changes, conflicts: sync.issues, shot: old }),
+      maxTokens: 3000,
+      thinking: !!feedback,
+      timeoutMs: 180_000,
+    });
+    const d = (data ?? {}) as Record<string, unknown>;
+    const lim: Record<TextField, number> = { description: 600, camera: 200, productNote: 300, framePrompt: 2000, motionPrompt: 1000 };
+    const fields = Object.fromEntries(
+      TEXT_FIELDS.map((k) => {
+        const x = d[k];
+        return [k, typeof x === "string" && x.trim() ? x.trim().slice(0, lim[k]) : draft[k]];
+      }),
+    ) as Record<TextField, string>;
+    const list = (x: unknown) => (Array.isArray(x) ? x.filter((y): y is string => typeof y === "string" && !!y.trim()).slice(0, 8) : []);
+    const next = { ...s, ...fields };
+    return { result: { fields, notes: list(d.notes), left: shotChecks(next, basisOf(next, place)), needs3d: list(d.needs3d) } };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 一镜的文字同步状态（场地地图页用，免费） */
+export async function shotSyncAction(videoId: string, shotId: string): Promise<Result<{ sync: ShotSync; draft: boolean; texts: Record<TextField, string> }>> {
+  try {
+    const v = load(videoId);
+    const s = v.shots.find((x) => x.id === shotId);
+    if (!s) throw new Error("镜头不存在");
+    return { result: { sync: shotSync(s, placeOf(v, s)), draft: s.stage === "draft", texts: Object.fromEntries(TEXT_FIELDS.map((k) => [k, s[k]])) as Record<TextField, string> } };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 采用改写后的文字（只改这几个文字字段，并重新记下对应的 3D） */
+export async function applyShotTextAction(videoId: string, shotId: string, fields: Partial<Record<TextField, string>>): Promise<{ error?: string }> {
+  try {
+    const { v, s } = draftShot(videoId, shotId);
+    const lim: Record<TextField, number> = { description: 600, camera: 200, productNote: 300, framePrompt: 2000, motionPrompt: 1000 };
+    for (const k of TEXT_FIELDS) {
+      const x = fields[k];
+      if (typeof x === "string" && x.trim()) s[k] = x.trim().slice(0, lim[k]);
+    }
+    s.textBasis = basisOf(s, placeOf(v, s));
+    saveShortVideo(v);
+    refresh(v);
+    return {};
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 拍摄者入镜（只影响提示词，不动 3D 构图） */
+export async function setShotOperatorAction(videoId: string, shotId: string, operator: string): Promise<{ error?: string; recapture?: boolean }> {
+  try {
+    const { v, s } = draftShot(videoId, shotId);
+    const before = parseOp(s.operator);
+    s.operator = operator.trim().slice(0, 300);
+    // 拍摄者人偶和空着的手画在 3D 构图里：变了构图要重新保存
+    const recapture = Boolean(s.compFile) && opCompKey(before) !== opCompKey(parseOp(s.operator));
+    if (recapture) s.compFile = null;
+    saveShortVideo(v);
+    refresh(v);
+    return { recapture };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 保存 3D 构图（摄影机画面截图，PNG data URL） */
+export async function saveShortCompAction(videoId: string, shotId: string, dataUrl: string): Promise<{ error?: string }> {
+  try {
+    const { v, s } = draftShot(videoId, shotId);
+    if (!s.layout) throw new Error("先保存机位");
+    const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+    const bytes = m ? Buffer.from(m[1], "base64") : null;
+    if (!bytes || bytes.length < 1000 || bytes.length > 12 * 1024 * 1024) throw new Error("构图图片无效");
+    const name = `comp-${s.id}-${Date.now()}.png`;
+    putFile(storageKey(v.projectId, "shorts", v.id, name), bytes);
+    s.compFile = name;
+    saveShortVideo(v);
+    refresh(v);
+    return {};
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 用户在审批框点了“批准并生成”：再查一遍所有关口，金额必须与审批时一致 */
+/** 后台跑：渲染 / 上传参考图 → 提交 → 等结果；页面不用一直等，进度从 state().running 轮询 */
+async function runInBackground(key: string, videoId: string, shotId: string, kind: JobKind, p: Prepared, reason: string) {
+  try {
+      const input: Record<string, unknown> =
+        kind === "video"
+          ? await (async () => {
+              const f = getJob(p.s.frameJobId!);
+              const fp = f && jobFilePath(f);
+              if (!f || !fp || !fs.existsSync(fp)) throw new Error("首帧文件不存在");
+              const image_url = await uploadFile(fs.readFileSync(fp), f.outputMime ?? "image/png");
+              return { prompt: p.prompt, image_url, duration: p.seconds, resolution: p.v.resolution, generate_audio: false };
+            })()
+          : kind === "scene"
+            ? { prompt: p.prompt, quality: "high", resolution: "2k", aspect_ratio: "9:16", enhance_prompt: false }
+            : { prompt: p.prompt, image_urls: await frameRefs(p.v, p.s), quality: "high", resolution: "2k", aspect_ratio: "9:16", enhance_prompt: false };
+      const job = insertJob({
+        projectId: p.v.projectId,
+        videoId,
+        shotId,
+        kind,
+        model: kind === "video" ? VIDEO_MODEL : FRAME_MODEL,
+        input,
+        paramsHash: p.hash,
+        seconds: p.seconds,
+        estUsd: p.quote.costUsd,
+        reason: reason.trim().slice(0, 400),
+      });
+    runs.set(key, { ...runs.get(key)!, step: "gen", jobId: job.id });
+    await drive(job);
+    runs.delete(key);
+  } catch (e) {
+    console.error("[runJob]", kind, shotId, e instanceof Error ? e.message : e);
+    const r = runs.get(key);
+    runs.set(key, { kind, startedAt: r?.startedAt ?? Date.now(), step: r?.step ?? "prep", jobId: r?.jobId, error: e instanceof Error ? e.message : String(e) });
+  } finally {
+    try {
+      refresh(p.v);
+    } catch {
+      /* 后台没有请求上下文时 revalidate 可能报错，页面靠轮询更新 */
+    }
+  }
+}
+
+export async function runJobAction(
+  videoId: string,
+  shotId: string,
+  kind: JobKind,
+  seconds: number,
+  reason: string,
+  overLimit: boolean,
+  approvedUsd: number,
+): Promise<Result<StudioState>> {
+  try {
+    const p = await prepare(videoId, shotId, kind, seconds, reason, overLimit);
+    if (p.quote.blocked.length) throw new Error(p.quote.blocked[0]);
+    if (Math.abs(p.quote.costUsd - approvedUsd) > 0.005) throw new Error(`价格变了（$${approvedUsd.toFixed(2)} → $${p.quote.costUsd.toFixed(2)}），请重新审批`);
+    const key = runKey(videoId, shotId);
+    const cur = runs.get(key);
+    if (cur && !cur.error) throw new Error("这一镜正在生成，等它完成");
+    runs.set(key, { kind, startedAt: Date.now(), step: "prep" });
+    void runInBackground(key, videoId, shotId, kind, p, reason);
+    return { result: state(videoId) };
+  } catch (e) {
+    console.error("[runJob]", kind, shotId, e instanceof Error ? e.message : e);
+    return { ...fail(e), result: getShortVideo(videoId) ? state(videoId) : undefined };
+  }
+}
+
+/** 生成中轮询用（免费，只读） */
+export async function studioStateAction(videoId: string): Promise<StudioState | null> {
+  return getShortVideo(videoId) ? state(videoId) : null;
+}
+
+/** 用户看过失败原因后清掉 */
+export async function clearRunErrorAction(videoId: string, shotId: string): Promise<StudioState | null> {
+  const k = runKey(videoId, shotId);
+  if (runs.get(k)?.error) runs.delete(k);
+  return getShortVideo(videoId) ? state(videoId) : null;
+}
+
+/** 断线 / 超时后只能续等：submitting 用原幂等键重提（供应商不会重复扣费），submitted 只查状态 */
+export async function resumeJobAction(jobId: string): Promise<Result<StudioState>> {
+  const j = getJob(jobId);
+  if (!j) return { error: "任务不存在" };
+  const key = runKey(j.videoId, j.shotId);
+  const cur = runs.get(key);
+  if (cur && !cur.error) return { result: state(j.videoId) };
+  if (j.status === "submitting" || j.status === "submitted") {
+    // 后台接着等，马上返回：页面靠轮询更新，不会卡住其他按钮
+    runs.set(key, { kind: j.kind, startedAt: Date.now(), step: "gen", jobId });
+    void drive(j)
+      .then(() => void runs.delete(key))
+      .catch((e) => void runs.set(key, { kind: j.kind, startedAt: Date.now(), step: "gen", jobId, error: e instanceof Error ? e.message : String(e) }));
+  } else if (cur?.error) runs.delete(key);
+  return { result: state(j.videoId) };
+}
+
+async function drive(job: JobRecord): Promise<void> {
+  let requestId = job.requestId;
+  if (!requestId) {
+    let req;
+    try {
+      req = await submit(job.model, job.input, job.idempotencyKey);
+    } catch (e) {
+      // 供应商明确拒绝（4xx）：没有扣费，任务作废；网络错误：保持 submitting，下次用同一个幂等键续提
+      if (e instanceof HiggsfieldError && e.status && e.status < 500) {
+        updateJob(job.id, { status: "failed", error: e.message });
+      }
+      throw e;
+    }
+    requestId = req.request_id;
+    updateJob(job.id, { status: "submitted", requestId });
+  }
+  const end = Date.now() + 10 * 60_000;
+  let delay = 4000;
+  for (;;) {
+    let r: Awaited<ReturnType<typeof getStatus>>;
+    try {
+      r = await getStatus(requestId);
+    } catch (e) {
+      // 查进度时网络抖动/供应商 5xx：任务已提交，不重提，继续等
+      const transient = e instanceof HiggsfieldError && (!e.status || e.status >= 500);
+      if (!transient || Date.now() > end) throw e;
+      await new Promise((res) => setTimeout(res, delay));
+      delay = Math.min(15_000, Math.round(delay * 1.4));
+      continue;
+    }
+    if (r.status === "completed") {
+      const url = job.kind === "video" ? r.video?.url : r.images?.[0]?.url;
+      if (!url) throw new HiggsfieldError("供应商没有返回文件，可稍后点“继续等待”");
+      const res = await fetch(url);
+      if (!res.ok) throw new HiggsfieldError(`下载结果失败（HTTP ${res.status}），可稍后点“继续等待”`);
+      const bytes = Buffer.from(await res.arrayBuffer());
+      const mime = res.headers.get("content-type")?.split(";")[0] || (job.kind === "video" ? "video/mp4" : "image/png");
+      const ext = job.kind === "video" ? "mp4" : mime === "image/jpeg" ? "jpg" : mime === "image/webp" ? "webp" : "png";
+      // 两个等待同时拿到结果时只记一次（从这里到 updateJob 都是同步的）
+      if (getJob(job.id)?.status === "completed") return;
+      saveJobOutput(job, bytes, ext, mime);
+      updateJob(job.id, { status: "completed", actualUsd: job.estUsd, error: null });
+      const v = getShortVideo(job.videoId);
+      const s = v?.shots.find((x) => x.id === job.shotId);
+      if (v && s && job.kind === "scene") {
+        const me = shotScene(v, s);
+        if (me) {
+          me.ver.refJobId = job.id;
+          delete me.ver.refFromV;
+          saveScene(me.sc);
+        }
+        addLedgerEntry({ projectId: job.projectId, shotCode: `${v.title} / 场地参考`, kind: "first_frame", model: job.model, usd: job.estUsd, note: `短视频 · 场地空场景参考图${me ? ` · ${me.sc.name} v${me.ver.v}` : ""}` });
+      } else if (v && s) {
+        if (job.kind === "frame") {
+          s.frameJobId = job.id;
+          s.stage = "frame_ready";
+        } else {
+          s.videoJobId = job.id;
+          s.stage = "video_ready";
+        }
+        saveShortVideo(v);
+        addLedgerEntry({
+          projectId: job.projectId,
+          shotCode: `${v.title} / ${v.shots.indexOf(s) + 1}`,
+          kind: job.kind === "video" ? "video" : "first_frame",
+          model: job.model,
+          usd: job.estUsd,
+          note: `短视频${job.reason ? ` · 重做原因：${job.reason}` : ""}`,
+        });
+      }
+      await deleteRequest(requestId).catch(() => undefined);
+      return;
+    }
+    if (r.status === "failed" || r.status === "nsfw" || r.status === "canceled") {
+      updateJob(job.id, { status: "failed", actualUsd: 0, error: r.status === "nsfw" ? "内容被审核拦截（不收费）" : `生成失败（不收费）${r.error ? `：${r.error}` : ""}` });
+      throw new HiggsfieldError(r.status === "nsfw" ? "内容被审核拦截（不收费），请调整画面描述" : "生成失败（不收费），可调整后重试");
+    }
+    if (Date.now() > end) throw new HiggsfieldError("还在生成中，任务已保存；稍后点“继续等待”，不会重复扣费");
+    await new Promise((res) => setTimeout(res, delay));
+    delay = Math.min(15_000, Math.round(delay * 1.4));
+  }
+}
+
+/** 导出：每个勾选的开头各出一条「开头 + 正文」；第一条同时存成 final.mp4 */
+export async function renderShortAction(videoId: string): Promise<Result<StudioState>> {
+  try {
+    const v = load(videoId);
+    const hooks = v.shots.filter((s) => s.hook);
+    const picked = (v.exportHooks?.length ? hooks.filter((h) => v.exportHooks!.includes(h.id)) : hooks.slice(0, 1));
+    const notReady = picked.filter((h) => h.stage !== "accepted");
+    if (notReady.length) throw new Error(`这些开头还没采用：${notReady.map((h) => h.hook?.name).join("、")}`);
+    if (!picked.length) await renderShort(v);
+    for (const [k, h] of picked.entries()) {
+      const out = await renderShort(v, hookFinalPath(v, h.id), h.id);
+      if (k === 0) fs.copyFileSync(out, finalPath(v));
+    }
+    saveShortVideo(v);
+    refresh(v);
+    return { result: state(videoId) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 大脑（Kimi）检查一镜要看的东西：最终提示词、3D 摆位、图片文件、这一镜的生成记录 */
+export async function brainShotInputs(videoId: string, shotId: string) {
+  const v = load(videoId);
+  const s = v.shots.find((x) => x.id === shotId);
+  if (!s) throw new Error("镜头不存在");
+  const dir = videoDir(v.projectId, v.id);
+  const fj = s.frameJobId ? getJob(s.frameJobId) : null;
+  const frame = fj ? jobFilePath(fj) : null;
+  const angle = angleRefPath(v, s);
+  const comp = s.compFile ? path.join(dir, s.compFile) : null;
+  return {
+    product: productText(v.projectId),
+    framePrompt: framePromptOf(v, s),
+    videoPrompt: videoPromptOf(v, s),
+    blocking: s.layout ? blockingText(s.layout, rigOf(v)) : "",
+    comp: comp && fs.existsSync(comp) ? comp : null,
+    frame: frame && fs.existsSync(frame) ? frame : null,
+    angle: angle && fs.existsSync(angle) ? angle : null,
+    refs: (await productRefFiles(v.projectId, v.colorId)).map((r) => r.file),
+    jobs: listJobs(v.id)
+      .filter((j) => j.shotId === s.id)
+      .map((j) => ({ kind: j.kind, status: j.status, reason: j.reason, usd: j.actualUsd ?? j.estUsd, at: j.createdAt })),
+  };
+}

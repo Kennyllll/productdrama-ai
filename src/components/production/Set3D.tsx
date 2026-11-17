@@ -5,14 +5,25 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { saveSetLayoutAction } from "@/app/production-actions";
-import type { SetLayout, SetProp } from "@/lib/production-repo";
+import type { SetLayout, SetMove, SetProp } from "@/lib/production-repo";
+import { lerpLayout, moveEnd, MOVES, shakeLayout } from "@/lib/shorts-set";
+import type { SceneItem } from "@/lib/shorts-scenes";
+import { buildFigure, buildFreeHand, buildScene } from "@/components/shorts/scene-mesh";
+import { estimateRig, figuresOf, KB002_RIG, rideOf, type FigureSpec, type ProductRig } from "@/lib/figures";
+import { freeHand, OP_HANDS, operatorOrigin, parseOp } from "@/lib/shorts-operator";
 
 export interface SetShot {
   code: string;
+  /** 按钮上显示的名字；没有就用 code */
+  label?: string;
   title: string;
   original: SetLayout;
   edited: SetLayout | null;
-  refs: { label: string; fileId: string; video: boolean }[];
+  refs: { label: string; fileId: string; video: boolean; url?: string }[];
+  /** 有值时本镜只能看不能保存，值是原因 */
+  locked?: string;
+  /** 机位已存但还没有 3D 构图：保存按钮要可点 */
+  needsCapture?: boolean;
 }
 
 type V3 = [number, number, number];
@@ -26,9 +37,84 @@ const angleDiff = (a: number, b: number) => {
   return d > 180 ? 360 - d : d;
 };
 const MARKER_LAYER = 1;
+
+// 必须定义在组件外：定义在里面时每次重绘都是新组件，滑块会被重建，拖动中途断掉
+function Slider({ label, value, min, max, step, onChange, unit }: { label: string; value: number; min: number; max: number; step: number; onChange: (v: number) => void; unit: string }) {
+  return (
+    <label className="block text-xs text-neutral-400">
+      <span className="flex justify-between">
+        <span>{label}</span>
+        <span className="text-white">
+          {value.toFixed(step < 1 ? 2 : 0)} {unit}
+        </span>
+      </span>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="w-full accent-amber-400" />
+    </label>
+  );
+}
 type Handle = "cam" | "target" | "bike";
 
-export function Set3D({ projectId, episode, shots, mapProps, glbUrl, initialCode }: { projectId: string; episode: number; shots: SetShot[]; mapProps: SetProp[]; glbUrl: string | null; initialCode: string }) {
+export function Set3D({
+  projectId,
+  episode,
+  shots,
+  mapProps,
+  sceneItems,
+  glbUrl,
+  initialCode,
+  codePrefix = "E2-",
+  onSave,
+  onCapture,
+  onCaptureProduct,
+  onShotChange,
+  rig,
+  moveExtra,
+  operators,
+  autoCapture,
+  live,
+  captureSignal = 0,
+  onDirty,
+  otherDirty = false,
+  compact = false,
+  activeCode,
+}: {
+  projectId: string;
+  episode: number;
+  shots: SetShot[];
+  mapProps: SetProp[];
+  /** 短视频场地库：按镜头给出有形状的家具（优先于 mapProps 方块） */
+  sceneItems?: Record<string, SceneItem[]>;
+  glbUrl: string | null;
+  initialCode: string;
+  codePrefix?: string;
+  /** 传了就用它保存（短视频），并显示运镜编辑 */
+  onSave?: (code: string, layout: SetLayout | null) => Promise<{ error?: string }>;
+  /** 传了就在保存机位后同时截下 3D 构图，参数是摄影机画面 PNG */
+  onCapture?: (code: string, png: string) => Promise<{ error?: string }>;
+  /** 只拍产品、白底、从本镜机位方向看的同角度参考图（代替 Blender 渲染） */
+  onCaptureProduct?: (code: string, png: string) => Promise<{ error?: string }>;
+  onShotChange?: (code: string) => void;
+  /** 产品接触点（按产品模型保存）；没有时按模型尺寸估算 */
+  rig?: ProductRig | null;
+  /** 运镜框里额外的控件（短视频：拍摄者入镜） */
+  moveExtra?: (code: string, locked: boolean, api: { layout: SetLayout; setCamH: (h: number) => void }) => React.ReactNode;
+  /** 每镜拍摄者设置（短视频）：在镜头位置按姿态画出拍摄者人偶 */
+  operators?: Record<string, string>;
+  /** 进来就自动保存机位 + 3D 构图（摆放界面保存后跳过来） */
+  autoCapture?: boolean;
+  /** 同页摆放编辑器里的人偶 / 产品位置：实时合进本镜机位画面（短视频） */
+  live?: { figures: FigureSpec[]; bike?: [number, number]; bikeYaw: number; bikeLift?: number; bikePitch?: number; bikeRoll?: number; bikeGround?: number } | null;
+  /** 数字变化 = 摆放刚保存过，自动保存机位 + 3D 构图 */
+  captureSignal?: number;
+  /** 机位有没有没保存的改动（同页离开提醒用） */
+  onDirty?: (dirty: boolean) => void;
+  /** 同页别的编辑器有没保存的改动：切镜头时一起提醒 */
+  otherDirty?: boolean;
+  /** 合并 3D 页用：镜头切换、保存都放在页面顶部，次要设置收起 */
+  compact?: boolean;
+  /** 外面切了镜头（已经问过要不要丢改动） */
+  activeCode?: string;
+}) {
   const router = useRouter();
   const [code, setCode] = useState(shots.some((s) => s.code === initialCode) ? initialCode : shots[0]?.code ?? "");
   const shot = shots.find((s) => s.code === code) ?? shots[0];
@@ -37,15 +123,30 @@ export function Set3D({ projectId, episode, shots, mapProps, glbUrl, initialCode
   const [msg, setMsg] = useState("");
   const [pending, start] = useTransition();
   const camCanvas = useRef<HTMLCanvasElement>(null);
+  const productShotRef = useRef<(() => string | null) | null>(null);
+  const [modelReady, setModelReady] = useState(!glbUrl);
   const mapCanvas = useRef<HTMLCanvasElement>(null);
   const layoutRef = useRef(layout);
+  const [rigSaved] = useState<ProductRig | null>(rig ?? null);
+  const [autoRig, setAutoRig] = useState<ProductRig | null>(null);
+  const rigUse = rigSaved ?? autoRig ?? KB002_RIG;
+  const rigRef = useRef(rigUse);
+  useEffect(() => {
+    rigRef.current = rigUse;
+  }, [rigUse]);
   const viewRef = useRef({ cx: 0, cz: 0, span: 30 });
   const propsRef = useRef<THREE.Group | null>(null);
+  const previewRef = useRef<number | null>(null);
   const shotProps = useMemo(() => (shot.original.props?.length ? shot.original.props : mapProps), [shot, mapProps]);
+  const shotItems = sceneItems?.[shot.code] ?? null;
 
   useEffect(() => {
     layoutRef.current = layout;
   }, [layout]);
+  const opRef = useRef<string | null>(null);
+  useEffect(() => {
+    opRef.current = operators ? (operators[code] ?? "") : null;
+  }, [operators, code]);
 
   const recenter = (l: SetLayout) => {
     const c = toV(l.camPos);
@@ -54,8 +155,10 @@ export function Set3D({ projectId, episode, shots, mapProps, glbUrl, initialCode
     viewRef.current = { cx: (c.x + t.x) / 2, cz: (c.z + t.z) / 2, span: Math.max(12, dist * 2.2) };
   };
 
-  const pick = (s: SetShot) => {
+  const pick = (s: SetShot, force = false) => {
+    if (!force && (dirty || otherDirty) && s.code !== code && !window.confirm("这个镜头的修改还没保存，切换会丢掉。确定切换？")) return;
     setCode(s.code);
+    onShotChange?.(s.code);
     const l = s.edited ?? s.original;
     setLayout(l);
     setDirty(false);
@@ -103,10 +206,18 @@ export function Set3D({ projectId, episode, shots, mapProps, glbUrl, initialCode
         obj.position.set(-c.x, -box.min.y, -c.z);
         bike.remove(bikeStandIn);
         bike.add(obj);
+        const s = box.getSize(new THREE.Vector3());
+        // KB002 等模型车头沿 x 轴：长 = x，宽 = z
+        setAutoRig(estimateRig(s.x, s.z, s.y));
+        setModelReady(true);
       });
     }
-    const figure = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.32, 4, 12), new THREE.MeshLambertMaterial({ color: "#d9a38a", transparent: true, opacity: 0.55 }));
-    scene.add(figure);
+    const figGroup = new THREE.Group();
+    scene.add(figGroup);
+    let figKey = "";
+    const opGroup = new THREE.Group();
+    scene.add(opGroup);
+    let opKey = "-";
 
     const marker = (color: string, r: number) => {
       const m = new THREE.Mesh(new THREE.CircleGeometry(r, 24), new THREE.MeshBasicMaterial({ color, depthTest: false }));
@@ -126,10 +237,14 @@ export function Set3D({ projectId, episode, shots, mapProps, glbUrl, initialCode
     scene.add(fovLine);
 
     const shotCam = new THREE.PerspectiveCamera(40, 2.33, 0.03, 2000);
+    const handGroup = new THREE.Group();
+    shotCam.add(handGroup);
+    scene.add(shotCam);
+    let handKey = "-";
     const mapCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 2000);
     mapCam.layers.enable(MARKER_LAYER);
     mapCam.up.set(0, 0, -1);
-    const camR = new THREE.WebGLRenderer({ canvas: camEl, antialias: true });
+    const camR = new THREE.WebGLRenderer({ canvas: camEl, antialias: true, preserveDrawingBuffer: true });
     const mapR = new THREE.WebGLRenderer({ canvas: mapEl, antialias: true });
     for (const r of [camR, mapR]) r.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
@@ -141,9 +256,41 @@ export function Set3D({ projectId, episode, shots, mapProps, glbUrl, initialCode
       return w / Math.max(h, 1);
     };
 
+    // 同角度产品参考图：只留产品、白底，沿「产品 → 本镜摄影机」的方向把产品拍满画面
+    productShotRef.current = () => {
+      if (!bike.visible || bikeStandIn.parent) return null;
+      const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      r.setSize(768, 768, false);
+      const hide = [ground, propsGroup, figGroup, opGroup, handGroup];
+      const was = hide.map((o) => o.visible);
+      for (const o of hide) o.visible = false;
+      const bg = scene.background;
+      scene.background = new THREE.Color("#ffffff");
+      const box = new THREE.Box3().setFromObject(bike);
+      const c = box.getCenter(new THREE.Vector3());
+      const rad = box.getSize(new THREE.Vector3()).length() / 2 || 1;
+      const cam = new THREE.PerspectiveCamera(30, 1, rad / 100, rad * 100);
+      const d = shotCam.position.clone().sub(c);
+      if (d.lengthSq() < 1e-6) d.set(0, 0, 1);
+      cam.position.copy(c).add(d.normalize().multiplyScalar((rad / Math.sin(Math.PI / 12)) * 1.05));
+      cam.lookAt(c);
+      r.render(scene, cam);
+      const png = r.domElement.toDataURL("image/png");
+      scene.background = bg;
+      hide.forEach((o, i) => (o.visible = was[i]));
+      r.dispose();
+      r.forceContextLoss();
+      return png;
+    };
+
     let raf = 0;
     const frame = () => {
-      const l = layoutRef.current;
+      let l = layoutRef.current;
+      if (previewRef.current !== null) {
+        const t = (performance.now() - previewRef.current) / 3000;
+        if (t >= 1) previewRef.current = null;
+        else l = l.move?.kind === "handheld" ? shakeLayout(l, t * 3) : lerpLayout(l, moveEnd(l), t);
+      }
       const v = viewRef.current;
       const cam = toV(l.camPos);
       const target = toV(l.lookAt);
@@ -159,14 +306,63 @@ export function Set3D({ projectId, episode, shots, mapProps, glbUrl, initialCode
       bike.visible = hasBike;
       bikeMark.visible = hasBike;
       if (l.bike) {
-        bike.position.set(l.bike[0], 0, -l.bike[1]);
-        // KB002 模型车头朝 +x；当时数据里朝向 0° 表示车头朝南（对着北向的机位）
-        bike.rotation.y = (((l.bikeYaw ?? 0) - 90) * Math.PI) / 180;
+        bike.position.set(l.bike[0], l.bikeLift ?? 0, -l.bike[1]);
+        // KB002 模型车头朝 -x；转 yaw-90 后，朝向 0° 时车头朝世界 -z（地图上方）
+        bike.rotation.set(((l.bikeRoll ?? 0) * Math.PI) / 180, (((l.bikeYaw ?? 0) - 90) * Math.PI) / 180, (-(l.bikePitch ?? 0) * Math.PI) / 180, "YXZ");
         bikeMark.position.set(l.bike[0], 0.02, -l.bike[1]);
       }
-      figure.visible = hasBike && Boolean(l.figure);
-      if (l.bike) figure.position.set(l.bike[0], 0.72, -l.bike[1]);
+      const figs = figuresOf(l);
+      const rg = rigRef.current;
+      const key = JSON.stringify([figs, rg, l.bike, l.bikeYaw]);
+      if (key !== figKey) {
+        figKey = key;
+        for (const c of [...figGroup.children]) {
+          figGroup.remove(c);
+          c.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+        }
+        // 车头方向 = (-sin yaw, 0, -cos yaw)；人偶本地 +z 朝前；骑乘时原点放在座椅中心
+        const yawR = ((l.bikeYaw ?? 0) * Math.PI) / 180;
+        const bx = l.bike?.[0] ?? 0;
+        const by = l.bike?.[1] ?? 0;
+        for (const f of figs) {
+          const ride = f.onProduct && Boolean(l.bike);
+          const g = buildFigure(f.kind, ride ? "ride" : f.pose === "ride" ? "stand" : f.pose, { ride: rideOf(rg), custom: f.custom });
+          if (ride) {
+            g.rotation.y = yawR + Math.PI;
+            g.position.set(bx + Math.sin(yawR) * rg.seatBack, 0, -by + Math.cos(yawR) * rg.seatBack);
+          } else {
+            g.rotation.y = Math.PI - (f.yaw * Math.PI) / 180;
+            g.position.set(bx + f.dx, 0, -(by + f.dy));
+          }
+          figGroup.add(g);
+        }
+      }
 
+      // 拍摄者人偶：跟着镜头走，手机在身体前方
+      const os = opRef.current !== null ? parseOp(opRef.current) : null;
+      const oKey = os && !os.custom ? os.pose : "";
+      if (oKey !== opKey) {
+        opKey = oKey;
+        for (const c of [...opGroup.children]) {
+          opGroup.remove(c);
+          c.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+        }
+        if (os && !os.custom) opGroup.add(buildFigure("adult", os.pose, { custom: OP_HANDS[os.pose] ?? undefined }));
+      }
+      if (os && !os.custom) {
+        const oo = operatorOrigin(os.pose, l);
+        opGroup.position.set(oo.x, 0, -oo.y);
+        opGroup.rotation.y = Math.PI - (oo.heading * Math.PI) / 180;
+      }
+      const hKey = os && !os.custom && os.hand ? [freeHand(os).side, os.act, l.lens, l.aspect].join() : "";
+      if (hKey !== handKey) {
+        handKey = hKey;
+        for (const c of [...handGroup.children]) {
+          handGroup.remove(c);
+          c.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+        }
+        if (os && hKey) handGroup.add(buildFreeHand(freeHand(os).side === "left" ? -1 : 1, os.act ?? "reach", 18 / l.lens, 18 / l.lens / l.aspect));
+      }
       camMark.position.set(cam.x, 0.03, cam.z);
       targetMark.position.set(target.x, 0.03, target.z);
       const dir = new THREE.Vector3(target.x - cam.x, 0, target.z - cam.z).normalize();
@@ -258,6 +454,7 @@ export function Set3D({ projectId, episode, shots, mapProps, glbUrl, initialCode
       camR.dispose();
       mapR.dispose();
       propsRef.current = null;
+      productShotRef.current = null;
     };
   }, [glbUrl]);
 
@@ -265,6 +462,10 @@ export function Set3D({ projectId, episode, shots, mapProps, glbUrl, initialCode
     const g = propsRef.current;
     if (!g) return;
     g.clear();
+    if (shotItems) {
+      g.add(buildScene(shotItems));
+      return;
+    }
     const boxGeo = new THREE.BoxGeometry(1, 1, 1);
     for (const p of shotProps) {
       const lo = toV(p.lo);
@@ -274,7 +475,7 @@ export function Set3D({ projectId, episode, shots, mapProps, glbUrl, initialCode
       m.position.set((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, (lo.z + hi.z) / 2);
       g.add(m);
     }
-  }, [shotProps]);
+  }, [shotProps, shotItems]);
 
   const idx = shots.findIndex((s) => s.code === code);
   const prev = idx > 0 ? shots[idx - 1] : null;
@@ -284,28 +485,90 @@ export function Set3D({ projectId, episode, shots, mapProps, glbUrl, initialCode
 
   const save = (data: SetLayout | null) =>
     start(async () => {
-      const r = await saveSetLayoutAction(projectId, episode, code, data);
+      const r = onSave ? await onSave(code, data) : await saveSetLayoutAction(projectId, episode, code, data);
       if (r.error) return setMsg(r.error);
+      // 短视频：保存机位时同时截下 3D 构图，少一步也不会忘
+      if (data && onCapture) {
+        previewRef.current = null;
+        await new Promise((res) => requestAnimationFrame(() => res(null)));
+        const png = camCanvas.current?.toDataURL("image/png");
+        const c = png ? await onCapture(code, png) : { error: "截图失败" };
+        const pp = !c.error && onCaptureProduct ? productShotRef.current?.() : null;
+        const p: { error?: string } = pp && onCaptureProduct ? await onCaptureProduct(code, pp) : {};
+        setMsg(c.error ?? p.error ?? "机位和 3D 构图都已保存，可以回工作台确认构图");
+        setDirty(false);
+        router.refresh();
+        return;
+      }
       setMsg(data ? "已保存为你的修改（原始数据保留着）" : "已恢复成当时的数据");
       if (!data) setLayout(shot.original);
       setDirty(false);
       router.refresh();
     });
 
-  const Slider = ({ label, value, min, max, step, onChange, unit }: { label: string; value: number; min: number; max: number; step: number; onChange: (v: number) => void; unit: string }) => (
-    <label className="block text-xs text-neutral-400">
-      <span className="flex justify-between">
-        <span>{label}</span>
-        <span className="text-white">
-          {value.toFixed(step < 1 ? 2 : 0)} {unit}
-        </span>
-      </span>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="w-full accent-amber-400" />
-    </label>
-  );
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  const autoDone = useRef(false);
+  useEffect(() => {
+    if (!autoCapture || autoDone.current || !onCapture || shot.locked || !modelReady) return;
+    autoDone.current = true;
+    window.history.replaceState(window.history.state, "", `?shot=${code}`);
+    setMsg("正在自动更新 3D 构图…");
+    setTimeout(() => saveRef.current(layout), 800);
+  }, [autoCapture, onCapture, shot.locked, modelReady, code, layout]);
 
+  useEffect(() => {
+    onDirty?.(dirty);
+  }, [dirty, onDirty]);
+  useEffect(() => {
+    if (!live) return;
+    setLayout((l) => ({ ...l, figures: live.figures, figure: live.figures.length > 0, bike: live.bike, bikeYaw: live.bikeYaw, ...(live.bikeLift === undefined ? {} : { bikeLift: live.bikeLift, bikePitch: live.bikePitch, bikeRoll: live.bikeRoll, bikeGround: live.bikeGround }) }));
+  }, [live]);
+  useEffect(() => {
+    if (!captureSignal || !onCapture || shot.locked) return;
+    setMsg("正在更新 3D 构图…");
+    const t = setTimeout(() => saveRef.current(layoutRef.current), 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [captureSignal]);
+  useEffect(() => {
+    const s = activeCode && activeCode !== code ? shots.find((x) => x.code === activeCode) : undefined;
+    if (s) pick(s, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCode]);
+
+  const more = (
+    <>
+          <Slider label="看向点高度" value={layout.lookAt[2]} min={-2} max={20} step={0.05} unit="米" onChange={(v) => update({ lookAt: [layout.lookAt[0], layout.lookAt[1], v] })} />
+          {layout.bike ? <Slider label="产品朝向" value={layout.bikeYaw ?? 0} min={-180} max={180} step={1} unit="°" onChange={(v) => update({ bikeYaw: v })} /> : null}
+          {layout.bike ? (
+            <>
+              <Slider label="产品离地高度" value={layout.bikeLift ?? 0} min={0} max={1.5} step={0.05} unit="米" onChange={(v) => update({ bikeLift: v })} />
+              <Slider label="产品俯仰（车头抬起为正）" value={layout.bikePitch ?? 0} min={-90} max={90} step={1} unit="°" onChange={(v) => update({ bikePitch: v })} />
+              <Slider label="产品侧倾" value={layout.bikeRoll ?? 0} min={-180} max={180} step={1} unit="°" onChange={(v) => update({ bikeRoll: v })} />
+              <div className="flex flex-wrap gap-1 text-[11px]">
+                {(
+                  [
+                    ["平放", 0, 0, 0],
+                    ["侧倒在地", 0.12, 0, 85],
+                    ["斜靠（侧倾 18°）", 0, 0, 18],
+                    ["车头抬起", 0, 25, 0],
+                    ["提起来", 0.45, 0, 0],
+                  ] as const
+                ).map(([n, lift, pitch, roll]) => (
+                  <button key={n} type="button" className="rounded border border-white/15 px-2 py-0.5 text-neutral-300 hover:border-amber-400/60" onClick={() => update({ bikeLift: lift, bikePitch: pitch, bikeRoll: roll })}>
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
+    </>
+  );
   return (
     <div className="space-y-4">
+      {compact ? null : (
+        <>
       <div className="flex flex-wrap gap-2">
         {shots.map((s) => (
           <button
@@ -314,17 +577,21 @@ export function Set3D({ projectId, episode, shots, mapProps, glbUrl, initialCode
             onClick={() => pick(s)}
             className={`rounded-lg border px-3 py-1 text-sm ${s.code === code ? "border-amber-400/60 bg-amber-400/10 text-amber-200" : "border-white/10 text-neutral-400 hover:bg-white/5"}`}
           >
-            E2-{s.code}
+            {s.label ?? `${codePrefix}${s.code}`}
             {s.edited ? <span className="ml-1 text-[10px] text-sky-300">已改</span> : null}
+            {s.locked ? <span className="ml-1 text-[10px] text-neutral-500">锁</span> : null}
           </button>
         ))}
       </div>
       <p className="text-sm text-neutral-300">{shot.title}</p>
+      {shot.locked ? <p className="rounded-md bg-amber-400/10 px-3 py-1.5 text-xs text-amber-200">{shot.locked}</p> : null}
+        </>
+      )}
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className={compact ? "space-y-3" : "grid gap-4 xl:grid-cols-2"}>
         <figure>
           <figcaption className="mb-1 text-xs text-neutral-400">摄影机画面（按当时的机位、焦段实时算）</figcaption>
-          <canvas ref={camCanvas} className="w-full rounded-lg border border-white/10 bg-black" style={{ aspectRatio: String(layout.aspect) }} />
+          <canvas ref={camCanvas} className={`${layout.aspect < 1 ? "mx-auto max-w-sm" : ""} w-full rounded-lg border border-white/10 bg-black`} style={{ aspectRatio: String(layout.aspect) }} />
         </figure>
         <figure>
           <figcaption className="mb-1 text-xs text-neutral-400">
@@ -335,53 +602,97 @@ export function Set3D({ projectId, episode, shots, mapProps, glbUrl, initialCode
         </figure>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-        <div className="space-y-3 rounded-xl border border-white/10 bg-neutral-900/70 p-4">
+      <div className={compact ? "space-y-3" : "grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]"}>
+        <fieldset disabled={Boolean(compact && shot.locked)} className={`min-w-0 space-y-3 rounded-xl border border-white/10 bg-neutral-900/70 p-4 ${compact && shot.locked ? "opacity-60" : ""}`}>
           <Slider label="焦段" value={layout.lens} min={12} max={200} step={1} unit="mm" onChange={(v) => update({ lens: v })} />
           <Slider label="机位高度" value={camHeight} min={0.05} max={12} step={0.05} unit="米" onChange={(v) => update({ camPos: [layout.camPos[0], layout.camPos[1], v] })} />
-          <Slider label="看向点高度" value={layout.lookAt[2]} min={-2} max={20} step={0.05} unit="米" onChange={(v) => update({ lookAt: [layout.lookAt[0], layout.lookAt[1], v] })} />
-          {layout.bike ? <Slider label="车的朝向" value={layout.bikeYaw ?? 0} min={-180} max={180} step={1} unit="°" onChange={(v) => update({ bikeYaw: v })} /> : null}
+          {compact ? (
+            <>
+              <Slider label="看向点高度" value={layout.lookAt[2]} min={-2} max={20} step={0.05} unit="米" onChange={(v) => update({ lookAt: [layout.lookAt[0], layout.lookAt[1], v] })} />
+              <div>
+                <button type="button" disabled={pending || (!shot.edited && !dirty) || Boolean(shot.locked)} onClick={() => save(null)} className="rounded-lg border border-white/15 px-3 py-1 text-sm text-neutral-300 disabled:opacity-40">
+                  恢复自动机位
+                </button>
+              </div>
+            </>
+          ) : (
+            more
+          )}
+          {onSave ? (
+            <div className="space-y-2 border-t border-white/10 pt-3 text-xs text-neutral-400">
+              <label className="block">
+                运镜
+                <select
+                  value={layout.move?.kind ?? "static"}
+                  onChange={(e) => update({ move: { kind: e.target.value as SetMove["kind"], amount: layout.move?.amount || 0.5 } })}
+                  className="mt-1 w-full rounded border border-white/10 bg-neutral-950 px-2 py-1 text-white"
+                >
+                  {MOVES.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {layout.move && layout.move.kind !== "static" ? (
+                <Slider label={layout.move.kind === "handheld" ? "晃动幅度" : "运镜幅度"} value={layout.move.amount} min={0.1} max={1} step={0.05} unit="" onChange={(v) => update({ move: { kind: layout.move!.kind, amount: v } })} />
+              ) : null}
+              <button type="button" onClick={() => (previewRef.current = performance.now())} className="rounded-lg border border-white/15 px-3 py-1 text-sm text-neutral-300">
+                ▶ 预演运镜（3 秒）
+              </button>
+              {moveExtra?.(code, Boolean(shot.locked), { layout, setCamH: (h) => update({ camPos: [layout.camPos[0], layout.camPos[1], h] }) })}
+            </div>
+          ) : null}
+          {compact ? null : (
+            <>
           <div className="space-y-1 border-t border-white/10 pt-3 text-xs">
             <p className="text-neutral-400">
               镜头朝向 <span className="text-white">{heading(layout).toFixed(0)}°</span>（北 0°，东 90°） · 到看向点 {dist.toFixed(1)} 米
             </p>
             {diff !== null && prev ? (
               <p className={diff >= 30 ? "text-emerald-300" : "text-amber-300"}>
-                和上一镜 E2-{prev.code} 的角度差 {diff.toFixed(0)}°{diff >= 30 ? "，够了" : "：不到 30°，直接切会像跳帧（除非景别差 2 倍以上）"}
+                和上一镜 {codePrefix}
+                {prev.code} 的角度差 {diff.toFixed(0)}°{diff >= 30 ? "，够了" : "：不到 30°，直接切会像跳帧（除非景别差 2 倍以上）"}
               </p>
             ) : null}
             <p className="text-neutral-500">数据来源：{shot.original.source}</p>
           </div>
           <div className="flex flex-wrap gap-2 border-t border-white/10 pt-3">
-            <button type="button" disabled={!dirty || pending} onClick={() => save(layout)} className="rounded-lg bg-amber-400 px-3 py-1 text-sm font-medium text-black disabled:opacity-40">
-              保存我的修改
+            <button type="button" disabled={(!dirty && !(onSave && (!shot.edited || shot.needsCapture))) || pending || Boolean(shot.locked)} onClick={() => save(layout)} className="rounded-lg bg-amber-400 px-3 py-1 text-sm font-medium text-black disabled:opacity-40">
+              {onCapture ? "保存机位 + 3D 构图" : "保存我的修改"}
             </button>
-            <button type="button" disabled={pending || (!shot.edited && !dirty)} onClick={() => save(null)} className="rounded-lg border border-white/15 px-3 py-1 text-sm text-neutral-300 disabled:opacity-40">
-              恢复当时的数据
+            <button type="button" disabled={pending || (!shot.edited && !dirty) || Boolean(shot.locked)} onClick={() => save(null)} className="rounded-lg border border-white/15 px-3 py-1 text-sm text-neutral-300 disabled:opacity-40">
+              {onSave ? "恢复自动机位" : "恢复当时的数据"}
             </button>
           </div>
+            </>
+          )}
           {msg ? <p className="text-xs text-sky-200">{msg}</p> : null}
-          <p className="text-[11px] leading-relaxed text-neutral-500">在这里怎么改都不花钱。改完不会自动重新出图：按新布景出 Blender 构图和首帧，下一轮接进来，出图前会先问你。</p>
-        </div>
-        <div>
-          <p className="mb-2 text-xs text-neutral-400">当时按这个布景出来的结果（对照看 3D 数据怎么变成画面）</p>
+          {compact ? null : (
+          <p className="text-[11px] leading-relaxed text-neutral-500">
+            {onCapture ? "在这里怎么改都不花钱。每个镜头调完都要点“保存机位 + 3D 构图”，之后回工作台确认构图；生成首帧前会先问你。" : "在这里怎么改都不花钱。改完不会自动重新出图：按新布景出 Blender 构图和首帧，下一轮接进来，出图前会先问你。"}
+          </p>
+          )}
+        </fieldset>
+        <details open={!compact} className="min-w-0">
+          <summary className="mb-2 cursor-pointer select-none text-xs text-neutral-400">{compact ? "历史结果" : "当时按这个布景出来的结果（对照看 3D 数据怎么变成画面）"}</summary>
           <div className="flex gap-3 overflow-x-auto pb-2">
             {shot.refs.map((r) =>
               r.video ? (
-                <figure key={r.fileId} className="w-80 shrink-0">
-                  <video src={`/api/library/${r.fileId}`} controls preload="metadata" className="w-full rounded border border-white/10 bg-black" />
+                <figure key={r.url ?? r.fileId} className="w-80 shrink-0">
+                  <video src={r.url ?? `/api/library/${r.fileId}`} controls preload="metadata" className="w-full rounded border border-white/10 bg-black" />
                   <figcaption className="mt-1 truncate text-[11px] text-neutral-500">{r.label}</figcaption>
                 </figure>
               ) : (
-                <a key={r.fileId} href={`/api/library/${r.fileId}`} target="_blank" rel="noreferrer" className="w-80 shrink-0">
+                <a key={r.url ?? r.fileId} href={r.url ?? `/api/library/${r.fileId}`} target="_blank" rel="noreferrer" className={`${shot.original.aspect < 1 ? "w-48" : "w-80"} shrink-0`}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={`/api/library/${r.fileId}`} alt={r.label} className="w-full rounded border border-white/10 bg-black" />
+                  <img src={r.url ?? `/api/library/${r.fileId}`} alt={r.label} className="w-full rounded border border-white/10 bg-black" />
                   <span className="mt-1 block truncate text-[11px] text-neutral-500">{r.label}</span>
                 </a>
               ),
             )}
           </div>
-        </div>
+        </details>
       </div>
     </div>
   );

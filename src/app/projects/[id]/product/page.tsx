@@ -1,9 +1,10 @@
 import { notFound } from "next/navigation";
 import { ProductBibleEditor } from "@/components/workbench/ProductBibleEditor";
-import { LocalProductWorkbench } from "@/components/workbench/LocalProductWorkbench";
+import { LocalProductWorkbench, type TodoItem } from "@/components/workbench/LocalProductWorkbench";
+import { loadKit } from "@/lib/product-kit";
 import { Card, DemoNotice, LaterButton, MockBadge, PageHeader, PlaceholderFrame, Tag } from "@/components/ui";
-import { DEMO_PROJECT_ID, demoProduct, productAngles } from "@/lib/mock/demo";
-import { findBlender } from "@/lib/blender";
+import { DEMO_PROJECT_ID, demoProduct } from "@/lib/mock/demo";
+import { WHITE_REQUIRED } from "@/lib/fal-catalog";
 import { getProductModel } from "@/lib/model-repo";
 import { findLocalProject, getProduct, listAssets } from "@/lib/repo";
 import type { AssetRecord } from "@/lib/types";
@@ -16,17 +17,31 @@ function LocalProductPage({ id }: { id: string }) {
   const assets = listAssets(id);
   const logo = assets.find((a) => a.kind === "logo");
   const model = getProductModel(id);
+  const kit = loadKit(id);
+  const inGrid = new Set(assets.filter((a) => a.kind === "white_photo").map((a) => a.originalName));
+  const missing = WHITE_REQUIRED.filter((a) => !kit.white.some((w) => w.angle === a));
+  const reviewing = kit.models.filter((m) => m.colorId === null && m.status === "review").length;
+  const pending = product.bible.filter((f) => f.needsConfirmation).length;
+  const todo: TodoItem[] = [];
+  if (!product.name.trim()) todo.push({ step: 1, text: "产品名称" });
+  if (!product.sellingPoints.length) todo.push({ step: 1, text: "卖点" });
+  if (!model && missing.length) todo.push({ step: 2, text: `${missing.join("、")}照` });
+  if (!logo) todo.push({ step: 2, text: "Logo" });
+  if (reviewing) todo.push({ step: 3, text: `审核 ${reviewing} 个新模型` });
+  else if (!model) todo.push({ step: 3, text: "3D 模型" });
+  if (pending) todo.push({ step: 4, text: `${pending} 项产品细节未确认` });
   return (
     <>
-      <PageHeader title="产品工作台" description="上传真实产品多角度照片与 Logo，建立 Product Bible。文件只保存在本机。" />
+      <PageHeader title="产品资料" description="按 1–4 步填，做完的步骤会自动收起。短视频和长视频都用这里的资料。" />
       <LocalProductWorkbench
         projectId={id}
         product={product}
-        photos={assets.filter((a) => a.kind === "product_photo").map(toView)}
+        details={assets.filter((a) => a.kind === "product_photo" && !inGrid.has(a.originalName)).map(toView)}
         logo={logo ? toView(logo) : null}
-        angles={productAngles}
+        packaging={assets.filter((a) => a.kind === "packaging_photo").map(toView)}
         model={model ? { id: model.id, originalName: model.originalName, size: model.size } : null}
-        blender={Boolean(findBlender())}
+        kit={kit}
+        todo={todo}
       />
     </>
   );

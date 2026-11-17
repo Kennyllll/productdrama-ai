@@ -1,5 +1,6 @@
 "use server";
 
+import { productPhotos } from "@/lib/product-photos";
 import fs from "node:fs";
 import { getEgg, getProjectEggId, findPhoto, listCharacters, listPhotos, photoPath } from "@/lib/cast-repo";
 import { deleteRequest, estimate, HiggsfieldError, submit, uploadFile, waitFor } from "@/lib/higgsfield";
@@ -27,7 +28,7 @@ function referenceFiles(projectId: string, shot: { product: string; characterIds
   let logo: Ref[] = [];
   if (shot.product !== "无") {
     const assets = listAssets(projectId);
-    photos = assets.filter((x) => x.kind === "product_photo").slice(0, 6).map((a) => ({ path: assetPath(a), mime: a.mime })).filter(exists);
+    photos = productPhotos(assets).slice(0, 6).map((a) => ({ path: assetPath(a), mime: a.mime })).filter(exists);
     const l = assets.find((x) => x.kind === "logo" && x.mime !== "image/svg+xml");
     if (l) logo = [{ path: assetPath(l), mime: l.mime }].filter(exists);
   }

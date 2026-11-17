@@ -27,6 +27,7 @@ export const DEMO_PROJECT_ID = "demo";
 export const demoProject: Project = {
   id: DEMO_PROJECT_ID,
   source: "demo",
+  kind: "series",
   name: "小小探险家（示例项目）",
   brand: "KRIDDO（示例品牌信息）",
   updatedAt: "示例数据",

@@ -12,7 +12,8 @@ export async function createProjectAction(_prev: FormState, fd: FormData): Promi
   const name = text(fd, "name", 60);
   const brand = text(fd, "brand", 60);
   if (!name) return { error: "请填写项目名称" };
-  const id = createProject(name, brand);
+  const kind = fd.get("kind") === "product" ? "product" : "series";
+  const id = createProject(name, brand, kind);
   revalidatePath("/dashboard");
   redirect(`/projects/${id}/product`);
 }
@@ -41,6 +42,7 @@ export async function saveProductAction(_prev: FormState, fd: FormData): Promise
   saveProduct(projectId, {
     name: text(fd, "name", 80),
     category: text(fd, "category", 80),
+    rideKind: text(fd, "rideKind", 20),
     sellingPoints,
     bible,
   });

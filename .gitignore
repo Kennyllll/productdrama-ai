@@ -51,3 +51,6 @@ next-env.d.ts
 *.mov
 *.webm
 .kriddo-test/
+
+# local test scripts, screenshots and backups
+/.brain-test/

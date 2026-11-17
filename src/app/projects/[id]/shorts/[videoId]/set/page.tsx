@@ -1,0 +1,99 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import type { SetShot } from "@/components/production/Set3D";
+import { ShortSet, type StageProps } from "@/components/shorts/ShortSet";
+import { Card } from "@/components/ui";
+import { getProductModel, modelFor } from "@/lib/model-repo";
+import { getRig } from "@/lib/product-rig-repo";
+import { findLocalProject } from "@/lib/repo";
+import { getShortVideo, listJobs, listShortVideos } from "@/lib/shorts-repo";
+import { autoLayout } from "@/lib/shorts-set";
+import { activeItems, findTheme, type SceneItem } from "@/lib/shorts-scenes";
+import { ensureScenes, legacyShotScene, versionOf } from "@/lib/shorts-scenes-repo";
+import type { ShotBinding } from "@/components/shorts/SceneEditor";
+import { JobPill } from "@/components/shorts/JobPill";
+
+export const dynamic = "force-dynamic";
+
+export default async function ShortSetPage({ params, searchParams }: { params: Promise<{ id: string; videoId: string }>; searchParams: Promise<{ shot?: string; capture?: string; mode?: string; fig?: string }> }) {
+  const { id, videoId } = await params;
+  const sp = await searchParams;
+  const v = getShortVideo(videoId);
+  if (!findLocalProject(id) || !v || v.projectId !== id) notFound();
+  // 画面里用本视频选的颜色款；接触点跟形状走，存在白模 / 原模型上
+  const base = getProductModel(id);
+  const model = modelFor(id, v.colorId);
+  const jobs = listJobs(videoId);
+  const shots: SetShot[] = v.shots.map((s, i) => {
+    const frame = jobs.find((j) => j.id === s.frameJobId);
+    return {
+      needsCapture: !s.compFile,
+      locked: s.stage !== "draft" ? "构图已确认：要改机位先在工作台点“退回构图”" : undefined,
+      code: s.id,
+      label: `#${i + 1}`,
+      title: `#${i + 1} ${s.beat} · ${s.camera || "机位未写"} — ${s.description}`,
+      original: autoLayout(s, i),
+      edited: s.layout,
+      refs: [
+        ...(s.compFile ? [{ label: "已保存的 3D 构图", fileId: "", video: false, url: `/api/shorts/${v.id}?comp=${s.id}&t=${encodeURIComponent(s.compFile)}` }] : []),
+        ...(frame ? [{ label: "首帧", fileId: "", video: false, url: `/api/shorts/${frame.id}` }] : []),
+      ],
+    };
+  });
+  const scenes = ensureScenes(id, listShortVideos(id));
+  const sceneItems: Record<string, SceneItem[]> = {};
+  const stage: Record<string, StageProps> = {};
+  const bindings: ShotBinding[] = v.shots.map((s, i) => {
+    const sh = s.scene ?? legacyShotScene(scenes, v.room);
+    const sc = scenes.find((x) => x.id === sh.id) ?? scenes[0];
+    const ver = versionOf(sc, sh.v);
+    sceneItems[s.id] = activeItems(ver.items, sh.theme);
+    stage[s.id] = {
+      locked: s.stage !== "draft" ? "构图已确认：要改人偶和产品位置，先回镜头点“退回构图”" : undefined,
+      layout: s.layout ?? autoLayout(s, i),
+      scene: { id: sc.id, name: sc.name, v: ver.v, theme: sh.theme, themeLabel: findTheme(sh.theme).label },
+      items: ver.items,
+    };
+    return { code: s.id, label: `#${i + 1}`, scene: sh, family: s.family ?? 1, special: s.special ?? "", locked: shots[i].locked };
+  });
+  return (
+    <>
+      <JobPill videoId={videoId} projectId={id} />
+      {!model ? (
+        <Card title="还没有产品 3D 模型">
+          <p className="text-sm text-neutral-300">
+            先到{" "}
+            <Link href={`/projects/${id}/product`} className="text-amber-300 underline">
+              产品页
+            </Link>{" "}
+            上传带材质的 GLB 模型；没有模型时地图里只用白色方块代替产品。
+          </p>
+        </Card>
+      ) : null}
+      {shots.length === 0 ? (
+        <Card title="还没有分镜">
+          <p className="text-sm text-neutral-300">先在工作台选创意、出分镜。</p>
+        </Card>
+      ) : (
+        <ShortSet
+          key={`${sp.shot ?? ""}:${sp.capture ?? ""}`}
+          stage={stage}
+          initialSel={sp.fig}
+          projectId={id}
+          videoId={videoId}
+          shots={shots}
+          bindings={bindings}
+          operators={Object.fromEntries(v.shots.map((s) => [s.id, s.operator ?? ""]))}
+          scenes={scenes}
+          sceneItems={sceneItems}
+          glbUrl={model ? `/api/models/${model.id}` : null}
+          modelId={base?.id ?? null}
+          rig={base ? getRig(base.id) : null}
+          initialCode={sp.shot ?? v.shots.find((s) => s.stage !== "accepted")?.id ?? ""}
+          autoCapture={sp.capture === "1"}
+          title={v.title}
+        />
+      )}
+    </>
+  );
+}

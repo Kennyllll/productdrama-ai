@@ -15,10 +15,14 @@ export type StepStatus = "done" | "in_progress" | "todo";
 
 export type ProjectSource = "demo" | "local";
 
+/** series：长剧（多集故事）；product：产品短视频（一个产品下多条短视频） */
+export type ProjectKind = "series" | "product";
+
 export interface Project {
   id: string;
   /** demo：只读示例；local：保存在本机 SQLite */
   source: ProjectSource;
+  kind: ProjectKind;
   name: string;
   brand: string;
   updatedAt: string;
@@ -50,15 +54,21 @@ export interface Product {
   bible: ProductBibleField[];
 }
 
-export type LocalProduct = Pick<Product, "name" | "category" | "sellingPoints" | "bible">;
+export type LocalProduct = Pick<Product, "name" | "category" | "sellingPoints" | "bible"> & {
+  /** 产品类型（balance / tricycle / other），空 = 按品类猜 */
+  rideKind?: string;
+};
 
-export type AssetKind = "product_photo" | "logo";
+/** white_photo：建白模用的白底照（angle = 哪一面）；sticker：车身贴纸（angle = 贴在哪，note = 原图 / 实拍）；color_photo：颜色款实物照（colorId） */
+export type AssetKind = "product_photo" | "logo" | "packaging_photo" | "white_photo" | "sticker" | "color_photo";
 
 export interface AssetRecord {
   id: string;
   projectId: string;
   kind: AssetKind;
   angle: string;
+  colorId: string | null;
+  note: string;
   originalName: string;
   fileName: string;
   mime: string;

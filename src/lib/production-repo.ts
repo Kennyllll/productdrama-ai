@@ -129,13 +129,28 @@ export interface SetProp {
   rgb: [number, number, number];
 }
 
+/** 运镜：从起幅（layout 本身）运动到落幅，amount 0–1 */
+export interface SetMove {
+  kind: "static" | "handheld" | "push" | "pull" | "orbitL" | "orbitR" | "rise" | "lower";
+  amount: number;
+}
+
 /** 一个镜头的 3D 布景（坐标沿用 Blender：x 东、y 北、z 上，单位米） */
 export interface SetLayout {
+  move?: SetMove;
+  /** 人偶（每镜）；没有时看旧字段 figure */
+  figures?: import("@/lib/figures").FigureSpec[];
   lens: number;
   camPos: [number, number, number];
   lookAt: [number, number, number];
   bike?: [number, number];
   bikeYaw?: number;
+  /** 产品离地高度（米）、俯仰（车头抬起为正，度）、侧倾（度）；没有 = 平放在地上 */
+  bikeLift?: number;
+  bikePitch?: number;
+  bikeRoll?: number;
+  /** 这个姿势贴地要抬多高（米）；离地高度 - 它 = 真的悬空多少 */
+  bikeGround?: number;
   figure?: boolean;
   aspect: number;
   source: string;

@@ -1,11 +1,10 @@
 // 本地项目 / 产品 / 素材的数据访问（TASK-002）。仅在服务端使用。
 import { randomUUID } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
-import { getDb, UPLOAD_DIR } from "@/lib/db";
+import { getDb } from "@/lib/db";
+import { localPath, putFile, removeFile, removePrefix, storageKey } from "@/lib/storage";
 import { DEMO_PROJECT_ID, demoProject, emptyBible, localStepStatus } from "@/lib/mock/demo";
 import { emptyCreative, sanitizeCreative, sanitizeScript } from "@/lib/creative";
-import type { AssetKind, AssetRecord, LocalCreative, LocalProduct, LocalScript, ProductBibleField, Project } from "@/lib/types";
+import type { AssetKind, AssetRecord, LocalCreative, LocalProduct, LocalScript, ProductBibleField, Project, ProjectKind } from "@/lib/types";
 
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 export const MAX_PHOTOS = 20;
@@ -16,6 +15,7 @@ interface ProjectRow {
   id: string;
   name: string;
   brand: string;
+  kind: string;
   created_at: string;
   updated_at: string;
 }
@@ -23,6 +23,7 @@ interface ProjectRow {
 interface ProductRow {
   name: string;
   category: string;
+  ride_kind: string;
   selling_points: string;
   bible: string;
 }
@@ -32,6 +33,8 @@ interface AssetRow {
   project_id: string;
   kind: AssetKind;
   angle: string;
+  color_id: string | null;
+  note: string | null;
   original_name: string;
   file_name: string;
   mime: string;
@@ -46,6 +49,7 @@ function toProject(r: ProjectRow): Project {
     id: r.id,
     name: r.name,
     brand: r.brand || "未填写品牌",
+    kind: r.kind === "product" ? "product" : "series",
     updatedAt: r.updated_at,
     episodeCount: 4,
     secondsPerEpisode: 45,
@@ -61,6 +65,8 @@ function toAsset(r: AssetRow): AssetRecord {
     projectId: r.project_id,
     kind: r.kind,
     angle: r.angle,
+    colorId: r.color_id ?? null,
+    note: r.note ?? "",
     originalName: r.original_name,
     fileName: r.file_name,
     mime: r.mime,
@@ -88,12 +94,12 @@ export function findProject(id: string): Project | null {
   return id === DEMO_PROJECT_ID ? demoProject : findLocalProject(id);
 }
 
-export function createProject(name: string, brand: string): string {
+export function createProject(name: string, brand: string, kind: ProjectKind = "series"): string {
   const id = randomUUID();
   const t = now();
   const db = getDb();
   db.transaction(() => {
-    db.prepare("INSERT INTO projects (id, name, brand, created_at, updated_at) VALUES (?, ?, ?, ?, ?)").run(id, name, brand, t, t);
+    db.prepare("INSERT INTO projects (id, name, brand, kind, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(id, name, brand, kind, t, t);
     db.prepare("INSERT INTO products (project_id, bible) VALUES (?, ?)").run(id, JSON.stringify(emptyBible));
   })();
   return id;
@@ -102,19 +108,20 @@ export function createProject(name: string, brand: string): string {
 export function deleteProject(id: string): boolean {
   if (!ID_RE.test(id)) return false;
   const res = getDb().prepare("DELETE FROM projects WHERE id = ?").run(id);
-  fs.rmSync(path.join(UPLOAD_DIR, id), { recursive: true, force: true });
+  removePrefix(storageKey(id));
   return res.changes > 0;
 }
 
 export function getProduct(projectId: string): LocalProduct | null {
   const row = getDb()
-    .prepare("SELECT name, category, selling_points, bible FROM products WHERE project_id = ?")
+    .prepare("SELECT name, category, ride_kind, selling_points, bible FROM products WHERE project_id = ?")
     .get(projectId) as ProductRow | undefined;
   if (!row) return null;
   const saved = JSON.parse(row.bible) as ProductBibleField[];
   return {
     name: row.name,
     category: row.category,
+    rideKind: row.ride_kind,
     sellingPoints: JSON.parse(row.selling_points) as string[],
     bible: emptyBible.map((field) => saved.find((s) => s.key === field.key) ?? field),
   };
@@ -122,8 +129,8 @@ export function getProduct(projectId: string): LocalProduct | null {
 
 export function saveProduct(projectId: string, product: LocalProduct) {
   getDb()
-    .prepare("UPDATE products SET name = ?, category = ?, selling_points = ?, bible = ? WHERE project_id = ?")
-    .run(product.name, product.category, JSON.stringify(product.sellingPoints), JSON.stringify(product.bible), projectId);
+    .prepare("UPDATE products SET name = ?, category = ?, ride_kind = COALESCE(?, ride_kind), selling_points = ?, bible = ? WHERE project_id = ?")
+    .run(product.name, product.category, product.rideKind ?? null, JSON.stringify(product.sellingPoints), JSON.stringify(product.bible), projectId);
   touch(projectId);
 }
 
@@ -143,8 +150,12 @@ export function getAsset(id: string): AssetRecord | null {
   return row ? toAsset(row) : null;
 }
 
+export function assetKey(asset: AssetRecord): string {
+  return storageKey(asset.projectId, asset.fileName);
+}
+
 export function assetPath(asset: AssetRecord): string {
-  return path.join(UPLOAD_DIR, asset.projectId, asset.fileName);
+  return localPath(assetKey(asset));
 }
 
 export function addAsset(input: {
@@ -155,20 +166,24 @@ export function addAsset(input: {
   bytes: Buffer;
   mime: string;
   ext: string;
+  colorId?: string | null;
+  note?: string;
 }): AssetRecord {
   if (input.kind === "logo") {
     for (const old of listAssets(input.projectId).filter((a) => a.kind === "logo")) deleteAsset(old.id);
   }
+  // 白底照 / 颜色款照：同一面只留最新一张
+  if (input.kind === "white_photo" || input.kind === "color_photo") {
+    for (const old of listAssets(input.projectId).filter((a) => a.kind === input.kind && a.angle === input.angle && (a.colorId ?? null) === (input.colorId ?? null))) deleteAsset(old.id);
+  }
   const id = randomUUID();
   const fileName = `${id}.${input.ext}`;
-  const dir = path.join(UPLOAD_DIR, input.projectId);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, fileName), input.bytes);
+  putFile(storageKey(input.projectId, fileName), input.bytes);
   getDb()
     .prepare(
-      "INSERT INTO assets (id, project_id, kind, angle, original_name, file_name, mime, size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO assets (id, project_id, kind, angle, original_name, file_name, mime, size, created_at, color_id, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
-    .run(id, input.projectId, input.kind, input.angle, input.originalName, fileName, input.mime, input.bytes.length, now());
+    .run(id, input.projectId, input.kind, input.angle, input.originalName, fileName, input.mime, input.bytes.length, now(), input.colorId ?? null, (input.note ?? "").slice(0, 200));
   touch(input.projectId);
   return getAsset(id)!;
 }
@@ -177,7 +192,7 @@ export function deleteAsset(id: string): boolean {
   const asset = getAsset(id);
   if (!asset) return false;
   getDb().prepare("DELETE FROM assets WHERE id = ?").run(id);
-  fs.rmSync(assetPath(asset), { force: true });
+  removeFile(assetKey(asset));
   touch(asset.projectId);
   return true;
 }

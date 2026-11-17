@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AppShell } from "@/components/AppShell";
+import { listLocalProjects } from "@/lib/repo";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -7,11 +8,14 @@ export const metadata: Metadata = {
   description: "产品电影级连续短剧制作工作台（本地原型）",
 };
 
+export const dynamic = "force-dynamic";
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const projects = listLocalProjects().map((p) => ({ id: p.id, name: p.name, kind: p.kind }));
   return (
     <html lang="zh-CN">
       <body className="antialiased">
-        <AppShell>{children}</AppShell>
+        <AppShell projects={projects}>{children}</AppShell>
       </body>
     </html>
   );
