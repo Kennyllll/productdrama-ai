@@ -65,6 +65,8 @@ import {
 } from "@/lib/shorts-repo";
 import { runKey, runningOf, runs, type RunInfo } from "@/lib/shorts-runs";
 import { getRig } from "@/lib/product-rig-repo";
+import { castOf, getFamily } from "@/lib/families-repo";
+import { memberText } from "@/lib/families";
 import { promptConflicts } from "@/lib/shorts-conflicts";
 
 type Result<T> = { error?: string; result?: T };
@@ -109,7 +111,14 @@ function requirePackaging(projectId: string, templateId: string) {
   if (findTemplate(templateId).needsPackaging && !hasPackaging(projectId)) throw new Error("开箱视频要先在产品页上传真实包装照片，包装不让 AI 编");
 }
 
-export async function createShortVideoAction(projectId: string, title: string, templateId: string, theme = "none", themeText = ""): Promise<Result<string>> {
+/** 家庭位 → 家庭库 id：只留存在的家庭 */
+function cleanFams(f: Record<string, string> | undefined): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const [k, id] of Object.entries(f ?? {})) if (/^[1-9]$/.test(k) && typeof id === "string" && getFamily(id)) out[k] = id;
+  return Object.keys(out).length ? out : undefined;
+}
+
+export async function createShortVideoAction(projectId: string, title: string, templateId: string, theme = "none", themeText = "", families?: Record<string, string>): Promise<Result<string>> {
   try {
     if (!findLocalProject(projectId)) throw new Error("项目不存在");
     requirePackaging(projectId, templateId);
@@ -118,6 +127,12 @@ export async function createShortVideoAction(projectId: string, title: string, t
     if (th === "custom" && !text) throw new Error("自定义节日要写清楚是什么节日");
     const t = title.trim().slice(0, 60) || `${findTemplate(templateId).label} · ${listShortVideos(projectId).length + 1}`;
     const id = createShortVideo(projectId, t, findTemplate(templateId).id, { theme: th, themeText: text || undefined });
+    const fams = cleanFams(families);
+    if (fams) {
+      const nv = load(id);
+      nv.families = fams;
+      saveShortVideo(nv);
+    }
     revalidatePath(`/projects/${projectId}/shorts`);
     return { result: id };
   } catch (e) {
@@ -259,6 +274,43 @@ function bindScenes(v: ShortVideo) {
 }
 
 /** 换整条视频的节日：做过的镜头先列出来让用户确认（退回构图重做），已采用的镜头不自动改 */
+/** 换某个家庭位用哪家：已采用的镜头拦下；做过的镜头先列出要重做的和费用，确认后退回构图。人偶的成员绑定清掉 */
+export async function setVideoFamilyAction(videoId: string, slot: number, familyId: string | null, confirmed = false): Promise<Result<{ confirm?: string; state?: StudioState }>> {
+  try {
+    const v = load(videoId);
+    const k = String(Math.max(1, Math.min(9, Math.round(slot))));
+    if (familyId && !getFamily(familyId)) throw new Error("家庭不存在");
+    if ((v.families?.[k] ?? null) === familyId) return { result: { state: state(videoId) } };
+    if (listJobs(videoId).some((j) => j.status === "submitting" || j.status === "submitted")) throw new Error("有镜头正在生成，等生成完再换家庭");
+    const label = (s: ShortShot) => (s.hook ? `开头「${s.hook.name}」` : `#${v.shots.indexOf(s) + 1}`);
+    const changed = v.shots.filter((s) => famOf(s) === Number(k));
+    const accepted = changed.filter((s) => s.stage === "accepted");
+    if (accepted.length) throw new Error(`已采用的镜头 ${accepted.map(label).join("、")} 不会被自动改：要换家庭，先在这些镜头点“退回返工”`);
+    const redo = changed.filter((s) => s.stage !== "draft" || s.frameJobId || s.videoJobId);
+    if (redo.length && !confirmed) {
+      const usd = redo.reduce((a, s) => a + FRAME_USD_FALLBACK + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * VIDEO_USD_PER_SEC[v.resolution] : 0), 0);
+      const to = familyId ? getFamily(familyId)!.name : "不指定";
+      return { result: { confirm: `家庭位 ${k} 换成「${to}」以后，这些已经做过的镜头画面里还是原来的人，要退回构图重做：\n${redo.map(label).join("、")}\n\n重做大约 $${usd.toFixed(2)}（每次生成照样先审批）。已经生成的画面会留在历史里。` } };
+    }
+    for (const s of changed) {
+      if (s.layout?.figures) s.layout.figures = s.layout.figures.map(({ memberId: _m, h: _h, ...f }) => (void _m, void _h, f));
+      if (redo.includes(s)) {
+        s.compFile = null;
+        s.stage = "draft";
+      }
+    }
+    const fams = { ...(v.families ?? {}) };
+    if (familyId) fams[k] = familyId;
+    else delete fams[k];
+    v.families = Object.keys(fams).length ? fams : undefined;
+    saveShortVideo(v);
+    refresh(v);
+    return { result: { state: state(videoId) } };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 export async function setVideoThemeAction(videoId: string, theme: string, themeText = "", confirmed = false): Promise<Result<{ confirm?: string; state?: StudioState }>> {
   try {
     const v = load(videoId);
@@ -629,6 +681,7 @@ function framePromptOf(v: ShortVideo, s: ShortShot): string {
     ...plan.map((r, k) => `Image ${k + 1} ${r.text}`),
     s.layout ? layoutText(s.layout) : "",
     s.layout ? `3D BLOCKING (authoritative: the positions, poses and orientation below override any conflicting wording later in this prompt): ${blockingText(s.layout, rigOf(v))}` : "",
+    castText(v, s),
     me ? sceneText(me.sc, me.ver, me.sh, s.layout ? itemSight(s.layout) : undefined) : "",
     otherFamily ? "This shot shows a different family from the earlier shots: different people and a different home; only the product is the same model." : "",
     specialText(v, s),
@@ -651,6 +704,18 @@ function framePromptOf(v: ShortVideo, s: ShortShot): string {
   const room = FRAME_PROMPT_MAX - rest - lead.length;
   const fit = notes.length <= room ? notes : room > 80 ? `${notes.slice(0, room - 1).replace(/\s+\S*$/, "")}…` : "";
   return parts.map((x) => (x === NOTES ? (fit ? lead + fit : "") : x)).filter(Boolean).join("\n");
+}
+
+/** 绑定了家庭成员的人偶：“Person 1 is Leo, a 3-year-old boy, …”（衣服跟视频节日） */
+function castText(v: ShortVideo, s: ShortShot): string {
+  const fam = castOf(v.families, famOf(s));
+  if (!fam || !s.layout) return "";
+  const th = videoTheme(v).theme;
+  const who = figuresOf(s.layout).flatMap((f, k) => {
+    const m = fam.members.find((x) => x.id === f.memberId);
+    return m ? [`Person ${k + 1} is ${memberText(fam, m, th)}.`] : [];
+  });
+  return who.length ? `People (the same real people in every shot of this family; match their age, height, hair and clothes): ${who.join(" ")}` : "";
 }
 
 /** 空场景参考图：只有房间和主题布置，没有人、没有产品 */
@@ -1307,7 +1372,7 @@ export async function deleteTemplateAction(templateId: string): Promise<Result<t
 }
 
 /** 从模板新建：场地复制到这个产品下、3D 按车的握把高度缩放、全部回到构图草案（每镜要重新存 3D 构图），节日按这次选的 */
-export async function createFromTemplateAction(projectId: string, templateId: string, title: string, theme: string, themeText = ""): Promise<Result<string>> {
+export async function createFromTemplateAction(projectId: string, templateId: string, title: string, theme: string, themeText = "", families?: Record<string, string>): Promise<Result<string>> {
   try {
     if (!findLocalProject(projectId)) throw new Error("项目不存在");
     const tp = getTemplate(templateId);
@@ -1339,6 +1404,7 @@ export async function createFromTemplateAction(projectId: string, templateId: st
     v.room = tp.room;
     v.resolution = tp.resolution;
     v.hooksReady = true;
+    v.families = cleanFams(families);
     v.fromTemplate = { id: tp.id, v: tp.v, name: tp.name, fromProduct: tp.fromProduct, fromKind: tp.fromKind ?? rideKindOf(undefined, tp.fromProduct) };
     bindScenes(v);
     v.shots.forEach((s) => (s.textBasis = basisOf(s, placeOf(v, s))));

@@ -21,6 +21,7 @@ import {
   setBudgetAction,
   saveTemplateAction,
   setVideoThemeAction,
+  setVideoFamilyAction,
   shotStageAction,
   type StageAction,
   type StudioState,
@@ -82,6 +83,7 @@ export function ShortStudio({
   initialShot = null,
   kit,
   hasBase = false,
+  families = [],
 }: {
   initial: StudioState;
   templates: { id: string; label: string; look: string }[];
@@ -91,6 +93,7 @@ export function ShortStudio({
   initialShot?: string | null;
   kit?: KitData;
   hasBase?: boolean;
+  families?: { id: string; name: string }[];
 }) {
   const [st, setSt] = useState(initial);
   const [shots, setShots] = useState<ShortShot[]>(initial.video.shots);
@@ -154,6 +157,18 @@ export function ShortStudio({
       apply({ error: r.error, result: r.result?.state }, "已换节日");
     });
   };
+
+  const famName = (k: string) => families.find((f) => f.id === v.families?.[k])?.name ?? "不指定";
+  const famSlots = [...new Set(["1", ...shots.map((s) => String(s.family ?? 1))])].sort();
+  const changeFamily = (slot: string, id: string) =>
+    start(async () => {
+      let r = await setVideoFamilyAction(v.id, Number(slot), id || null);
+      if (r.result?.confirm) {
+        if (!window.confirm(r.result.confirm)) return;
+        r = await setVideoFamilyAction(v.id, Number(slot), id || null, true);
+      }
+      apply({ error: r.error, result: r.result?.state }, "已换家庭");
+    });
 
   const live = useMemo(() => ({ ...v, shots }), [v, shots]);
   const secs = finalSeconds(live);
@@ -317,9 +332,27 @@ export function ShortStudio({
           />
           <details className="text-xs text-neutral-400">
             <summary className="cursor-pointer select-none">
-              视频设定 · 节日：{themeLabel} · {templates.find((t) => t.id === v.templateId)?.label ?? v.templateId} · {v.resolution} · 颜色：
+              视频设定 · 节日：{themeLabel} · 家庭：{famSlots.map(famName).join(" / ")} · {templates.find((t) => t.id === v.templateId)?.label ?? v.templateId} · {v.resolution} · 颜色：
               {kit?.colors.find((c) => c.id === v.colorId)?.name ?? "原色"}
             </summary>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {famSlots.map((k) => (
+              <label key={k} className="flex items-center gap-1">
+                家庭{famSlots.length > 1 ? ` ${k}` : ""}：
+                <select disabled={busy} value={v.families?.[k] ?? ""} onChange={(e) => changeFamily(k, e.target.value)} className="rounded border border-white/10 bg-neutral-950 px-1 py-0.5 text-white">
+                  {families.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
+                    </option>
+                  ))}
+                  <option value="">不指定</option>
+                </select>
+              </label>
+            ))}
+            <a href="/families" className="text-amber-300 hover:underline">
+              去家庭库改成员 →
+            </a>
+          </div>
           {v.fromTemplate ? (
             <div className="mt-2 space-y-1 text-amber-200/80">
               <p>

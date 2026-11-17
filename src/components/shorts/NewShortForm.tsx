@@ -23,17 +23,20 @@ export function NewShortForm({
   templates,
   saved,
   hasPackaging,
+  families = [],
 }: {
   projectId: string;
   templates: { id: string; label: string; description: string; needsPackaging?: boolean }[];
   saved: SavedTemplate[];
   hasPackaging: boolean;
+  families?: { id: string; name: string; who: string }[];
 }) {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [pick, setPick] = useState(templates[0]?.id ?? "");
   const [theme, setTheme] = useState("none");
   const [themeText, setThemeText] = useState("");
+  const [fam, setFam] = useState(families[0]?.id ?? "");
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
   const tp = pick.startsWith("tpl:") ? saved.find((x) => `tpl:${x.id}` === pick) : undefined;
@@ -55,8 +58,9 @@ export function NewShortForm({
       className="space-y-3"
       onSubmit={(e) => {
         e.preventDefault();
+        const fams = fam ? { 1: fam } : undefined;
         start(async () => {
-          const r = tp ? await createFromTemplateAction(projectId, tp.id, title, theme, themeText) : await createShortVideoAction(projectId, title, pick, theme, themeText);
+          const r = tp ? await createFromTemplateAction(projectId, tp.id, title, theme, themeText, fams) : await createShortVideoAction(projectId, title, pick, theme, themeText, fams);
           if (r.error || !r.result) return setError(r.error ?? "创建失败");
           router.push(`/projects/${projectId}/shorts/${r.result}`);
         });
@@ -90,6 +94,17 @@ export function NewShortForm({
         </p>
       ) : null}
       {needsPackaging && !hasPackaging ? <p className="text-xs text-amber-300">这个模板是开箱视频，要先在产品资料里上传真实包装照片。</p> : null}
+      <label className="block text-sm">
+        <span className="text-neutral-400">家庭（从家庭库选，所有产品共用）</span>
+        <select value={fam} onChange={(e) => setFam(e.target.value)} className={inputClass}>
+          {families.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.name}（{f.who}）
+            </option>
+          ))}
+          <option value="">不指定（人物只写大人 / 小孩）</option>
+        </select>
+      </label>
       <label className="block text-sm">
         <span className="text-neutral-400">{tp ? "节日（整套镜头一键换，不花钱）" : "节日"}</span>
         <select value={theme} onChange={(e) => setTheme(e.target.value)} className={inputClass}>

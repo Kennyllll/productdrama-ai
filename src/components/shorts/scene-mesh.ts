@@ -236,11 +236,11 @@ function tube(g: THREE.Group, m: THREE.Material, a: THREE.Vector3, b: THREE.Vect
  * 人偶：大人 1.75 m / 3 岁小孩 0.95 m。有关节（髋、膝、脚、肩、肘、手），手脚按目标点自动弯膝弯肘。
  * 本地坐标：原点在两脚之间的地面（骑乘时在座椅中心正下方），+z 朝前，+x 是人偶的左边。
  */
-export function buildFigure(kind: FigureKind, pose: FigurePose, opts: { ride?: RideRig; custom?: PoseTargets } = {}): THREE.Group {
+export function buildFigure(kind: FigureKind, pose: FigurePose, opts: { ride?: RideRig; custom?: PoseTargets; h?: number } = {}): THREE.Group {
   const g = new THREE.Group();
-  const d = dims(kind);
+  const d = dims(kind, opts.h);
   const H = d.H;
-  const p = { ...presetPose(kind, pose, opts.ride), ...opts.custom };
+  const p = { ...presetPose(kind, pose, opts.ride, opts.h), ...opts.custom };
   const skin = mat([0.85, 0.65, 0.55], 1, 0.8);
   const cloth = mat(kind === "adult" ? [0.55, 0.55, 0.6] : [0.75, 0.25, 0.25], 1, 0.8);
   const pants = mat(kind === "adult" ? [0.3, 0.3, 0.38] : [0.65, 0.2, 0.2], 1, 0.8);

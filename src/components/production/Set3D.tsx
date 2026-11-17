@@ -326,7 +326,7 @@ export function Set3D({
         const by = l.bike?.[1] ?? 0;
         for (const f of figs) {
           const ride = f.onProduct && Boolean(l.bike);
-          const g = buildFigure(f.kind, ride ? "ride" : f.pose === "ride" ? "stand" : f.pose, { ride: rideOf(rg), custom: f.custom });
+          const g = buildFigure(f.kind, ride ? "ride" : f.pose === "ride" ? "stand" : f.pose, { ride: rideOf(rg), custom: f.custom, h: f.h });
           if (ride) {
             g.rotation.y = yawR + Math.PI;
             g.position.set(bx + Math.sin(yawR) * rg.seatBack, 0, -by + Math.cos(yawR) * rg.seatBack);

@@ -187,6 +187,8 @@ export interface ShortVideoData {
   theme?: string;
   /** 自定义节日的描述（theme = "custom"） */
   themeText?: string;
+  /** 家庭位（镜头的 family 编号）→ 家庭库 id；没选 = 不写具体成员 */
+  families?: Record<string, string>;
   /** 从哪个模板（哪一版）套来的 */
   fromTemplate?: { id: string; v: number; name: string; fromProduct: string; fromKind?: string; rewritten?: boolean };
 }

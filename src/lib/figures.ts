@@ -51,6 +51,10 @@ export interface FigureSpec {
   action?: string;
   /** action 的英文，保存时自动翻译 */
   actionEn?: string;
+  /** 家庭库成员（families.ts）；绑定后按成员身高缩放 */
+  memberId?: string;
+  /** 身高（米）；空 = 大人 1.75 / 小孩 0.95 */
+  h?: number;
 }
 
 /** 骑乘接触点（人偶本地坐标：原点在座椅中心正下方的地面，+z 朝车头） */
@@ -173,6 +177,8 @@ export function cleanFigures(v: unknown): FigureSpec[] | undefined {
         ...(typeof x.action === "string" && x.action.trim()
           ? { action: x.action.trim().slice(0, 200), ...(typeof x.actionEn === "string" && x.actionEn.trim() ? { actionEn: x.actionEn.trim().slice(0, 400) } : {}) }
           : {}),
+        ...(typeof x.memberId === "string" && x.memberId ? { memberId: x.memberId.slice(0, 40) } : {}),
+        ...(typeof x.h === "number" && Number.isFinite(x.h) ? { h: num(x.h, 0.6, 2.1, 1) } : {}),
       },
     ];
   });
@@ -185,8 +191,8 @@ export function figuresOf(l: { figures?: FigureSpec[]; figure?: boolean }): Figu
 }
 
 /** 人偶尺寸（大人 1.75 m / 3 岁小孩 0.95 m） */
-export function figureDims(kind: FigureKind) {
-  const H = kind === "adult" ? 1.75 : 0.95;
+export function figureDims(kind: FigureKind, h?: number) {
+  const H = h && h > 0.5 ? h : kind === "adult" ? 1.75 : 0.95;
   return {
     H,
     thigh: 0.235 * H,
@@ -204,8 +210,8 @@ export function figureDims(kind: FigureKind) {
 }
 
 /** 预设姿态 → 完整目标 */
-export function presetPose(kind: FigureKind, pose: FigurePose, ride: RideRig = rideOf(KB002_RIG)): Required<PoseTargets> {
-  const d = figureDims(kind);
+export function presetPose(kind: FigureKind, pose: FigurePose, ride: RideRig = rideOf(KB002_RIG), h?: number): Required<PoseTargets> {
+  const d = figureDims(kind, h);
   const H = d.H;
   const shoulderY = (hipY: number, lean: number) => hipY + d.torso * Math.cos(lean) - 0.03 * H;
   if (pose === "ride") {

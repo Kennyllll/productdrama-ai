@@ -10,6 +10,7 @@ import { SHORT_TEMPLATES } from "@/lib/shorts";
 import { finalPath, getJob, getShortVideo, listJobs, toJobView } from "@/lib/shorts-repo";
 import { syncOf } from "@/lib/shorts-sync-state";
 import { runningOf } from "@/lib/shorts-runs";
+import { listFamilies } from "@/lib/families-repo";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,7 @@ export default async function ShortVideoPage({ params, searchParams }: { params:
         productPhotos={(await productRefFiles(id, video.colorId)).length}
         kit={loadKit(id)}
         hasBase={!!getProductModel(id)}
+        families={listFamilies().map((f) => ({ id: f.id, name: f.name }))}
         finalAt={finalAt}
         initialShot={shot && video.shots.some((s) => s.id === shot) ? shot : null}
       />

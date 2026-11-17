@@ -17,7 +17,9 @@ export interface StageProps {
   layout: SetLayout;
   scene: { id: string; name: string; v: number; theme: string; themeLabel: string };
   items: SceneItem[];
+  members?: CastOption[];
 }
+import type { CastOption } from "@/lib/families";
 import { activeItems, type Scene, type SceneItem } from "@/lib/shorts-scenes";
 import type { FigureSpec } from "@/lib/figures";
 
@@ -196,6 +198,7 @@ export function ShortSet({
               layout={st.layout}
               scene={st.scene}
               items={st.items}
+              members={st.members}
               glbUrl={glbUrl}
               modelId={modelId}
               rig={rig}

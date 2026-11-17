@@ -93,7 +93,7 @@ function doing(f: FigureSpec, l: SetLayout): string {
 
 /** 不在产品上时，“骑”姿态在 3D 里按站着摆（和 Set3D 一致） */
 const effPose = (f: FigureSpec) => (f.pose === "ride" ? "stand" : f.pose);
-const jointsOf = (f: FigureSpec, rig: ProductRig | null | undefined) => ({ ...presetPose(f.kind, effPose(f), rig ? rideOf(rig) : undefined), ...f.custom });
+const jointsOf = (f: FigureSpec, rig: ProductRig | null | undefined) => ({ ...presetPose(f.kind, effPose(f), rig ? rideOf(rig) : undefined, f.h), ...f.custom });
 
 /** 人偶本地点（+z 朝前，+x 人偶左边，y 向上）→ three.js 坐标；和 Set3D 摆人偶的方式一致 */
 function toThree(f: Pick<FigureSpec, "onProduct" | "dx" | "dy" | "yaw">, l: SetLayout, rig: ProductRig, p: P3): V3 {
@@ -131,7 +131,7 @@ function bodyFacts(f: FigureSpec, l: SetLayout, rig: ProductRig | null | undefin
   if (f.onProduct && l.bike) return "";
   const pose = effPose(f);
   const j = jointsOf(f, rig);
-  const lift = figureDims(f.kind).ankle + 0.08;
+  const lift = figureDims(f.kind, f.h).ankle + 0.08;
   const up = [j.footL, j.footR].filter((q) => q[1] > lift).length;
   const base = pose === "sit" ? "sitting on the ground" : pose === "crouch" ? "crouching" : "standing";
   const feet = pose === "sit" ? "" : up === 0 ? " with both feet on the ground" : up === 1 ? " with one foot lifted off the ground" : " with both feet off the ground";
@@ -179,7 +179,7 @@ export function blockingText(l: SetLayout | null | undefined, rig?: ProductRig |
   if (!figs.length) out.push("No people are in the frame except what is described for the person filming.");
   figs.forEach((f, k) => {
     const [x, y] = figPos(f, l);
-    const head = proj([x, y, f.kind === "adult" ? 1.6 : 0.85]);
+    const head = proj([x, y, figureDims(f.kind, f.h).H * 0.9]);
     const feet = proj([x, y, 0]);
     const who = f.kind === "adult" ? "an adult" : "a small child";
     const inFrame = Number.isFinite(feet.nx) && (Math.abs(feet.nx) <= 1.1 || Math.abs(head.nx) <= 1.1);

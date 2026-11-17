@@ -1,5 +1,6 @@
 "use client";
 
+import type { CastOption } from "@/lib/families";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import * as THREE from "three";
@@ -80,8 +81,11 @@ export function StageEditor({
   onDirty,
   compact,
   saveSignal = 0,
+  members = [],
 }: {
   videoId: string;
+  /** 这一镜家庭的成员（家庭库）；人偶可以绑定 */
+  members?: CastOption[];
   shotCode: string;
   shotLabel: string;
   shots: { code: string; label: string; href: string }[];
@@ -262,7 +266,7 @@ export function StageEditor({
         const ride = f.onProduct && Boolean(d.bike);
         const root = new THREE.Group();
         root.userData.key = `fig:${f.id}`;
-        root.add(buildFigure(f.kind, effPose(f, Boolean(d.bike)), { ride: rideOf(rg), custom: f.custom }));
+        root.add(buildFigure(f.kind, effPose(f, Boolean(d.bike)), { ride: rideOf(rg), custom: f.custom, h: f.h }));
         if (ride) {
           root.rotation.y = yawR + Math.PI;
           root.position.set(bx + Math.sin(yawR) * rg.seatBack, 0, -by + Math.cos(yawR) * rg.seatBack);
@@ -272,7 +276,7 @@ export function StageEditor({
         }
         byKey.set(root.userData.key, root);
         if (!rm && (s === root.userData.key || s?.startsWith(`joint:${f.id}:`))) {
-          const base = presetPose(f.kind, effPose(f, Boolean(d.bike)), rideOf(rg));
+          const base = presetPose(f.kind, effPose(f, Boolean(d.bike)), rideOf(rg), f.h);
           for (const j of JOINTS) {
             const p = f.custom?.[j.id] ?? base[j.id];
             root.add(handle(j.id === "hip" ? "#f472b6" : "#38bdf8", 0.03, `joint:${f.id}:${j.id}`).translateX(p[0]).translateY(p[1]).translateZ(p[2]));
@@ -437,7 +441,7 @@ export function StageEditor({
     else if (selItem) commit((d) => ({ ...d, items: d.items.filter((i) => i.id !== selItem.id) }));
     setSel(null);
   };
-  const base = selFig ? presetPose(selFig.kind, effPose(selFig, Boolean(doc.bike)), rideOf(rigUse)) : null;
+  const base = selFig ? presetPose(selFig.kind, effPose(selFig, Boolean(doc.bike)), rideOf(rigUse), selFig.h) : null;
 
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
   const itemsChanged = !same(doc.items, init.current.items);
@@ -584,7 +588,7 @@ export function StageEditor({
           <div className="flex flex-wrap gap-1">
             {doc.figures.map((f, i) => (
               <button key={f.id} type="button" className={btn(selFig?.id === f.id)} onClick={() => setSel(`fig:${f.id}`)}>
-                人偶{i + 1}·{f.kind === "adult" ? "大人" : "小孩"}
+                人偶{i + 1}·{members.find((m) => m.id === f.memberId)?.name ?? (f.kind === "adult" ? "大人" : "小孩")}
               </button>
             ))}
             <button type="button" className={btn(false)} onClick={() => addFig("child")}>
@@ -628,11 +632,33 @@ export function StageEditor({
               <p className="text-[11px] text-amber-200">手脚拖过：自定义（从「{FIGURE_POSES.find((p) => p.id === effPose(selFig, Boolean(doc.bike)))?.label ?? selFig.pose}」改过来）</p>
             ) : null}
             <ActionBox value={selFig.action ?? ""} onChange={(v) => patchFig({ action: v || undefined, actionEn: undefined })} />
+            {members.length ? (
+              <label className="block text-neutral-400">
+                是谁（家庭库）
+                <select
+                  value={selFig.memberId ?? ""}
+                  onChange={(e) => {
+                    const m = members.find((x) => x.id === e.target.value);
+                    patchFig(m ? { memberId: m.id, kind: m.kind, h: m.h, custom: undefined } : { memberId: undefined, h: undefined, custom: undefined });
+                  }}
+                  className="w-full rounded border border-white/10 bg-neutral-950 px-1 py-0.5 text-white"
+                >
+                  <option value="">不绑定（大人 1.75 米 / 小孩 0.95 米）</option>
+                  {members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <p className="text-[11px] text-neutral-500">这条视频没选家庭：在视频设定里选了家庭，人偶就能绑定成员、按身高缩放。</p>
+            )}
             <div className="flex gap-1">
-              <button type="button" className={btn(selFig.kind === "child")} onClick={() => patchFig({ kind: "child", custom: undefined })}>
+              <button type="button" className={btn(selFig.kind === "child")} onClick={() => patchFig({ kind: "child", custom: undefined, memberId: undefined, h: undefined })}>
                 小孩
               </button>
-              <button type="button" className={btn(selFig.kind === "adult")} onClick={() => patchFig({ kind: "adult", custom: undefined })}>
+              <button type="button" className={btn(selFig.kind === "adult")} onClick={() => patchFig({ kind: "adult", custom: undefined, memberId: undefined, h: undefined })}>
                 大人
               </button>
             </div>

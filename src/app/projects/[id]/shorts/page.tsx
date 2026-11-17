@@ -10,6 +10,7 @@ import path from "node:path";
 import { ProductRefs } from "@/components/shorts/ProductRefs";
 import { cadDir, getProductModel } from "@/lib/model-repo";
 import { listTemplates } from "@/lib/shorts-templates-repo";
+import { listFamilies } from "@/lib/families-repo";
 
 export const dynamic = "force-dynamic";
 
@@ -75,6 +76,7 @@ export default async function ShortsPage({ params }: { params: Promise<{ id: str
               templates={SHORT_TEMPLATES.map((t) => ({ id: t.id, label: t.label, description: t.description, needsPackaging: Boolean(t.needsPackaging) }))}
               saved={listTemplates().map((t) => ({ id: t.id, name: t.name, v: t.v, theme: t.theme, themeText: t.themeText, shots: t.shots.length, fromProduct: t.fromProduct, needsPackaging: Boolean(findTemplate(t.baseTemplateId).needsPackaging) }))}
               hasPackaging={listAssets(id).some((a) => a.kind === "packaging_photo")}
+              families={listFamilies().map((f) => ({ id: f.id, name: f.name, who: f.members.map((m) => m.name).join("、") }))}
             />
           </Card>
           <Card title="产品资料（长剧和短视频共用）">

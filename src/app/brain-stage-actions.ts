@@ -6,6 +6,8 @@ import { findLocalProject, getProduct } from "@/lib/repo";
 import { getProductModel } from "@/lib/model-repo";
 import { getRig } from "@/lib/product-rig-repo";
 import { listDecisions, listRules, type SetLayout } from "@/lib/production-repo";
+import { castOf } from "@/lib/families-repo";
+import { memberKind, roleOf } from "@/lib/families";
 import { cleanFigures, FIGURE_POSES, KB002_RIG, RIDE_KINDS, rideKindOf, type FigureSpec } from "@/lib/figures";
 import { blockingText } from "@/lib/shorts-blocking";
 import { activeItems, findItemType, type SceneItem } from "@/lib/shorts-scenes";
@@ -69,7 +71,7 @@ ${SKILLS}
 - 用户没提到的人偶和产品保持原样（原样抄回原值）；用户说“其他细节你帮我调”时，你可以按这一镜的故事和技能卡调整没指定的细节，并在 changes 里写清楚。
 - 拿不准、要用户拍板的写进 questions；不要编造。
 
-只输出 JSON：{"summary":"一句话","figures":[{"id":"原有人偶沿用原 id，新增的写 new1、new2","kind":"adult|child","pose":"…","onProduct":false,"dx":0,"dy":0,"yaw":0,"action":"…"}],"product":{"x":0,"y":0,"heading":0},"camera":"","text":["分镜文字建议"],"changes":["每条一句中文：改了什么、为什么"],"cannot":["做不到的"],"questions":["要用户拍板的"]}
+只输出 JSON：{"summary":"一句话","figures":[{"id":"原有人偶沿用原 id，新增的写 new1、new2","memberId":"家庭成员 id（可选，绑定后 kind 和身高跟成员）","kind":"adult|child","pose":"…","onProduct":false,"dx":0,"dy":0,"yaw":0,"action":"…"}],"product":{"x":0,"y":0,"heading":0},"camera":"","text":["分镜文字建议"],"changes":["每条一句中文：改了什么、为什么"],"cannot":["做不到的"],"questions":["要用户拍板的"]}
 figures 是改完以后的完整人偶列表（删掉的人偶不写）。`;
 
 /** 让大脑按一句话调这一镜的人偶和产品（Kimi 一次文字调用，不出图）；结果只用于预览 */
@@ -80,6 +82,7 @@ export async function brainStageAction(videoId: string, shotId: string, request:
     const s = v.shots.find((x) => x.id === shotId);
     if (!s) throw new Error("镜头不存在");
     if (s.stage !== "draft") throw new Error("这一镜已经确认构图，先在镜头里点「退回构图」");
+    const cast = castOf(v.families, s.family ?? 1);
     const ask = request.trim().slice(0, 500);
     if (ask.length < 2) throw new Error("先写一句要怎么调");
     const layout = s.layout;
@@ -108,6 +111,9 @@ export async function brainStageAction(videoId: string, shotId: string, request:
       `## 摄影机（你不能动）\n位置 ${layout.camPos.map(r2).join(", ")}，看向 ${layout.lookAt.map(r2).join(", ")}，焦段 ${layout.lens}mm。镜头朝向角 ${Math.round(camYaw)}°；画面右边 = 地图方向 ${Math.round(norm(camYaw + 90))}°，画面左边 = ${Math.round(norm(camYaw - 90))}°；人站在产品旁边要面向摄影机，朝向角约 ${toCam(bx, by)}°。`,
       `## 现在的 3D\n产品：${draft.bike ? `x ${r2(bx)}, y ${r2(by)}，车头朝向 ${Math.round(norm(draft.bikeYaw + 180))}°` : "这一镜没有产品"}\n人偶：${JSON.stringify(draft.figures.map((f) => ({ id: f.id, kind: f.kind, pose: f.pose, onProduct: f.onProduct, dx: r2(f.dx), dy: r2(f.dy), yaw: Math.round(f.yaw), action: f.action ?? "" })))}\n按摄影机算出的画面描述：${blockingText(cur, rig) || "（无）"}`,
       `## 场地里的家具（你不能动；x,y = 占地中心，w 沿朝向 0° 时的东西宽，d 南北深）\n${solid.map((i) => `${label(i)} x ${r2(i.x)} y ${r2(i.y)} w ${i.w} d ${i.d} h ${i.h} 转 ${i.yaw}°`).join("\n") || "（没有挡路的家具）"}${floor ? `\n可走动的地面：${label(floor)} 中心 x ${r2(floor.x)} y ${r2(floor.y)}，${floor.w}×${floor.d} 米` : ""}`,
+      cast
+        ? `## 这一镜的家庭：${cast.name}（用户说名字时指这些人；人偶写 memberId 就是这个人，身高自动用他的）\n${cast.members.map((m) => `- memberId ${m.id}：${m.name}，${roleOf(m.role).label}，${m.age} 岁，${(m.heightCm / 100).toFixed(2)} 米`).join("\n")}\n现在绑定：${draft.figures.map((f, i) => `人偶${i + 1}（id ${f.id}）= ${cast.members.find((m) => m.id === f.memberId)?.name ?? "未绑定"}`).join("，") || "没有人偶"}`
+        : "## 这一镜的家庭：没选（不要写 memberId）",
       `## 用户这次说的话\n${ask}`,
     ].join("\n\n");
 
@@ -147,6 +153,12 @@ export async function brainStageAction(videoId: string, shotId: string, request:
     const figures = raw.map((f, k): FigureSpec => {
       const n = `人偶${k + 1}（${f.kind === "adult" ? "大人" : "小孩"}）`;
       let g: FigureSpec = { ...f, custom: undefined, actionEn: undefined };
+      const mem = cast?.members.find((x) => x.id === g.memberId);
+      if (mem) g = { ...g, kind: memberKind(mem), h: mem.heightCm / 100 };
+      else {
+        if (g.memberId) cannot.push(`${n} 绑定的成员「${g.memberId}」不在这一镜的家庭里，没绑定`);
+        g = { ...g, memberId: undefined, h: undefined };
+      }
       if (g.pose === "ride" || g.onProduct) {
         const why = !bike ? "这一镜没有产品" : g.kind === "adult" ? "大人不能骑童车" : rider ? "一辆车只能一个人骑" : "";
         if (why) {
