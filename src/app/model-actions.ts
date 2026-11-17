@@ -52,6 +52,27 @@ type Result<T> = { result?: T; error?: string };
 const fail = (e: unknown): { error: string } => ({ error: e instanceof Error ? e.message : String(e) });
 
 const KEY_RE = /^[\x21-\x7e]{10,300}$/;
+import { arkPublicInfo, saveArkKey, testArkKey } from "@/lib/ark";
+
+export async function saveArkKeyAction(input: { key: string; clear: boolean }): Promise<FormState & { info?: { configured: boolean; keyHint: string } }> {
+  if (input.clear) saveArkKey("");
+  else {
+    const key = (input.key ?? "").trim();
+    if (key.length < 16 || /\s/.test(key)) return { error: "Key 格式不正确" };
+    saveArkKey(key);
+  }
+  revalidatePath("/settings");
+  return { ok: input.clear ? "已清除方舟 Key" : "已保存到本机", info: arkPublicInfo() };
+}
+
+export async function testArkAction(): Promise<FormState> {
+  try {
+    return { ok: `${await testArkKey()}（没有产生费用）` };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 const MAX_MESH_UPLOAD = 90 * 1024 * 1024;
 
 export async function saveFalKeyAction(input: { key: string; clear: boolean }): Promise<FormState & { info?: { configured: boolean; keyHint: string } }> {

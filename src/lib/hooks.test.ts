@@ -4,7 +4,7 @@ import { cleanHookData, cleanHookValues, fillCaption, PRESET_HOOKS } from "@/lib
 import { buildHookLayout } from "@/lib/hook-stage";
 
 test("预置 6 个 hook，清洗后不变", () => {
-  assert.deepEqual(PRESET_HOOKS.map((h) => h.name), ["价格开场", "大胆主张", "先给结果", "紧迫感", "社会认同", "对比"]);
+  assert.deepEqual(PRESET_HOOKS.map((h) => h.name), ["价格开场", "大胆主张", "先给结果", "紧迫感", "社会认同", "对比", "车里自拍"]);
   for (const h of PRESET_HOOKS) assert.deepEqual(cleanHookData(h), h);
   assert.equal(cleanHookData({ name: " " }), null);
   assert.deepEqual(cleanHookData({ name: "x", fields: [{ key: "a", label: "A" }, { key: "a", label: "B" }, { key: "product", label: "P" }] })?.fields.map((f) => f.label), ["A"]);

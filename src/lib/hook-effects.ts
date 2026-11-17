@@ -1,6 +1,6 @@
 // Hook 开头效果：每个 Hook 照真实广告案例定死字体、样式和出现方式，出片时用 ASS 字幕烧进开头（本机 ffmpeg，免费）。
 // 案例来源见 HOOK_CASES（Meta 广告库，2026-11 调查）。字体是 OFL 开源字体，放在 assets/fonts。
-export type HookEffectId = "priceBox" | "claimWords" | "resultLines" | "ticker" | "comment" | "vsWords";
+export type HookEffectId = "priceBox" | "claimWords" | "resultLines" | "ticker" | "comment" | "vsWords" | "talkWords";
 
 export interface HookEffectDef {
   id: HookEffectId;
@@ -18,6 +18,7 @@ export const HOOK_EFFECTS: HookEffectDef[] = [
   { id: "ticker", label: "顶部黑条跑马灯", look: "顶部黑条，TikTok Sans 白色粗体从右往左一直滚" },
   { id: "comment", label: "左上角评论气泡", look: "左上角白色评论气泡（Reply to comment），0 秒弹出" },
   { id: "vsWords", label: "每 0.5 秒跳一个大字", look: "TikTok Sans 特粗，黄绿色字黑描边，每 0.5 秒换一个词" },
+  { id: "talkWords", label: "中下方跟读字幕", look: "TikTok Sans 白色粗体黑描边，在画面中下方跟着台词一次出 3 个词，最后一个词加紫色底框；切镜后顶部换成紫底白字", tip: "跟读字幕直接用自拍台词；这里填的字写在切镜后的顶部" },
 ];
 
 export const isHookEffect = (x: unknown): x is HookEffectId => HOOK_EFFECTS.some((e) => e.id === x);
@@ -31,6 +32,7 @@ export const PRESET_EFFECT: Record<string, HookEffectId> = {
   紧迫感: "ticker",
   社会认同: "comment",
   对比: "vsWords",
+  车里自拍: "talkWords",
 };
 
 export interface HookCase {
@@ -73,6 +75,10 @@ export const HOOK_CASES: Record<HookEffectId, HookCase[]> = {
   vsWords: [
     c("1423138062758028", "18", "多形态儿童车", "2025-12 至 2026-01", "“CAN / BELIEVE / THIS / SAME / BIKE?”每 0.5 秒一个黄绿描边大字", "每个词切一种形态：推车 → 骑 → 平衡车"),
     c("39432274326419953", "43", "Montessori Generation 学步车", "2026-10 起，仍在投放", "红底白字“The perfect gift for 1-year-olds birthday”，第 3 秒换“I tried two”", "第 3 秒切成两辆车并排"),
+  ],
+  talkWords: [
+    c("1587134819248559", "car81", "儿童百科书（Everyday Beauty & Care）", "2026-10 起，仍在投放", "画面中下方白色粗体跟读字幕，一次 2–3 个词，关键词紫色底框；切镜后顶部紫底白字“For the kids that have 100000 questions all the time”", "奶奶坐在车里驾驶座，对着前置摄像头说话，书不入镜；第 4 秒切到书的特写"),
+    c("2387951781683606", "car5", "Take 5 换机油", "2026-05 至 06", "画面中下方小号白字跟读字幕，一次 2–3 个词", "妈妈坐驾驶座、系着安全带对镜头说话，第 7 秒切到车外"),
   ],
 };
 
@@ -127,6 +133,9 @@ Style: Bar,TikTok Sans,10,&H00000000,&H00000000,&H00000000,&H00000000,0,0,0,0,10
 Style: Bubble,TikTok Sans,60,&H00000000,&H00000000,&H00FFFFFF,&H00FFFFFF,-1,0,0,0,100,100,0,0,3,18,0,7,0,0,0,1
 Style: BubbleHead,TikTok Sans,38,&H00808080,&H00808080,&H00FFFFFF,&H00FFFFFF,0,0,0,0,100,100,0,0,3,18,0,7,0,0,0,1
 Style: Pop,TikTok Sans,170,&H004AF0C8,&H004AF0C8,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,9,0,5,40,40,0,1
+Style: Talk,TikTok Sans,76,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,6,0,5,60,60,0,1
+Style: TalkHi,TikTok Sans,76,&H00FFFFFF,&H00FFFFFF,&H00BF2C7B,&H00BF2C7B,-1,0,0,0,100,100,0,0,3,10,0,5,60,60,0,1
+Style: TopBox,TikTok Sans,54,&H00FFFFFF,&H00FFFFFF,&H00BF2C7B,&H00BF2C7B,-1,0,0,0,100,100,0,0,3,16,0,8,60,60,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -138,9 +147,9 @@ const ev = (start: number, end: number, style: string, text: string, layer = 0) 
  * 开头字幕的 ASS 文件内容。seconds = 开头在成片里多长；offset = 这一段从开头的第几秒开始（开头被切成两段时用）。
  * 空字幕返回 null。
  */
-export function hookAss(effect: HookEffectId, caption: string, seconds: number, offset = 0): string | null {
+export function hookAss(effect: HookEffectId, caption: string, seconds: number, offset = 0, talk?: { line?: string; cut?: number }): string | null {
   const text = esc(caption);
-  if (!text) return null;
+  if (!text && !(effect === "talkWords" && talk?.line?.trim())) return null;
   const end = Math.max(0.5, seconds);
   const lines: string[] = [];
   const at = (a: number, b: number, style: string, x: string, layer = 0) => {
@@ -193,6 +202,21 @@ export function hookAss(effect: HookEffectId, caption: string, seconds: number, 
         const b = i === words.length - 1 ? end : a + 0.5;
         if (a < end) at(a, b, "Pop", `{\\an5\\pos(${W / 2},${H * 0.6})\\fscx130\\fscy130\\t(0,90,\\fscx100\\fscy100)}${w}`);
       });
+      break;
+    }
+    case "talkWords": {
+      // 照案例：跟着台词一次出 3 个词，最后一个词紫底；切镜后顶部紫底白字（这里填的字）
+      const said = esc(talk?.line ?? "").split(/\s+/).filter(Boolean);
+      const words = said.length ? said : text.split(/\s+/).filter(Boolean);
+      const cut = said.length && talk?.cut && talk.cut < end ? talk.cut : end;
+      const chunks: string[][] = [];
+      for (let i = 0; i < words.length; i += 3) chunks.push(words.slice(i, i + 3));
+      const step = cut / Math.max(1, chunks.length);
+      chunks.forEach((c, i) => {
+        const last = `{\\rTalkHi}${c[c.length - 1]}`;
+        at(i * step, (i + 1) * step, "Talk", `{\\an5\\pos(${W / 2},${Math.round(H * 0.68)})}${c.length > 1 ? `${c.slice(0, -1).join(" ")} ${last}` : last}`);
+      });
+      if (said.length && text && cut < end) at(cut, end, "TopBox", `{\\an8\\pos(${W / 2},220)}${wrap(text, 28).join("\\N")}`);
       break;
     }
   }

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { notFound } from "next/navigation";
 import { ShortStudio } from "@/components/shorts/ShortStudio";
 import { hfPublicInfo } from "@/lib/higgsfield";
+import { arkPublicInfo } from "@/lib/ark";
 import { productRefFiles } from "@/app/short-actions";
 import { getProductModel } from "@/lib/model-repo";
 import { loadKit } from "@/lib/product-kit";
@@ -33,6 +34,7 @@ export default async function ShortVideoPage({ params, searchParams }: { params:
         initial={{ video, jobs: listJobs(videoId).map(toJobView), sync: syncOf(video), running: runningOf(videoId, (id) => getJob(id)?.status === "completed") }}
         templates={SHORT_TEMPLATES.map((t) => ({ id: t.id, label: t.label, look: t.look }))}
         hfReady={hfPublicInfo().configured}
+        arkReady={arkPublicInfo().configured}
         productPhotos={(await productRefFiles(id, video.colorId)).length}
         kit={loadKit(id)}
         hasBase={!!getProductModel(id)}

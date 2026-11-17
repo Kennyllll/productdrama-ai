@@ -36,6 +36,8 @@ export interface HookData {
   second?: HookSecond | null;
   /** 第一段默认是自拍（拿手机的人入镜对着前置摄像头，强制开声音） */
   selfie?: boolean;
+  /** 第一段的地方：car = 人坐在停着的汽车驾驶座自拍说话，产品不入镜（不用 3D），切镜后第二段才出产品 */
+  scene?: "car";
 }
 
 export interface HookSecond {
@@ -97,7 +99,8 @@ export function cleanHookData(x: unknown): HookData | null {
     stage: cleanStage(d.stage),
     effect: isHookEffect(d.effect) ? d.effect : (PRESET_EFFECT[name] ?? "claimWords"),
     second: d.second && typeof d.second === "object" ? { seconds: secOf(d.second.seconds, 2), about: s(d.second.about, 400), stage: cleanStage(d.second.stage) } : null,
-    selfie: Boolean(d.selfie),
+    selfie: Boolean(d.selfie) || d.scene === "car",
+    ...(d.scene === "car" ? { scene: "car" as const } : {}),
   };
 }
 
@@ -210,5 +213,19 @@ export const PRESET_HOOKS: HookData[] = [
       { key: "vs", label: "和什么比", example: "a heavy metal trike", visual: true },
       { key: "diff", label: "差别（画面里怎么看出来）", example: "妈妈一只手就能拎起这台车", visual: true },
     ],
+  },
+  {
+    name: "车里自拍",
+    effect: "talkWords",
+    about: "照案例：出镜的人坐在停着的汽车驾驶座上，系着安全带，用手机前置摄像头自拍，对着镜头说话，像跟朋友推荐；这一段产品不入镜。第 4 秒切到产品特写。",
+    use: "想要真人口播、像朋友推荐时：种草、分享心得、回答常见问题",
+    seconds: 4,
+    entry: "assembled",
+    caption: "{point}",
+    selfie: true,
+    scene: "car",
+    stage: { dist: 1.8, camH: 1.4, lens: 24, view: "front34", people: [] },
+    second: { seconds: 2, about: "切到产品特写：产品斜前方近拍，完整清楚，画面里没有人", stage: { dist: 1.2, camH: 0.8, lens: 35, view: "front34", people: [] } },
+    fields: [{ key: "point", label: "切镜后顶部的卖点", example: "Folds flat in seconds", visual: false }],
   },
 ];

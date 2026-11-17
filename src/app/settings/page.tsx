@@ -2,6 +2,8 @@ import { Card, PageHeader } from "@/components/ui";
 import { AiSettingsForm } from "@/components/workbench/AiSettingsForm";
 import { ElevenLabsSettingsForm } from "@/components/workbench/ElevenLabsSettingsForm";
 import { FalSettingsForm } from "@/components/workbench/FalSettingsForm";
+import { ArkSettingsForm } from "@/components/workbench/ArkSettingsForm";
+import { arkPublicInfo } from "@/lib/ark";
 import { HiggsfieldSettingsForm } from "@/components/workbench/HiggsfieldSettingsForm";
 import { VisionSettingsForm } from "@/components/workbench/VisionSettingsForm";
 import { BrainSettingsForm } from "@/components/workbench/BrainSettingsForm";
@@ -23,6 +25,7 @@ export default function SettingsPage() {
           <BrainSettingsForm initial={brainPublicInfo()} />
           <AiSettingsForm initial={aiPublicInfo()} />
           <HiggsfieldSettingsForm initial={hfPublicInfo()} />
+          <ArkSettingsForm initial={arkPublicInfo()} />
           <FalSettingsForm initial={falPublicInfo()} />
           <VisionSettingsForm initial={visionPublicInfo()} />
           <ElevenLabsSettingsForm initial={elevenLabsPublicInfo()} />

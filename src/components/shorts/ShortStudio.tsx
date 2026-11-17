@@ -32,6 +32,8 @@ import {
   type StageAction,
   type StudioState,
   fitShotActionsAction,
+  setHookSelfieAction,
+  setShotMoveAction,
 } from "@/app/short-actions";
 import {
   budgetOf,
@@ -57,6 +59,7 @@ import {
   waitingFor,
 } from "@/lib/shorts";
 import { THEMES } from "@/lib/shorts-scenes";
+import { MOVES } from "@/lib/shorts-set";
 import { type TextField } from "@/lib/shorts-sync";
 import { DraftView, SyncNotice } from "@/components/shorts/RewriteUI";
 import type { Conflict } from "@/lib/shorts";
@@ -87,6 +90,7 @@ export function ShortStudio({
   initial,
   templates,
   hfReady,
+  arkReady = false,
   productPhotos,
   finalAt: initialFinalAt,
   initialShot = null,
@@ -99,6 +103,7 @@ export function ShortStudio({
   initial: StudioState;
   templates: { id: string; label: string; look: string }[];
   hfReady: boolean;
+  arkReady?: boolean;
   productPhotos: number;
   finalAt: string | null;
   initialShot?: string | null;
@@ -592,6 +597,11 @@ export function ShortStudio({
           尚未配置 Higgsfield Key：免费步骤可用，付费生成不可用。
         </p>
       ) : null}
+      {!arkReady ? (
+        <p className="rounded-md bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
+          尚未配置火山方舟 Key：生成视频不可用，到「模型设置」填写。
+        </p>
+      ) : null}
       {productPhotos === 0 ? (
         <p className="rounded-md bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
           产品还没有参考图：先上传产品照，或在短视频列表页用 3D
@@ -881,7 +891,7 @@ export function ShortStudio({
                 ) : null,
                 i === 0 && hookPanel ? (
                   <li key="h-panel" className="col-span-full">
-                    <HookPanel themePicker={themeSelect} key={hookPanel.shotId ?? "new"} videoId={v.id} lib={hookLib} shot={hookPanel.shotId ? v.shots.find((x) => x.id === hookPanel.shotId) : undefined} targetId={hookPanel.shotId ? undefined : hookList[0]?.id} setHref={(id) => `/projects/${v.projectId}/shorts/${v.id}/set?shot=${id}&capture=1`} onDone={apply} onClose={() => setHookPanel(null)} />
+                    <HookPanel cast={cast} themePicker={themeSelect} key={hookPanel.shotId ?? "new"} videoId={v.id} lib={hookLib} shot={hookPanel.shotId ? v.shots.find((x) => x.id === hookPanel.shotId) : undefined} targetId={hookPanel.shotId ? undefined : hookList[0]?.id} setHref={(id) => `/projects/${v.projectId}/shorts/${v.id}/set?shot=${id}&capture=1`} onDone={apply} onClose={() => setHookPanel(null)} />
                   </li>
                 ) : null,
                 !s.hook && i === firstBody ? (
@@ -1155,7 +1165,7 @@ export function ShortStudio({
                   <div className="text-xs text-neutral-400 md:col-span-2">
                     {s.hook?.selfie ? (
                       <p className="text-amber-200">
-                        拍摄者：自拍。拿手机的人自己入镜（3D 里的「自拍」人偶），对着前置摄像头说台词，这一镜强制开声音。要换人，在 3D 里改这个人偶「是谁」。
+                        拍摄者：自拍（强制开声音）
                       </p>
                     ) : (
                       <>
@@ -1239,22 +1249,26 @@ export function ShortStudio({
                       </p>
                     ) : null}
                     <p>
-                      3D 构图（免费）：
-                      {saved?.compFile
+                      {s.hook?.scene === "car" ? "" : "3D 构图（免费）："}
+                      {s.hook?.scene === "car" ? "" : saved?.compFile
                         ? "已保存"
                         : saved?.layout
                           ? "机位已摆，还没保存构图"
                           : "还没摆机位"}
                       {saved?.layout?.move
-                        ? ` · 运镜 ${saved.layout.move.kind}`
+                        ? ` · 运镜 ${MOVES.find((m) => m.id === saved.layout?.move?.kind)?.label ?? saved.layout.move.kind}`
                         : ""}
                     </p>
+                    {s.hook?.scene === "car" ? (
+                      <p className="text-sky-200">车里自拍：这一段不用 3D，三轮车不入镜</p>
+                    ) : (
                     <a
                       href={`/projects/${v.projectId}/shorts/${v.id}/set?shot=${s.id}`}
                       className={`${btn} inline-block`}
                     >
                       打开 3D 摆位 + 机位
                     </a>
+                    )}
                     {(() => {
                       const sy = st.sync?.[s.id];
                       if (!sy || (s.stage !== "draft" && s.stage !== "comp_ok"))
@@ -1361,10 +1375,10 @@ export function ShortStudio({
                     <div className="flex flex-wrap gap-1">
                       {gate(
                         "confirm_comp",
-                        saved?.compFile
+                        saved?.compFile || s.hook?.scene === "car"
                           ? "确认构图"
                           : "确认构图（先做 3D 构图）",
-                        s.stage === "draft" && !!saved?.compFile,
+                        s.stage === "draft" && (!!saved?.compFile || s.hook?.scene === "car"),
                       )}
                       {gate(
                         "reopen_comp",
@@ -1427,6 +1441,51 @@ export function ShortStudio({
                       视频 · {charged("video")} 次（默认上限 {DEFAULT_ATTEMPTS}
                       ）
                     </p>
+                    {s.layout ? (
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+                        运镜
+                        <select
+                          className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-xs text-neutral-100"
+                          value={s.layout.move?.kind ?? "static"}
+                          disabled={busy}
+                          onChange={(e) => act(() => setShotMoveAction(v.id, s.id, e.target.value, s.layout?.move?.amount || 0.5), "运镜已保存")}
+                        >
+                          {MOVES.filter((m) => !s.hook?.selfie || m.id === "static" || m.id === "handheld").map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.label}
+                            </option>
+                          ))}
+                        </select>
+                        {s.layout.move && s.layout.move.kind !== "static" ? (
+                          <select
+                            className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-xs text-neutral-100"
+                            value={s.layout.move.amount > 0.66 ? "0.85" : s.layout.move.amount > 0.33 ? "0.5" : "0.25"}
+                            disabled={busy}
+                            onChange={(e) => act(() => setShotMoveAction(v.id, s.id, s.layout?.move?.kind ?? "static", Number(e.target.value)), "运镜已保存")}
+                          >
+                            <option value="0.25">轻</option>
+                            <option value="0.5">中</option>
+                            <option value="0.85">强</option>
+                          </select>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {s.hook?.selfie ? (
+                      <label className="flex items-center gap-2 text-xs text-neutral-400">
+                      自拍台词
+                      <input
+                        key={`line-${s.id}-${s.hook.line ?? ""}`}
+                        className={`min-w-0 flex-1 rounded border bg-neutral-950 px-2 py-1 text-xs text-neutral-100 ${s.hook.line?.trim() ? "border-neutral-700" : "border-red-500"}`}
+                        defaultValue={s.hook.line ?? ""}
+                        placeholder="自拍台词（必填，英文）"
+                        disabled={busy}
+                        onBlur={(e) => {
+                          const t = e.target.value.trim();
+                          if (t !== (s.hook?.line ?? "").trim()) act(() => setHookSelfieAction(v.id, s.id, true, t), "台词已保存");
+                        }}
+                      />
+                      </label>
+                    ) : null}
                     <div className="flex flex-wrap gap-1">
                       {s.stage === "frame_ok" || s.stage === "video_ready" ? (
                       <button
@@ -1434,9 +1493,10 @@ export function ShortStudio({
                         disabled={
                           busy ||
                           dirty ||
-                          !hfReady ||
+                          !arkReady ||
                           wait > 0 ||
-                          runBusy
+                          runBusy ||
+                          (s.hook?.selfie && !s.hook.line?.trim())
                         }
                         onClick={() => open("video")}
                       >

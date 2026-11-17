@@ -4,9 +4,9 @@ import { HOOK_CASES, HOOK_EFFECTS, hookAss, PRESET_EFFECT, wrap } from "@/lib/ho
 import { cleanHookData, PRESET_HOOKS } from "@/lib/hooks";
 import { finalSeconds, hookParts, hooksOf, isExtraHook, shotSound, type ShortShot } from "@/lib/shorts";
 
-test("6 个预设 Hook 各用一种不同效果，每种效果都有带广告库链接的真实案例", () => {
+test("预设 Hook 各用一种不同效果，每种效果都有带广告库链接的真实案例", () => {
   const fx = PRESET_HOOKS.map((h) => h.effect);
-  assert.equal(new Set(fx).size, 6);
+  assert.equal(new Set(fx).size, PRESET_HOOKS.length);
   for (const h of PRESET_HOOKS) assert.equal(PRESET_EFFECT[h.name], h.effect);
   for (const e of HOOK_EFFECTS) {
     assert.ok(HOOK_CASES[e.id].length >= 2, e.id);
@@ -23,7 +23,7 @@ test("旧 Hook 数据没有效果：按名字补预设效果，不认识的用�
 test("每种效果生成的字幕不一样，且只在开头时长内", () => {
   const cap = "Black Friday deal: $59.99 (was $89.99)";
   const outs = HOOK_EFFECTS.map((e) => hookAss(e.id, cap, 3)!);
-  assert.equal(new Set(outs.map((o) => o.split("[Events]")[1])).size, 6);
+  assert.equal(new Set(outs.map((o) => o.split("[Events]")[1])).size, HOOK_EFFECTS.length);
   for (const o of outs) assert.doesNotMatch(o, /0:00:0[4-9]/);
   assert.equal(hookAss("priceBox", "  ", 3), null);
 });
@@ -74,4 +74,12 @@ test("第二段跟着自拍开头开声音；旧 Hook 开头按名字补效果�
   assert.equal(captionIssues({ hook: h, caption: " " }).length, 1);
   assert.equal(captionIssues({ hook: h, caption: "黑五特价 $59" }).length, 1);
   assert.equal(captionIssues({ hook: h, caption: "Black Friday: $59.99" }).length, 0);
+});
+
+test("车里自拍跟读字幕：台词每 3 个词一组，最后一个词紫底，切镜后顶部出卖点", () => {
+  const a = hookAss("talkWords", "Folds flat in 3 seconds", 6, 0, { line: "one two three four five six", cut: 4 })!;
+  assert.equal(a.match(/,Talk,/g)?.length, 2);
+  assert.match(a, /one two \{\\rTalkHi\}three/);
+  assert.match(a, /0:00:04\.00,0:00:06\.00,TopBox/);
+  assert.ok(hookAss("talkWords", "", 4, 0, { line: "hi there" }));
 });

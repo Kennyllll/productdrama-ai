@@ -2,7 +2,7 @@
 
 import { askConfirm, askPrompt } from "@/components/ConfirmHost";
 import { useState, useTransition } from "react";
-import { adoptHookAction, deleteHookShotAction, draftHookAction, saveHookAsLibAction, setHookSelfieAction, setHookValuesAction } from "@/app/short-actions";
+import { adoptHookAction, deleteHookShotAction, draftHookAction, saveHookAsLibAction, setHookSelfieAction, setHookValuesAction, setHookWhoAction } from "@/app/short-actions";
 import { HookCases } from "@/components/shorts/HookCases";
 import { effectDef } from "@/lib/hook-effects";
 import { cleanHookValues, HOOK_ENTRIES, type HookDef } from "@/lib/hooks";
@@ -15,7 +15,7 @@ const sel = "rounded border border-white/10 bg-neutral-950 px-2 py-1 text-sm tex
 const btn = "rounded border border-white/10 px-2 py-1 text-xs text-neutral-200 hover:border-amber-400/60 disabled:opacity-50";
 
 /** 从 Hook 库做开头（shot 为空 = 新建；有 shot = 改这个开头的属性 / 重写剧本 / 另存为新 Hook） */
-export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClose, themePicker }: { themePicker?: React.ReactNode; videoId: string; lib: HookDef[]; shot?: ShortShot; targetId?: string; setHref: (shotId: string) => string; onDone: Done; onClose: () => void }) {
+export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClose, themePicker, cast = [] }: { cast?: { id: string; name: string }[]; themePicker?: React.ReactNode; videoId: string; lib: HookDef[]; shot?: ShortShot; targetId?: string; setHref: (shotId: string) => string; onDone: Done; onClose: () => void }) {
   const h = shot?.hook;
   const [libId, setLibId] = useState(h?.libId ?? lib[0]?.id ?? "");
   const def = lib.find((x) => x.id === libId);
@@ -25,7 +25,9 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
   const [draft, setDraft] = useState<(Part & { caption: string; notes: string[]; second?: Part; selfieName?: string }) | null>(null);
   const [msg, setMsg] = useState("");
   const [selfie, setSelfie] = useState(h ? Boolean(h.selfie) : Boolean(def?.selfie));
-  const [line, setLine] = useState(h?.line ?? "");
+  const line = h?.line ?? "";
+  const [who, setWho] = useState(h?.who ?? "");
+  const car = (def?.scene ?? h?.scene) === "car";
   const fx = effectDef(def?.effect ?? h?.effect);
   const [pending, start] = useTransition();
   const fields = def?.fields ?? Object.keys(values).map((k) => ({ key: k, label: k, example: "", visual: Boolean(h?.visualKeys?.includes(k)) }));
@@ -43,7 +45,7 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
     if (!await askConfirm("用 DeepSeek 写这个开头的剧本（文字调用 1 次，约 $0.01，不出图）。只出草稿，你点“采用”才会改视频。继续？")) return;
     setMsg("");
     start(async () => {
-      const r = await draftHookAction(videoId, libId, values, entry, selfie);
+      const r = await draftHookAction(videoId, libId, values, entry, selfie || car, who);
       if (r.error) setMsg(`⚠ ${r.error}`);
       else setDraft(r.result ?? null);
     });
@@ -51,10 +53,10 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
   const adopt = () =>
     start(async () => {
       if (!draft) return;
-      const r = await adoptHookAction(videoId, libId, values, entry, draft.draft, shot?.id ?? targetId, draft.people, { selfie, line, second: draft.second ? { draft: draft.second.draft, people: draft.second.people } : undefined });
+      const r = await adoptHookAction(videoId, libId, values, entry, draft.draft, shot?.id ?? targetId, draft.people, { selfie: selfie || car, line, who, second: draft.second ? { draft: draft.second.draft, people: draft.second.people } : undefined });
       const fixed = r.result?.fixed ?? [];
-      onDone(r, fixed.length ? `已换好开头。AI 写的动作有 ${fixed.length} 处 3D 做不到，程序已改好：${fixed.join("；")}。点「打开 3D」看构图` : r.result?.secondId ? "已换好开头（两段）：正在打开 3D，先自动保存切镜后的第二段，再停在第一段" : "已换好开头：正在打开 3D，按 Hook 摆好的构图会自动保存");
-      if (!r.error && r.result && !fixed.length) window.location.href = r.result.secondId ? `${setHref(r.result.secondId)}&next=${r.result.shotId}` : setHref(r.result.shotId);
+      onDone(r, fixed.length ? `已换好开头。AI 写的动作有 ${fixed.length} 处 3D 做不到，程序已改好：${fixed.join("；")}。点「打开 3D」看构图` : car && r.result?.secondId ? "已换好开头（两段）：第一段在车里不用 3D；正在打开第二段的 3D，构图会自动保存" : r.result?.secondId ? "已换好开头（两段）：正在打开 3D，先自动保存切镜后的第二段，再停在第一段" : "已换好开头：正在打开 3D，按 Hook 摆好的构图会自动保存");
+      if (!r.error && r.result && !fixed.length) window.location.href = car && r.result.secondId ? setHref(r.result.secondId) : r.result.secondId ? `${setHref(r.result.secondId)}&next=${r.result.shotId}` : setHref(r.result.shotId);
     });
   // 自拍：勾上就保存（已有开头：3D 跟着重摆，文字要重写）；草稿是按旧设置写的，作废
   const toggleSelfie = (on: boolean) => {
@@ -71,9 +73,20 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
       setMsg("改了自拍：文字还是按旧设置写的，点「重写剧本」");
     });
   };
-  const saveLine = () => {
-    if (!shot || !selfie || line === (h?.line ?? "")) return;
-    start(async () => onDone(await setHookSelfieAction(videoId, shot.id, true, line), "台词已保存（免费）"));
+  const pickWho = (id: string) => {
+    const prev = who;
+    setWho(id);
+    setDraft(null);
+    if (!shot) return;
+    start(async () => {
+      const r = await setHookWhoAction(videoId, shot.id, id);
+      if (r.error) {
+        setWho(prev);
+        return onDone(r);
+      }
+      onDone(r, "已换出镜的人：文字还是按旧的人写的，点「重写剧本」（约 $0.01）");
+      setMsg("换了出镜的人：文字还是按旧的人写的，点「重写剧本」");
+    });
   };
   const saveValues = () =>
     start(async () => {
@@ -134,16 +147,26 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
         <p className="text-neutral-500">一镜到底，不切镜头（照案例）。</p>
       ) : null}
       <label className="flex flex-wrap items-center gap-2">
-        <input type="checkbox" checked={selfie} disabled={pending} onChange={(e) => toggleSelfie(e.target.checked)} />
-        自拍镜头：拿手机的人入镜，对着前置摄像头说一句台词
-        <span className="text-amber-300">选了自拍，这一镜强制开声音（台词人声 + 环境音），价格不变</span>
+        <input type="checkbox" checked={selfie || car} disabled={pending || car} onChange={(e) => toggleSelfie(e.target.checked)} />
+        自拍镜头 <span className="text-amber-300">强制开声音，台词在「生成视频」旁边填</span>
       </label>
-      {selfie ? <p className="text-neutral-500">自拍的人 = 视频设定里的「拿手机的人」，没设就用家里第一个大人；要换人在视频设定里改，或在 3D 里改这个人偶「是谁」。</p> : null}
-      {selfie ? <input className={inp} value={line} placeholder="台词（英文）；不填 = 说字幕那句" disabled={pending} onChange={(e) => setLine(e.target.value)} onBlur={saveLine} /> : null}
+      {(selfie || car) && cast.length ? (
+        <label className="flex flex-wrap items-center gap-2">
+          出镜的人
+          <select className={sel} value={who} disabled={pending} onChange={(e) => pickWho(e.target.value)}>
+            <option value="">拿手机的人（视频设定）</option>
+            {cast.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       {themePicker ? <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">这条视频的节日（开头和正文都跟着它，换了会先提示哪些镜头要重做）：{themePicker}</div> : null}
       {def?.stage ? (
         <p className="text-sky-200">
-          {selfie ? "3D 会自动摆成自拍：拿手机的人在镜头前约 0.6 米、脸朝镜头在画面右边，产品在他身后左边；摄影机在手机高度。" : `3D 会自动摆成：产品${VIEW_LABEL[def.stage.view]}；摄影机约 ${def.stage.dist} 米、高 ${def.stage.camH} 米。`}画面里放谁、做什么，生成剧本时 AI 按这条视频的剧情定。采用后会打开 3D 自动保存构图，你只要微调。
+          {car ? "第一段在车里自拍，不用 3D，三轮车不入镜；第二段的 3D 自动摆好。" : selfie ? "3D 自动摆成自拍：人在右边，车完整在左边。" : `3D 会自动摆成：产品${VIEW_LABEL[def.stage.view]}；摄影机约 ${def.stage.dist} 米、高 ${def.stage.camH} 米。`}画面里放谁、做什么，生成剧本时 AI 按这条视频的剧情定。采用后会打开 3D 自动保存构图，你只要微调。
         </p>
       ) : null}
       <div className="grid gap-2 md:grid-cols-2">

@@ -207,9 +207,20 @@ export async function locateGeometry(o: { plate: Buffer; support: string; width:
 }
 
 /** 短视频首帧：对照提示词和 3D 摆位看图，只报明显看得出的不一致 */
-export async function reviewShortFrame(o: { image: Buffer; productName: string; productFacts: string; framePrompt: string; description: string; facts3d: string; holiday: string; noBox: boolean }): Promise<VisionReview> {
+export async function reviewShortFrame(o: { image: Buffer; productName: string; productFacts: string; framePrompt: string; description: string; facts3d: string; holiday: string; noBox: boolean; car?: { person: string } }): Promise<VisionReview> {
   const name = o.productName || "product";
-  const prompt = [
+  const prompt = o.car
+    ? [
+        "You check a generated first frame of a TikTok video against what it was supposed to show. Only report real, clearly visible problems; no style opinions.",
+        `Image prompt that was used: ${o.framePrompt}`,
+        "Checklist:",
+        `1. Exactly one person: ${o.car.person}. They sit in the driver's seat of a parked car taking a front-camera selfie (arm toward the camera, looking into the lens). Nobody else, nobody duplicated.`,
+        "2. Their age, gender, hair and clothes match that description.",
+        `3. Must not appear anywhere: the ${name}, any tricycle, bike, stroller or ride-on toy, any box or packaging, the phone itself, garbled text, watermarks.`,
+        "4. Human anatomy is correct (hands, fingers, limbs, faces).",
+        'Return JSON only: {"pass": boolean, "issues": string[]}. Each issue is ONE short sentence in Simplified Chinese naming who or what and the problem (e.g. "画面里出现了三轮车").',
+      ].join("\n")
+    : [
     "You check a generated first frame of a TikTok product video against what it was supposed to show. Only report real, clearly visible problems; no style opinions.",
     `Product: ${name} (${o.productFacts}).`,
     `Image prompt that was used: ${o.framePrompt}`,

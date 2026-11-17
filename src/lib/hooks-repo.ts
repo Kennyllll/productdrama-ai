@@ -27,6 +27,13 @@ function db() {
       }
       d.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('hooks_preset_v', '2')").run();
     }
+    // 第 3 版：新增预置「车里自拍」（只补这一个，你删掉的预置不会回来）
+    const v3 = d.prepare("SELECT value FROM settings WHERE key = 'hooks_preset_v'").get() as { value: string } | undefined;
+    if (Number(v3?.value ?? 0) < 3) {
+      const names = new Set((d.prepare("SELECT data FROM hooks").all() as { data: string }[]).map((r) => (JSON.parse(r.data) as HookData).name));
+      for (const p of PRESET_HOOKS) if (p.scene === "car" && !names.has(p.name)) createIn(d, p);
+      d.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('hooks_preset_v', '3')").run();
+    }
     ready = true;
   }
   return d;

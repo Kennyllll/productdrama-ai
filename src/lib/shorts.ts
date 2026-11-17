@@ -10,10 +10,11 @@ export const BUDGET_WARN_RATIO = 0.8;
 /** 每镜默认：1 次 + 1 次重做；再多必须重新审批并写明原因 */
 export const DEFAULT_ATTEMPTS = 2;
 
-export const VIDEO_MODEL = "bytedance/seedance-2.5/image-to-video";
+/** 视频：火山方舟 Seedance 2.5（直接调字节，不经 Higgsfield） */
+export const VIDEO_MODEL = "doubao-seedance-2-5-260628";
 export const FRAME_MODEL = "marketing-studio/image/sunburst";
-/** Higgsfield 估价接口实测单价（美元/秒）；短视频不提供 1080p（$0.652/秒，必然超出每秒成本上限） */
-export const VIDEO_USD_PER_SEC = { "480p": 0.1177, "720p": 0.2647 } as const;
+/** 方舟官方价估算（美元/秒）：70 元/百万 token × 宽×高×24 帧/1024，按 7.1 换汇；完成后按方舟返回的实际 token 记账 */
+export const VIDEO_USD_PER_SEC = { "480p": 0.0958, "720p": 0.213 } as const;
 export type VideoResolution = keyof typeof VIDEO_USD_PER_SEC;
 export const VIDEO_MIN_SEC = 4;
 export const VIDEO_MAX_SEC = 12;
@@ -182,6 +183,10 @@ export interface ShotHook {
   selfie?: boolean;
   /** 自拍时说的台词（英文）；空 = 用字幕 */
   line?: string;
+  /** 车里自拍：第一段在停着的汽车里，产品不入镜、不用 3D */
+  scene?: "car";
+  /** 自拍出镜的人（家庭成员 id）；空 = 视频设定里拿手机的人 */
+  who?: string;
   /** 切镜后的第二段：属于哪个开头（开头镜头的 id）。字幕和效果跟着那个开头 */
   partOf?: string;
 }
