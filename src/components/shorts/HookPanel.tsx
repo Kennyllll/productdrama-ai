@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm, askPrompt } from "@/components/ConfirmHost";
 import { useState, useTransition } from "react";
 import { adoptHookAction, draftHookAction, saveHookAsLibAction, setHookValuesAction } from "@/app/short-actions";
 import { cleanHookValues, HOOK_ENTRIES, type HookDef } from "@/lib/hooks";
@@ -30,8 +31,8 @@ export function HookPanel({ videoId, lib, shot, onDone, onClose }: { videoId: st
       setEntry(d.entry);
     }
   };
-  const gen = () => {
-    if (!window.confirm("用 DeepSeek 写这个开头的剧本（文字调用 1 次，约 $0.01，不出图）。只出草稿，你点“采用”才会改视频。继续？")) return;
+  const gen = async () => {
+    if (!await askConfirm("用 DeepSeek 写这个开头的剧本（文字调用 1 次，约 $0.01，不出图）。只出草稿，你点“采用”才会改视频。继续？")) return;
     setMsg("");
     start(async () => {
       const r = await draftHookAction(videoId, libId, values, entry);
@@ -51,15 +52,15 @@ export function HookPanel({ videoId, lib, shot, onDone, onClose }: { videoId: st
       if (!shot) return;
       let r = await setHookValuesAction(videoId, shot.id, values);
       if (r.result?.confirm) {
-        if (!window.confirm(r.result.confirm)) return;
+        if (!await askConfirm(r.result.confirm)) return;
         r = await setHookValuesAction(videoId, shot.id, values, true);
       }
       onDone({ error: r.error, result: r.result?.state }, r.result?.rewrite ? "已保存属性。改了影响画面的属性：点下面“重写剧本”" : "已保存属性，字幕已更新（免费）");
       if (r.result?.rewrite) setMsg("改了影响画面的属性：点“重写剧本”，再去 3D 保存构图");
     });
-  const saveAs = () => {
+  const saveAs = async () => {
     if (!shot) return;
-    const name = window.prompt("另存为新 Hook，名字：", `${def?.name ?? h?.name ?? "开头"} · 新版`);
+    const name = await askPrompt("另存为新 Hook，名字：", `${def?.name ?? h?.name ?? "开头"} · 新版`);
     if (!name) return;
     start(async () => {
       const r = await saveHookAsLibAction(videoId, shot.id, name);

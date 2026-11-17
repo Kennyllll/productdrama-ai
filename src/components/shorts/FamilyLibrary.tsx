@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import { useState, useTransition } from "react";
 import { deleteFamilyAction, saveFamilyAction } from "@/app/family-actions";
 import { MEMBER_ROLES, memberKind, type Bi, type Family, type FamilyData, type FamilyMember } from "@/lib/families";
@@ -38,8 +39,8 @@ function FamilyCard({ f, onDone }: { f: Family | null; onDone?: () => void }) {
         onDone?.();
       }
     });
-  const del = () => {
-    if (!f || !window.confirm(`删除「${f.name}」？已经用这家人做的视频，提示词里会去掉这家人的描述。`)) return;
+  const del = async () => {
+    if (!f || !await askConfirm(`删除「${f.name}」？已经用这家人做的视频，提示词里会去掉这家人的描述。`)) return;
     start(async () => {
       const r = await deleteFamilyAction(f.id);
       if (r.error) setMsg(`⚠ ${r.error}`);

@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import { useActionState } from "react";
 import { createProjectAction, deleteProjectAction } from "@/app/actions";
 import type { FormState } from "@/lib/types";
@@ -52,8 +53,15 @@ export function DeleteProjectButton({ id, name }: { id: string; name: string }) 
   return (
     <form
       action={deleteProjectAction}
-      onSubmit={(e) => {
-        if (!window.confirm(`删除项目「${name}」？数据库记录和已上传的图片都会删除，无法恢复。`)) e.preventDefault();
+      onSubmit={async (e) => {
+        // 页面里的确认框是异步的：先拦下提交，确认后再交一次
+        const form = e.currentTarget;
+        if (form.dataset.ok === "1") return;
+        e.preventDefault();
+        if (await askConfirm(`删除项目「${name}」？数据库记录和已上传的图片都会删除，无法恢复。`)) {
+          form.dataset.ok = "1";
+          form.requestSubmit();
+        }
       }}
     >
       <input type="hidden" name="id" value={id} />

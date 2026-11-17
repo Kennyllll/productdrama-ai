@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { estimateCadKeyframeAction, generateCadKeyframeAction, type CadKeyframeResult } from "@/app/cad-actions";
@@ -81,7 +82,7 @@ export function KeyframePanel({
       const est = await estimateKeyframesAction(projectId, shotId, model, count);
       if (est.error) return setMsg({ error: est.error });
       const usd = est.result?.usd;
-      if (!window.confirm(`生成 ${count} 张关键帧候选，参考图 ${est.result?.refs ?? 0} 张，预估${Number.isFinite(usd) ? `约 $${usd!.toFixed(3)}` : `：按用量计费。${est.result?.note ?? ""}`}。参考图会上传到 Higgsfield，结果下载后删除远端数据。继续吗？`)) return;
+      if (!await askConfirm(`生成 ${count} 张关键帧候选，参考图 ${est.result?.refs ?? 0} 张，预估${Number.isFinite(usd) ? `约 $${usd!.toFixed(3)}` : `：按用量计费。${est.result?.note ?? ""}`}。参考图会上传到 Higgsfield，结果下载后删除远端数据。继续吗？`)) return;
       const res = await generateKeyframesAction(projectId, shotId, model, count, text);
       if (res.error) setMsg({ error: res.error });
       else {
@@ -98,7 +99,7 @@ export function KeyframePanel({
       if (est.error) return setMsg({ error: est.error });
       const usd = est.result?.usd;
       if (
-        !window.confirm(
+        !await askConfirm(
           `CAD 保护合成：${params.reusePlate ? "复用上次空场景" : "Flare 生成空场景"} → Blender 用场景当环境光渲染产品（本机，约 1–3 分钟）${params.harmonize ? " → Flare 融合阴影 / 倒影 / 色温 → 贴回产品形状" : ""}。预估${Number.isFinite(usd) ? `约 $${usd!.toFixed(3)}` : `：按用量计费。${est.result?.note ?? ""}`}。${params.harmonize ? "合成图会上传到 Higgsfield，用后删除远端数据。" : ""}继续吗？`,
         )
       )
@@ -126,7 +127,7 @@ export function KeyframePanel({
 
   const remove = (id: string) =>
     start(async () => {
-      if (!window.confirm("删除这张候选？")) return;
+      if (!await askConfirm("删除这张候选？")) return;
       const res = await deleteKeyframeAction(id);
       if (res.error) return setMsg({ error: res.error });
       onChange(keyframes.filter((k) => k.id !== id));

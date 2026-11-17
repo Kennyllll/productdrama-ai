@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import { useState, useTransition } from "react";
 import { aiStoryboardAction } from "@/app/ai-actions";
 import { saveStoryboardAction } from "@/app/storyboard-actions";
@@ -92,8 +93,8 @@ export function LocalStoryboardWorkbench({
   const [aiError, setAiError] = useState("");
   const [aiPending, startAi] = useTransition();
 
-  const generate = () => {
-    if (board && !window.confirm("按当前剧本重新生成分镜？会覆盖现有全部镜头和视觉规范的修改。")) return;
+  const generate = async () => {
+    if (board && !await askConfirm("按当前剧本重新生成分镜？会覆盖现有全部镜头和视觉规范的修改。")) return;
     const b = buildStoryboard(script, style, cast, !!egg);
     setBoard(b);
     setEpNo(1);
@@ -112,9 +113,9 @@ export function LocalStoryboardWorkbench({
     });
   };
 
-  const acceptAi = () => {
+  const acceptAi = async () => {
     if (!ai) return;
-    if (board && !window.confirm("用 AI 分镜覆盖现有全部镜头和视觉规范，继续吗？")) return;
+    if (board && !await askConfirm("用 AI 分镜覆盖现有全部镜头和视觉规范，继续吗？")) return;
     const b = ai.board;
     setBoard(b);
     setEpNo(1);
@@ -217,8 +218,8 @@ export function LocalStoryboardWorkbench({
     });
     setSelectedId(s.id);
   };
-  const removeShot = () => {
-    if (!selected || !window.confirm(`删除镜头 ${selected.index}？`)) return;
+  const removeShot = async () => {
+    if (!selected || !await askConfirm(`删除镜头 ${selected.index}？`)) return;
     const i = shots.findIndex((x) => x.id === selected.id);
     setShots((list) => list.filter((x) => x.id !== selected.id));
     setSelectedId(shots[i + 1]?.id ?? shots[i - 1]?.id ?? "");

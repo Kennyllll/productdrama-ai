@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { aiSceneAction, createSceneAction, saveSceneVersionAction, sceneConflictsAction, setShotSceneAction } from "@/app/scene-actions";
@@ -74,7 +75,7 @@ export function SceneEditor({ projectId, videoId, shot, scenes, onDraft }: { pro
       setMsg("");
       const c = await sceneConflictsAction(sc.id, edit);
       if (c.error) return setMsg(`⚠ ${c.error}`);
-      if (c.result?.length && !confirm(`这些已锁定镜头的画面里能看到被改动的物件（它们继续用旧版本，不受影响，但新旧画面会对不上）：\n${c.result.join("\n")}\n\n仍然存成新版本吗？取消后可以改用「另存为新场地」。`)) return;
+      if (c.result?.length && !await askConfirm(`这些已锁定镜头的画面里能看到被改动的物件（它们继续用旧版本，不受影响，但新旧画面会对不上）：\n${c.result.join("\n")}\n\n仍然存成新版本吗？取消后可以改用「另存为新场地」。`)) return;
       const r = await saveSceneVersionAction(sc.id, edit, `修改（基于 v${ver.v}）`, meta, locked ? undefined : { videoId, shotId: shot.code });
       if (r.error) return setMsg(`⚠ ${r.error}`);
       setMsg(`已存为 v${r.result}${locked ? "" : "，本镜已改用新版本（3D 构图需要重新保存）"}`);
@@ -307,9 +308,9 @@ export function SceneEditor({ projectId, videoId, shot, scenes, onDraft }: { pro
               <button
                 type="button"
                 className="rounded bg-white/10 px-2 py-1"
-                onClick={() => {
+                onClick={async () => {
                   const t = (document.getElementById("add-type") as HTMLSelectElement).value;
-                  const it = newItem(t, 1.5, 1.5, shot.scene.theme !== "none" && confirm(`作为「${THEMES.find((x) => x.id === shot.scene.theme)?.label}」主题装饰（换主题时不出现）？`) ? shot.scene.theme : undefined);
+                  const it = newItem(t, 1.5, 1.5, shot.scene.theme !== "none" && await askConfirm(`作为「${THEMES.find((x) => x.id === shot.scene.theme)?.label}」主题装饰（换主题时不出现）？`) ? shot.scene.theme : undefined);
                   setEdit((e) => e && [...e, it]);
                   setSel(it.id);
                 }}

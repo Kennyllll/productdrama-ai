@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { saveShortAngleAction, saveShortCompAction, saveShortLayoutAction, setShotFilmerAction, setShotOperatorAction } from "@/app/short-actions";
 import { OperatorPicker } from "@/components/shorts/OperatorPicker";
@@ -78,12 +79,12 @@ export function ShortSet({
       e.returnValue = "";
     };
     // 点页面里的链接（返回镜头、左侧导航等）离开时也提醒
-    const click = (e: MouseEvent) => {
+    const click = async (e: MouseEvent) => {
       const a = (e.target as HTMLElement | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
       if (!a || a.target === "_blank" || e.defaultPrevented) return;
       e.preventDefault();
       e.stopPropagation();
-      if (window.confirm("摆放或机位有改动还没保存，离开会丢掉。确定离开？")) {
+      if (await askConfirm("摆放或机位有改动还没保存，离开会丢掉。确定离开？")) {
         window.removeEventListener("beforeunload", warn);
         window.location.href = a.href;
       }
@@ -159,9 +160,9 @@ export function ShortSet({
   const cur = shotsView.find((s) => s.code === code);
   const lockedMsg = st?.locked ?? cur?.locked;
   const canSave = !lockedMsg && (dirty || Boolean(cur && (!cur.edited || cur.needsCapture)));
-  const goShot = (c: string) => {
+  const goShot = async (c: string) => {
     if (c === code) return;
-    if (dirty && !window.confirm("这个镜头的修改还没保存，切换会丢掉。确定切换？")) return;
+    if (dirty && !await askConfirm("这个镜头的修改还没保存，切换会丢掉。确定切换？")) return;
     setCode(c);
   };
   const saveAll = () => (stageDirty ? setStageSave((n) => n + 1) : setCap((n) => n + 1));

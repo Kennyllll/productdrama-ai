@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import { useActionState, useState, useTransition } from "react";
 import { createEggAction, deleteEggAction, updateEggAction } from "@/app/cast-actions";
 import { Card, Tag } from "@/components/ui";
@@ -57,8 +58,8 @@ function EggCard({ egg }: { egg: EasterEgg }) {
   const dirty = v.name !== egg.name || v.species !== egg.species || v.notes !== egg.notes;
 
   const save = () => startTransition(async () => setStatus(await updateEggAction(egg.id, v)));
-  const remove = () => {
-    if (!window.confirm(`删除彩蛋角色「${egg.name}」及其全部参考照？正在使用它的项目将改为不使用彩蛋。`)) return;
+  const remove = async () => {
+    if (!await askConfirm(`删除彩蛋角色「${egg.name}」及其全部参考照？正在使用它的项目将改为不使用彩蛋。`)) return;
     startTransition(async () => {
       const res = await deleteEggAction(egg.id);
       if (res.error) setStatus(res);

@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import { useState, useTransition } from "react";
 import { saveVisionKeyAction, testVisionAction } from "@/app/visual-actions";
 import { Card } from "@/components/ui";
@@ -50,7 +51,7 @@ export function VisionSettingsForm({ initial }: { initial: { configured: boolean
           <button type="button" onClick={test} disabled={pending || !info.configured} className={btn}>
             测试连接
           </button>
-          <button type="button" onClick={() => window.confirm("清除本机保存的 Gemini Key？") && save(true)} disabled={pending || !info.configured} className={btn}>
+          <button type="button" onClick={async () => await askConfirm("清除本机保存的 Gemini Key？") && save(true)} disabled={pending || !info.configured} className={btn}>
             清除
           </button>
         </div>

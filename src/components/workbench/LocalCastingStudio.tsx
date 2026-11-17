@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { saveCastAction, setProjectEggAction } from "@/app/cast-actions";
@@ -52,8 +53,8 @@ export function LocalCastingStudio({
     change((prev) => [...prev, { id: newId(), name: n, kind, role, description: "", episodes: [], consentConfirmed: false, photos: [] }]);
     setName("");
   };
-  const remove = (c: LocalCharacter) => {
-    if ((c.photos.length || c.description) && !window.confirm(`删除角色「${c.name}」？${c.photos.length ? "保存后其参考照也会删除。" : ""}`)) return;
+  const remove = async (c: LocalCharacter) => {
+    if ((c.photos.length || c.description) && !await askConfirm(`删除角色「${c.name}」？${c.photos.length ? "保存后其参考照也会删除。" : ""}`)) return;
     change((prev) => prev.filter((x) => x.id !== c.id));
   };
   const toggleEpisode = (c: LocalCharacter, ep: EpisodeNumber) =>

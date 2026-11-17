@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { aiScriptAction } from "@/app/ai-actions";
@@ -43,9 +44,9 @@ export function LocalScriptWorkbench({
       if (res.ok) setDirty(false);
     });
 
-  const generate = () => {
+  const generate = async () => {
     if (!proposal) return;
-    if (script && !window.confirm("重新生成会覆盖当前四集剧本（包括所有修改），继续吗？")) return;
+    if (script && !await askConfirm("重新生成会覆盖当前四集剧本（包括所有修改），继续吗？")) return;
     const s = buildSkeleton(proposal);
     setScript(s);
     setEpNo(1);
@@ -62,9 +63,9 @@ export function LocalScriptWorkbench({
     });
   };
 
-  const acceptAi = () => {
+  const acceptAi = async () => {
     if (!ai) return;
-    if (script && !window.confirm("用 AI 剧本覆盖当前四集剧本（包括所有修改），继续吗？")) return;
+    if (script && !await askConfirm("用 AI 剧本覆盖当前四集剧本（包括所有修改），继续吗？")) return;
     setScript(ai.script);
     setEpNo(1);
     persist(ai.script);
@@ -182,8 +183,8 @@ export function LocalScriptWorkbench({
       [scenes[i], scenes[i + d]] = [scenes[i + d], scenes[i]];
       return { ...ep, scenes };
     });
-  const removeScene = (s: LocalScene) => {
-    if ((s.lines.length || s.heading || s.summary) && !window.confirm("删除这个场景及其台词？")) return;
+  const removeScene = async (s: LocalScene) => {
+    if ((s.lines.length || s.heading || s.summary) && !await askConfirm("删除这个场景及其台词？")) return;
     updateEp((ep) => ({ ...ep, scenes: ep.scenes.filter((x) => x.id !== s.id) }));
   };
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import { useRef, useState, useTransition } from "react";
 import { renderEpisodeAction, renderFullAction } from "@/app/video-actions";
 import { Card, Tag } from "@/components/ui";
@@ -145,7 +146,7 @@ export function LocalVideoWorkbench({
   };
 
   const remove = async (m: ShotMediaView) => {
-    if (!window.confirm(`删除素材「${m.originalName}」？`)) return;
+    if (!await askConfirm(`删除素材「${m.originalName}」？`)) return;
     const res = await fetch(`/api/shot-media/${m.id}`, { method: "DELETE" });
     if (res.ok) setMedia((prev) => prev.filter((x) => x.id !== m.id));
     else setStatus({ error: "删除失败" });

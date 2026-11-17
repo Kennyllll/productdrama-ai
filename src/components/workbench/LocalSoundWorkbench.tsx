@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import { useRef, useState, useTransition } from "react";
 import { aiSoundPlanAction, saveSoundPlanAction } from "@/app/sound-actions";
 import { Card, Tag } from "@/components/ui";
@@ -130,7 +131,7 @@ function StemRow({
   };
 
   const remove = async () => {
-    if (!stem || !window.confirm(`删除分轨「${stem.originalName}」？`)) return;
+    if (!stem || !await askConfirm(`删除分轨「${stem.originalName}」？`)) return;
     const res = await fetch(`/api/stems/${stem.id}`, { method: "DELETE" });
     if (res.ok) onChange(null);
   };
@@ -260,9 +261,9 @@ export function LocalSoundWorkbench({
     });
   };
 
-  const acceptAi = () => {
+  const acceptAi = async () => {
     if (!ai) return;
-    if (plan.episodes.some((e) => e.cues.length) && !window.confirm("用 AI 声音设计覆盖现有内容，继续吗？")) return;
+    if (plan.episodes.some((e) => e.cues.length) && !await askConfirm("用 AI 声音设计覆盖现有内容，继续吗？")) return;
     setPlan(ai.plan);
     setSelectedId("");
     setAi(null);

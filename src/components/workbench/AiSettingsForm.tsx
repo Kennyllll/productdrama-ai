@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import { useState, useTransition } from "react";
 import { saveAiSettingsAction, testAiAction } from "@/app/ai-actions";
 import { Card } from "@/components/ui";
@@ -83,7 +84,7 @@ export function AiSettingsForm({ initial }: { initial: AiPublicInfo }) {
           </button>
           <button
             type="button"
-            onClick={() => window.confirm("清除本机保存的 API Key？") && save(true)}
+            onClick={async () => await askConfirm("清除本机保存的 API Key？") && save(true)}
             disabled={pending || !info.configured}
             className={btn}
           >

@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm, askPrompt } from "@/components/ConfirmHost";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { fmtWait } from "@/components/shorts/JobPill";
 import { OperatorPicker } from "@/components/shorts/OperatorPicker";
@@ -153,13 +154,13 @@ export function ShortStudio({
   ) => start(async () => apply(await fn(), ok));
   const vt = videoTheme(v);
   const themeLabel = `${THEMES.find((t) => t.id === vt.theme)?.label ?? "无节日"}${vt.theme === "custom" && vt.themeText ? `（${vt.themeText}）` : ""}`;
-  const changeTheme = (theme: string) => {
-    const text = theme === "custom" ? window.prompt("自定义节日是什么？例如：中秋节，挂灯笼、桌上有月饼", vt.themeText ?? "") : "";
+  const changeTheme = async (theme: string) => {
+    const text = theme === "custom" ? await askPrompt("自定义节日是什么？例如：中秋节，挂灯笼、桌上有月饼", vt.themeText ?? "") : "";
     if (text === null) return;
     start(async () => {
       let r = await setVideoThemeAction(v.id, theme, text);
       if (r.result?.confirm) {
-        if (!window.confirm(r.result.confirm)) return;
+        if (!await askConfirm(r.result.confirm)) return;
         r = await setVideoThemeAction(v.id, theme, text, true);
       }
       apply({ error: r.error, result: r.result?.state }, "已换节日");
@@ -173,7 +174,7 @@ export function ShortStudio({
     start(async () => {
       let r = await setVideoFamilyAction(v.id, Number(slot), id || null);
       if (r.result?.confirm) {
-        if (!window.confirm(r.result.confirm)) return;
+        if (!await askConfirm(r.result.confirm)) return;
         r = await setVideoFamilyAction(v.id, Number(slot), id || null, true);
       }
       apply({ error: r.error, result: r.result?.state }, "已换家庭");
@@ -182,7 +183,7 @@ export function ShortStudio({
     start(async () => {
       let r = await setVideoFilmerAction(v.id, id || null);
       if (r.result?.confirm) {
-        if (!window.confirm(r.result.confirm)) return;
+        if (!await askConfirm(r.result.confirm)) return;
         r = await setVideoFilmerAction(v.id, id || null, true);
       }
       apply({ error: r.error, result: r.result?.state }, "已换拿手机的人");
@@ -395,8 +396,8 @@ export function ShortStudio({
                   type="button"
                   className={btn}
                   disabled={busy}
-                  onClick={() => {
-                    if (!window.confirm("用 DeepSeek 按这个产品的资料，改写所有镜头的画面、机位、产品备注、提示词和字幕。\n\n调用文字模型 1 次，大约 $0.01，不出图。\n\n确定吗？")) return;
+                  onClick={async () => {
+                    if (!await askConfirm("用 DeepSeek 按这个产品的资料，改写所有镜头的画面、机位、产品备注、提示词和字幕。\n\n调用文字模型 1 次，大约 $0.01，不出图。\n\n确定吗？")) return;
                     start(async () => {
                       setMsg({ tone: "ok", text: "改写中…（半分钟左右）" });
                       const r = await retargetTextAction(v.id);
@@ -415,8 +416,8 @@ export function ShortStudio({
               className={btn}
               disabled={busy || !v.shots.some((s) => !s.hook)}
               title="存正文和第一个开头的文字、机位、场地和节日；不存首帧、视频和花费"
-              onClick={() => {
-                const name = window.prompt("模板名字", v.title);
+              onClick={async () => {
+                const name = await askPrompt("模板名字", v.title);
                 if (!name?.trim()) return;
                 start(async () => {
                   const r = await saveTemplateAction(v.id, name);
@@ -457,9 +458,9 @@ export function ShortStudio({
             <select
               value={v.resolution}
               disabled={busy}
-              onChange={(e) =>
+              onChange={async (e) =>
                 (!st.jobs.length ||
-                  window.confirm(
+                  await askConfirm(
                     "已经生成过的镜头保持原来的分辨率，之后生成的用新的分辨率，前后画质会不一样。确定要换吗？",
                   )) &&
                 act(() =>
@@ -787,13 +788,13 @@ export function ShortStudio({
                 disabled={
                   busy || dirty || !saved || !enabled || wait > 0 || runBusy
                 }
-                onClick={() => {
+                onClick={async () => {
                   const sy = st.sync?.[s.id];
                   const list = sy ? [...sy.changes, ...sy.issues] : [];
                   if (
                     a === "confirm_comp" &&
                     list.length &&
-                    !window.confirm(
+                    !await askConfirm(
                       `这一镜的文字和 3D 还有 ${list.length} 处对不上：\n· ${list.join("\n· ")}\n\n仍然确认构图？`,
                     )
                   )
@@ -1460,12 +1461,12 @@ export function ShortStudio({
                           dirty ||
                           !saved
                         }
-                        onClick={() => {
-                          const note = window.prompt(
+                        onClick={async () => {
+                          const note = await askPrompt(
                             "这一版哪里不对？多条用分号隔开。新版出来后会逐条对照",
                           );
                           if (!note || !note.trim()) return;
-                          const all = window.confirm(
+                          const all = await askConfirm(
                             "这些问题整条视频都要注意吗？\n\n确定 = 整条视频都要注意（后面的镜头审片时也提醒，并记进规则库）\n取消 = 只管这一镜",
                           );
                           act(() =>

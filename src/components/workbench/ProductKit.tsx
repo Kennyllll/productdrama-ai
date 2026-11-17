@@ -2,6 +2,7 @@
 
 // 产品资料里的建模素材：白底 10 面照 → AI 建白模；车身贴纸（多张 + 位置）；颜色款（实物照 → 给白模贴色）。
 // 花钱的两步（建白模、贴色）都先看价格、点同意才提交；结果先进「待审核」。
+import { askConfirm } from "@/components/ConfirmHost";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
@@ -121,7 +122,7 @@ export function PhotoSlots({
                     className="text-rose-300"
                     aria-label={`删除${a}`}
                     onClick={async () => {
-                      if (!window.confirm(`删除「${a}」这张？`)) return;
+                      if (!await askConfirm(`删除「${a}」这张？`)) return;
                       await removeAsset(f.id);
                       router.refresh();
                     }}
@@ -310,8 +311,8 @@ export function ModelBuilder({ kit, target, colorId = null, refAngles = [] }: { 
                   type="button"
                   className={btn}
                   disabled={pending}
-                  onClick={() =>
-                    window.confirm("先到 fal.ai 后台的 Requests 里确认这次没有扣费、没有在跑。确认没提交成功？") &&
+                  onClick={async () =>
+                    await askConfirm("先到 fal.ai 后台的 Requests 里确认这次没有扣费、没有在跑。确认没提交成功？") &&
                     start(async () => {
                       await clearUnknownJobAction(j.id);
                       router.refresh();
@@ -339,8 +340,8 @@ export function ModelBuilder({ kit, target, colorId = null, refAngles = [] }: { 
                 <button
                   type="button"
                   className="text-rose-300"
-                  onClick={() =>
-                    window.confirm("删除这个不通过的模型？") &&
+                  onClick={async () =>
+                    await askConfirm("删除这个不通过的模型？") &&
                     start(async () => {
                       await deleteCandidateAction(m.id);
                       router.refresh();
@@ -419,7 +420,7 @@ export function StickersBody({ kit }: { kit: KitData }) {
                   type="button"
                   className="text-rose-300"
                   onClick={async () => {
-                    if (!window.confirm("删除这张贴纸？")) return;
+                    if (!await askConfirm("删除这张贴纸？")) return;
                     await removeAsset(s.id);
                     router.refresh();
                   }}
@@ -468,8 +469,8 @@ export function ColorKits({ kit, hasBase, selected, onSelect, locked }: { kit: K
                 <button
                   type="button"
                   className="text-xs text-rose-300"
-                  onClick={() =>
-                    window.confirm(`删除颜色款「${c.name}」？它的实物照会删掉。`) &&
+                  onClick={async () =>
+                    await askConfirm(`删除颜色款「${c.name}」？它的实物照会删掉。`) &&
                     start(async () => {
                       const r = await deleteColorAction(c.id);
                       setMsg(r.error ?? "");

@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { createFromTemplateAction, createShortVideoAction, deleteTemplateAction, setTemplateThemeAction } from "@/app/short-actions";
@@ -145,8 +146,8 @@ export function NewShortForm({
             type="button"
             disabled={pending}
             className="rounded border border-white/15 px-2 py-1 text-neutral-400 hover:border-rose-400/60 disabled:opacity-50"
-            onClick={() => {
-              if (!window.confirm(`删除模板「${tp.name}」？已经用它做的视频不受影响。`)) return;
+            onClick={async () => {
+              if (!await askConfirm(`删除模板「${tp.name}」？已经用它做的视频不受影响。`)) return;
               start(async () => {
                 const r = await deleteTemplateAction(tp.id);
                 if (r.error) return setError(r.error);

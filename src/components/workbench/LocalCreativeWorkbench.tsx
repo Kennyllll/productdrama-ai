@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { aiProposalsAction, aiStoryCoreAction } from "@/app/ai-actions";
@@ -51,8 +52,8 @@ export function LocalCreativeWorkbench({
   const toggleTheme = (id: string) =>
     change((prev) => ({ ...prev, themeIds: prev.themeIds.includes(id) ? prev.themeIds.filter((t) => t !== id) : [...prev.themeIds, id] }));
 
-  const generate = () => {
-    if (c.proposals.length && !window.confirm("重新生成会覆盖现有 3 个提案草稿（包括你的修改），继续吗？")) return;
+  const generate = async () => {
+    if (c.proposals.length && !await askConfirm("重新生成会覆盖现有 3 个提案草稿（包括你的修改），继续吗？")) return;
     update({ proposals: buildProposals(c, productName), selectedProposalId: null });
   };
 
@@ -66,8 +67,8 @@ export function LocalCreativeWorkbench({
     });
   };
 
-  const runCore = () => {
-    if (STORY_CORE_FIELDS.some((f) => c.storyCore[f.key].trim()) && !window.confirm("AI 提炼会覆盖现有故事内核（包括你的修改），继续吗？")) return;
+  const runCore = async () => {
+    if (STORY_CORE_FIELDS.some((f) => c.storyCore[f.key].trim()) && !await askConfirm("AI 提炼会覆盖现有故事内核（包括你的修改），继续吗？")) return;
     setCoreError("");
     startCore(async () => {
       const res = await aiStoryCoreAction(projectId, { themeIds: c.themeIds, freeText: c.freeText, styleId: c.styleId, roleId: c.roleId });
@@ -77,9 +78,9 @@ export function LocalCreativeWorkbench({
     });
   };
 
-  const acceptAi = () => {
+  const acceptAi = async () => {
     if (!ai) return;
-    if (c.proposals.length && !window.confirm("用 AI 提案替换现有提案（包括你的修改），继续吗？")) return;
+    if (c.proposals.length && !await askConfirm("用 AI 提案替换现有提案（包括你的修改），继续吗？")) return;
     update({ proposals: ai.proposals, selectedProposalId: null });
     setAi(null);
   };

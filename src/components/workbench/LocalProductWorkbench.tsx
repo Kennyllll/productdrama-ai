@@ -1,6 +1,7 @@
 "use client";
 
 // 产品资料：一页 4 步（基本信息 → 照片 → 3D 模型 → 产品细节），做完的步骤默认收起；顶部列出还差什么。
+import { askConfirm } from "@/components/ConfirmHost";
 import Link from "next/link";
 import { useActionState, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -188,7 +189,7 @@ export function LocalProductWorkbench({
   }
 
   async function removeModel(id: string) {
-    if (!window.confirm("删除在用的 3D 模型？")) return;
+    if (!await askConfirm("删除在用的 3D 模型？")) return;
     setBusy(true);
     const res = await fetch(`/api/models/${id}`, { method: "DELETE" });
     setNotice(res.ok ? { tone: "ok", text: "已删除" } : { tone: "error", text: "删除失败" });
@@ -197,7 +198,7 @@ export function LocalProductWorkbench({
   }
 
   async function remove(id: string) {
-    if (!window.confirm("删除这个文件？")) return;
+    if (!await askConfirm("删除这个文件？")) return;
     setBusy(true);
     const res = await fetch(`/api/assets/${id}`, { method: "DELETE" });
     setNotice(res.ok ? { tone: "ok", text: "已删除" } : { tone: "error", text: "删除失败" });

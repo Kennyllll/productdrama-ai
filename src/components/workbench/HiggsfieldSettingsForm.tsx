@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import { useState, useTransition } from "react";
 import { saveHfCredsAction, testHfAction } from "@/app/visual-actions";
 import { Card } from "@/components/ui";
@@ -62,7 +63,7 @@ export function HiggsfieldSettingsForm({ initial }: { initial: { configured: boo
           <button type="button" onClick={test} disabled={pending || !info.configured} className={btn}>
             测试连接（不产生费用）
           </button>
-          <button type="button" onClick={() => window.confirm("清除本机保存的 Higgsfield 凭证？") && save(true)} disabled={pending || !info.configured} className={btn}>
+          <button type="button" onClick={async () => await askConfirm("清除本机保存的 Higgsfield 凭证？") && save(true)} disabled={pending || !info.configured} className={btn}>
             清除
           </button>
         </div>

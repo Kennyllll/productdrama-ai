@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import { useState, useTransition } from "react";
 import { deleteHookAction, saveHookAction } from "@/app/hook-actions";
 import { HOOK_ENTRIES, type HookData, type HookDef, type HookEntry, type HookField } from "@/lib/hooks";
@@ -27,8 +28,8 @@ function HookCard({ h, onDone }: { h: HookDef | null; onDone?: () => void }) {
         onDone?.();
       }
     });
-  const del = () => {
-    if (!h || !window.confirm(`删除「${h.name}」？已经用它做的开头不受影响。`)) return;
+  const del = async () => {
+    if (!h || !await askConfirm(`删除「${h.name}」？已经用它做的开头不受影响。`)) return;
     start(async () => {
       const r = await deleteHookAction(h.id);
       if (r.error) setMsg(`⚠ ${r.error}`);

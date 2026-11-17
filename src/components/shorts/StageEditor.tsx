@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import type { CastOption } from "@/lib/families";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
@@ -497,7 +498,7 @@ export function StageEditor({
       if (itemsChanged) {
         const c = await sceneConflictsAction(scene.id, doc.items);
         if (c.error) return setMsg(`⚠ ${c.error}`);
-        if (c.result?.length && !confirm(`这些已锁定镜头的画面里能看到被改动的物件（它们继续用旧版本，不受影响，但新旧画面会对不上）：\n${c.result.join("\n")}\n\n仍然存成新版本吗？`)) return setMsg(notes.join("；") || "家具改动没有保存");
+        if (c.result?.length && !await askConfirm(`这些已锁定镜头的画面里能看到被改动的物件（它们继续用旧版本，不受影响，但新旧画面会对不上）：\n${c.result.join("\n")}\n\n仍然存成新版本吗？`)) return setMsg(notes.join("；") || "家具改动没有保存");
         const r = await saveSceneVersionAction(scene.id, doc.items, `摆放界面修改（基于 v${scene.v}）`, undefined, locked ? undefined : { videoId, shotId: shotCode });
         if (r.error) return setMsg(`⚠ ${r.error}`);
         notes.push(`家具已存为「${scene.name}」v${r.result}${locked ? "（本镜已锁定，继续用旧版本）" : "，本镜已改用新版本"}`);

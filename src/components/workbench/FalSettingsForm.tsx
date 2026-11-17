@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import { useState, useTransition } from "react";
 import { saveFalKeyAction, testFalAction } from "@/app/model-actions";
 import { Card } from "@/components/ui";
@@ -54,7 +55,7 @@ export function FalSettingsForm({ initial }: { initial: { configured: boolean; k
           >
             测试 Key（不产生费用）
           </button>
-          <button type="button" onClick={() => window.confirm("清除本机保存的 fal Key？") && save(true)} disabled={pending || !info.configured} className={btn}>
+          <button type="button" onClick={async () => await askConfirm("清除本机保存的 fal Key？") && save(true)} disabled={pending || !info.configured} className={btn}>
             清除
           </button>
         </div>

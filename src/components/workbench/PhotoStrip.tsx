@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import { useRef, useState } from "react";
 import { MAX_PHOTOS_PER_OWNER } from "@/lib/cast";
 import type { PhotoOwner, PhotoView } from "@/lib/types";
@@ -43,7 +44,7 @@ export function PhotoStrip({
   };
 
   const remove = async (p: PhotoView) => {
-    if (!window.confirm(`删除参考照「${p.originalName}」？`)) return;
+    if (!await askConfirm(`删除参考照「${p.originalName}」？`)) return;
     const res = await fetch(`/api/photos/${p.id}`, { method: "DELETE" });
     if (res.ok) onChange(photos.filter((x) => x.id !== p.id));
     else setMsg("删除失败，请重试");

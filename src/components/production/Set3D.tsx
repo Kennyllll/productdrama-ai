@@ -1,5 +1,6 @@
 "use client";
 
+import { askConfirm } from "@/components/ConfirmHost";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import * as THREE from "three";
@@ -155,8 +156,8 @@ export function Set3D({
     viewRef.current = { cx: (c.x + t.x) / 2, cz: (c.z + t.z) / 2, span: Math.max(12, dist * 2.2) };
   };
 
-  const pick = (s: SetShot, force = false) => {
-    if (!force && (dirty || otherDirty) && s.code !== code && !window.confirm("这个镜头的修改还没保存，切换会丢掉。确定切换？")) return;
+  const pick = async (s: SetShot, force = false) => {
+    if (!force && (dirty || otherDirty) && s.code !== code && !await askConfirm("这个镜头的修改还没保存，切换会丢掉。确定切换？")) return;
     setCode(s.code);
     onShotChange?.(s.code);
     const l = s.edited ?? s.original;
