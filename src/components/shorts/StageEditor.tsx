@@ -771,8 +771,9 @@ export function StageEditor({
         </div>
     </>
   );
+  const [askOk, setAskOk] = useState(false);
   const askBrain = () => {
-    if (!window.confirm("让大脑（Kimi）按这句话调人偶和产品。\n\n调用文字模型 1 次，大约 $0.03–$0.10（按实际用量记），不出图。改完只在 3D 里预览，不会自动保存。\n\n确定吗？")) return;
+    setAskOk(false);
     setBrain(null);
     setBrainMsg("大脑在想…（半分钟到两分钟）");
     const d = docRef.current;
@@ -793,10 +794,21 @@ export function StageEditor({
       <p className="text-white">跟大脑说一句 <span className="text-[11px] text-neutral-400">调人偶和产品（家具在「场地」里改，摄影机在右边「镜头」里调）</span></p>
       <div className="flex gap-2">
         <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="比如：小孩骑在车上，大人站在旁边，其他细节你帮我调" className="min-w-0 flex-1 rounded border border-white/10 bg-neutral-950 px-2 py-1 text-white" />
-        <button type="button" disabled={thinking || ask.trim().length < 2} onClick={askBrain} className="rounded-lg bg-violet-400 px-3 py-1 font-medium text-black disabled:opacity-40">
+        <button type="button" disabled={thinking || askOk || ask.trim().length < 2} onClick={() => setAskOk(true)} className="rounded-lg bg-violet-400 px-3 py-1 font-medium text-black disabled:opacity-40">
           {thinking ? "想中…" : "让大脑调"}
         </button>
       </div>
+      {askOk ? (
+        <div className="flex flex-wrap items-center gap-2 rounded border border-violet-400/40 p-2 text-neutral-200">
+          <span>调用大脑（Kimi）1 次，实测约 $0.02–$0.07（按实际用量记），不出图。改完只在 3D 里预览，不会自动保存。</span>
+          <button type="button" onClick={askBrain} className="rounded bg-violet-400 px-2 py-0.5 font-medium text-black">
+            确定，调用
+          </button>
+          <button type="button" onClick={() => setAskOk(false)} className="rounded border border-white/10 px-2 py-0.5">
+            取消
+          </button>
+        </div>
+      ) : null}
       {brainMsg ? <p className="text-neutral-300">{brainMsg}</p> : null}
       {brain ? (
         <div className="space-y-1 text-[12px]">
