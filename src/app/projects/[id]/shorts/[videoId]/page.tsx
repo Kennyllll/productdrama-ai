@@ -10,7 +10,7 @@ import { SHORT_TEMPLATES } from "@/lib/shorts";
 import { finalPath, getJob, getShortVideo, listJobs, toJobView } from "@/lib/shorts-repo";
 import { syncOf } from "@/lib/shorts-sync-state";
 import { runningOf } from "@/lib/shorts-runs";
-import { listFamilies } from "@/lib/families-repo";
+import { castOf, listFamilies } from "@/lib/families-repo";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +28,7 @@ export default async function ShortVideoPage({ params, searchParams }: { params:
   return (
     <>
       <ShortStudio
+          cast={(castOf(video.families, 1)?.members ?? []).map((m) => ({ id: m.id, name: m.name }))}
         initial={{ video, jobs: listJobs(videoId).map(toJobView), sync: syncOf(video), running: runningOf(videoId, (id) => getJob(id)?.status === "completed") }}
         templates={SHORT_TEMPLATES.map((t) => ({ id: t.id, label: t.label, look: t.look }))}
         hfReady={hfPublicInfo().configured}

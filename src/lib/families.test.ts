@@ -1,3 +1,5 @@
+import { filmerId, filmerScale } from "@/lib/families";
+import { operatorPrompt } from "@/lib/shorts-operator";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cleanFamily, memberKind, memberText, PRESET_FAMILIES } from "@/lib/families";
@@ -36,4 +38,15 @@ test("预置 4 家 14 人，成员提示词带名字和节日衣服", () => {
   assert.match(memberText(miller, leo, "none"), /wearing a blue long-sleeve tee/);
   assert.equal(cleanFamily({ name: "" }), null);
   assert.equal(cleanFamily({ name: "X", members: [{ id: "BAD ID", name: "a" }] })!.members.length, 0);
+});
+
+test("拿手机的人：镜头优先，none = 不指定；提示词写成员，机位按身高缩放", () => {
+  assert.equal(filmerId({ filmer: "a" }, {}), "a");
+  assert.equal(filmerId({ filmer: "a" }, { filmer: "b" }), "b");
+  assert.equal(filmerId({ filmer: "a" }, { filmer: "none" }), undefined);
+  assert.equal(filmerId({}, {}), undefined);
+  assert.equal(filmerScale(166), 166 / 175);
+  assert.equal(filmerScale(undefined), 1);
+  assert.match(operatorPrompt("stand", null, "Emily, a 32-year-old woman"), /holding the phone and filming is Emily/);
+  assert.doesNotMatch(operatorPrompt("stand", null), /Emily|holding the phone and filming is/);
 });

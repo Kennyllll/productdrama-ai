@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { saveShortAngleAction, saveShortCompAction, saveShortLayoutAction, setShotOperatorAction } from "@/app/short-actions";
+import { saveShortAngleAction, saveShortCompAction, saveShortLayoutAction, setShotFilmerAction, setShotOperatorAction } from "@/app/short-actions";
 import { OperatorPicker } from "@/components/shorts/OperatorPicker";
+import { filmerScale } from "@/lib/families";
 import type { SetLayout } from "@/lib/production-repo";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -34,6 +35,7 @@ export function ShortSet({
   rig,
   initialCode,
   operators,
+  filmers = {},
   autoCapture,
   modelId,
   stage,
@@ -51,6 +53,8 @@ export function ShortSet({
   initialCode: string;
   /** 每镜拍摄者入镜设置（空 = 不入镜） */
   operators: Record<string, string>;
+  /** 每镜谁拿手机：value = 镜头自己设的；h = 现在拿手机的人身高（厘米）；dflt = 视频设定里的人 */
+  filmers?: Record<string, { value: string; h?: number; dflt: string; options: { id: string; label: string }[] }>;
   autoCapture?: boolean;
   title: string;
   /** 摆放编辑器每镜要用的数据 */
@@ -119,11 +123,34 @@ export function ShortSet({
       }
     });
   };
+  const [fv, setFv] = useState<Record<string, string>>(() => Object.fromEntries(Object.entries(filmers).map(([k, x]) => [k, x.value])));
+  const saveFilmer = (c: string, val: string) => {
+    setFv((o) => ({ ...o, [c]: val }));
+    setOpMsg("");
+    opChain.current = opChain.current.then(() => setShotFilmerAction(videoId, c, val)).then((r) => {
+      setOpMsg(r.error ? `⚠ ${r.error}` : "已保存拿手机的人（写进首帧和视频提示词；选姿态时机位高度按他的身高）");
+      if (!r.error) router.refresh();
+    });
+  };
   const operatorBox = (c: string, locked: boolean, api: { layout: SetLayout; setCamH: (h: number) => void }) => (
     <div className="block">
       拍摄者（先选姿态，露什么按机位自动算）<span className="ml-1 text-[11px] text-neutral-500">· 选完自动保存</span>
+      {filmers[c]?.options.length ? (
+        <label className="mt-1 flex items-center gap-1">
+          谁拿手机：
+          <select value={fv[c] ?? ""} disabled={locked} onChange={(e) => saveFilmer(c, e.target.value)} className="rounded border border-white/10 bg-neutral-950 px-1 py-0.5 text-white">
+            <option value="">跟视频设定（{filmers[c].dflt}）</option>
+            {filmers[c].options.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+            <option value="none">不指定（只写“拍摄的人”）</option>
+          </select>
+        </label>
+      ) : null}
       <div className="mt-1">
-        <OperatorPicker value={ops[c] ?? ""} disabled={locked} layout={api.layout} onChange={(v) => saveOp(c, v)} onPose={api.setCamH} />
+        <OperatorPicker value={ops[c] ?? ""} disabled={locked} layout={api.layout} onChange={(v) => saveOp(c, v)} onPose={api.setCamH} scale={filmerScale(filmers[c]?.h)} />
       </div>
       <span className="mt-1 block text-[11px] text-neutral-500">选姿态会把机位高度设成这个姿态的默认值，改完记得保存机位和 3D 构图。拿手机的人最多露一只手，不露脸。{opMsg}</span>
     </div>

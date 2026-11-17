@@ -167,16 +167,16 @@ export const operatorShows = (op: string | undefined, l: SetLayout | null | unde
 };
 
 /** 写进首帧 / 视频提示词：姿态 + 按机位算出来露什么、不露什么 */
-export function operatorPrompt(op: string | undefined, l?: SetLayout | null): string {
+export function operatorPrompt(op: string | undefined, l?: SetLayout | null, who?: string): string {
   const o = parseOp(op);
-  const bits: string[] = [];
+  const bits: string[] = who ? [`The person holding the phone and filming is ${who}; only the parts described below can show.`] : [];
   if (o.custom) bits.push(`The person filming with the phone is partly visible: ${o.custom}.`);
   else {
     const p = poseOf(o.pose);
     const v = l ? operatorView(o.pose, l) : null;
     if (v?.parts.length) {
       const hidden = (Object.keys(PART_EN) as OpPart[]).filter((k) => !v.parts.includes(k));
-      bits.push(`The person filming is ${p.en}; from this exact camera angle only ${v.parts.map((k) => PART_EN[k]).join(", ")} show at the ${v.en} of the frame, in home clothes, exactly where the 3D blocking shows them.`);
+      bits.push(`The person filming is ${p.en}; from this exact camera angle only ${v.parts.map((k) => PART_EN[k]).join(", ")} show at the ${v.en} of the frame, ${who ? "in the clothes described above" : "in home clothes"}, exactly where the 3D blocking shows them.`);
       if (hidden.length) bits.push(`Do not show ${hidden.map((k) => PART_EN[k]).join(", ")}.`);
     } else if (v) bits.push(`The person filming is ${p.en} behind the phone; from this camera angle none of their body is in frame: no feet, slippers, legs or knees.`);
     else bits.push(`The person filming is ${p.en} behind the phone.`);

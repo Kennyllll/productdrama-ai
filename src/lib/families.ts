@@ -157,3 +157,12 @@ export const PRESET_FAMILIES: FamilyData[] = [
     themeWear: XMAS("全家藏青色雪花圣诞睡衣", "matching navy snowflake Christmas pajamas"),
   },
 ];
+
+/** 这一镜谁拿手机：镜头自己设的优先；"none" = 不指定 */
+export function filmerId(v: { filmer?: string }, s: { filmer?: string }): string | undefined {
+  const id = s.filmer ?? v.filmer;
+  return id && id !== "none" ? id : undefined;
+}
+
+/** 拿手机的高度按拍摄者身高缩放（预设按 1.75 米的大人） */
+export const filmerScale = (heightCm?: number) => (heightCm ? Math.min(1.2, Math.max(0.5, heightCm / 175)) : 1);

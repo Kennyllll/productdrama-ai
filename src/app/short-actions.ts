@@ -66,7 +66,7 @@ import {
 import { runKey, runningOf, runs, type RunInfo } from "@/lib/shorts-runs";
 import { getRig } from "@/lib/product-rig-repo";
 import { castOf, getFamily } from "@/lib/families-repo";
-import { memberText } from "@/lib/families";
+import { memberText, filmerId } from "@/lib/families";
 import { promptConflicts } from "@/lib/shorts-conflicts";
 
 type Result<T> = { error?: string; result?: T };
@@ -175,6 +175,7 @@ function cleanShot(s: Partial<ShortShot>, prev?: ShortShot): ShortShot {
     productNote: str(s.productNote, 300),
     compositeNote: str(s.compositeNote, 300),
     operator: str(s.operator, 200),
+    filmer: s.filmer ? str(s.filmer, 80) : undefined,
     framePrompt: str(s.framePrompt, 2000),
     motionPrompt: str(s.motionPrompt, 1000),
     // 关口状态只能由关口动作改变，编辑时沿用服务器上的值
@@ -299,6 +300,8 @@ export async function setVideoFamilyAction(videoId: string, slot: number, family
         s.stage = "draft";
       }
     }
+    if (k === "1") v.filmer = undefined;
+    for (const s of changed) s.filmer = undefined;
     const fams = { ...(v.families ?? {}) };
     if (familyId) fams[k] = familyId;
     else delete fams[k];
@@ -306,6 +309,52 @@ export async function setVideoFamilyAction(videoId: string, slot: number, family
     saveShortVideo(v);
     refresh(v);
     return { result: { state: state(videoId) } };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 整条视频谁拿手机（家庭位 1 的成员）：做过的镜头先列出来让用户确认，已采用的不自动改 */
+export async function setVideoFilmerAction(videoId: string, memberId: string | null, confirmed = false): Promise<Result<{ confirm?: string; state?: StudioState }>> {
+  try {
+    const v = load(videoId);
+    const id = memberId || undefined;
+    if (v.filmer === id) return { result: { state: state(videoId) } };
+    const who = id ? castOf(v.families, 1)?.members.find((m) => m.id === id) : undefined;
+    if (id && !who) throw new Error("这个人不在这条视频的家庭里");
+    if (listJobs(videoId).some((j) => j.status === "submitting" || j.status === "submitted")) throw new Error("有镜头正在生成，等生成完再换拍摄者");
+    const label = (s: ShortShot) => (s.hook ? `开头「${s.hook.name}」` : `#${v.shots.indexOf(s) + 1}`);
+    const changed = v.shots.filter((s) => s.filmer === undefined);
+    const accepted = changed.filter((s) => s.stage === "accepted");
+    if (accepted.length) throw new Error(`已采用的镜头 ${accepted.map(label).join("、")} 不会被自动改：要换拍摄者，先在这些镜头点“退回返工”`);
+    const redo = changed.filter((s) => s.stage !== "draft" || s.frameJobId || s.videoJobId);
+    if (redo.length && !confirmed) {
+      const usd = redo.reduce((a, s) => a + FRAME_USD_FALLBACK + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * VIDEO_USD_PER_SEC[v.resolution] : 0), 0);
+      return { result: { confirm: `拿手机的人换成「${who?.name ?? "不指定"}」以后，这些已经做过的镜头里露出的手、衣服和拍摄高度还是原来的，要退回构图重做：\n${redo.map(label).join("、")}\n\n重做大约 $${usd.toFixed(2)}（每次生成照样先审批）。已经生成的画面会留在历史里。` } };
+    }
+    for (const s of redo) {
+      s.compFile = null;
+      s.stage = "draft";
+    }
+    v.filmer = id;
+    saveShortVideo(v);
+    refresh(v);
+    return { result: { state: state(videoId) } };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 这一镜单独换拿手机的人（"" = 跟视频，"none" = 不指定）；只能改构图草案 */
+export async function setShotFilmerAction(videoId: string, shotId: string, filmer: string): Promise<{ error?: string }> {
+  try {
+    const { v, s } = draftShot(videoId, shotId);
+    const f = filmer.trim();
+    if (f && f !== "none" && !castOf(v.families, famOf(s))?.members.some((m) => m.id === f)) throw new Error("这个人不在这一镜的家庭里");
+    s.filmer = f || undefined;
+    saveShortVideo(v);
+    refresh(v);
+    return {};
   } catch (e) {
     return fail(e);
   }
@@ -520,6 +569,7 @@ export async function shotStageAction(videoId: string, shotId: string, action: S
         need(!waitingFor(v, s.id), `按顺序做：先把 #${waitingFor(v, s.id)} 做到“采用”`);
         need(s.framePrompt.trim().length > 20 && s.description.trim().length > 0, "构图描述和首帧提示词还没写好");
         need(!opMissing(s.operator), "拍摄者：勾了“空着的手入镜”，要先选动作");
+        need(!filmerId(v, s) || !(s.layout?.figures ?? []).some((f) => f.memberId === filmerId(v, s)), "拿手机的人不能同时出现在画面里：换一个人拍，或者把这个人偶换成别人");
         need(!!s.layout && !!s.compFile && fs.existsSync(path.join(videoDir(v.projectId, v.id), s.compFile)), "先在 3D 布景里摆好机位，并保存 3D 构图");
         s.stage = "comp_ok";
         break;
@@ -686,7 +736,7 @@ function framePromptOf(v: ShortVideo, s: ShortShot): string {
     otherFamily ? "This shot shows a different family from the earlier shots: different people and a different home; only the product is the same model." : "",
     specialText(v, s),
     NOTES,
-    operatorPrompt(s.operator, s.layout),
+    operatorPrompt(s.operator, s.layout, filmerText(v, s)),
     s.productNote.trim()
       ? `Product: ${p?.name || "the product"} — use the product reference photos: keep exact geometry, proportions, colors, materials and logo placement; do not redesign, recolor or add parts.`
       : "",
@@ -704,6 +754,14 @@ function framePromptOf(v: ShortVideo, s: ShortShot): string {
   const room = FRAME_PROMPT_MAX - rest - lead.length;
   const fit = notes.length <= room ? notes : room > 80 ? `${notes.slice(0, room - 1).replace(/\s+\S*$/, "")}…` : "";
   return parts.map((x) => (x === NOTES ? (fit ? lead + fit : "") : x)).filter(Boolean).join("\n");
+}
+
+/** 拿手机的家庭成员：“Ryan, a 34-year-old man, …”（衣服跟视频节日）；没指定 = 空 */
+function filmerText(v: ShortVideo, s: ShortShot): string {
+  const id = filmerId(v, s);
+  const fam = id ? castOf(v.families, famOf(s)) : null;
+  const m = fam?.members.find((x) => x.id === id);
+  return fam && m ? memberText(fam, m, videoTheme(v).theme) : "";
 }
 
 /** 绑定了家庭成员的人偶：“Person 1 is Leo, a 3-year-old boy, …”（衣服跟视频节日） */
@@ -733,7 +791,7 @@ function scenePromptOf(me: NonNullable<ReturnType<typeof shotScene>>): string {
 }
 
 function videoPromptOf(v: ShortVideo, s: ShortShot): string {
-  const op = operatorPrompt(s.operator, s.layout);
+  const op = operatorPrompt(s.operator, s.layout, filmerText(v, s));
   const sp = specialText(v, s);
   return `${s.motionPrompt.trim()}\n${sp ? `${sp}\n` : ""}${moveText(s.layout)}\n${op ? `${op}${operatorShows(s.operator, s.layout) ? " Keep what shows of them partly visible and moving naturally through the clip." : ""}\n` : ""}Keep the product's shape, colors and logo exactly as in the first frame. Same people, wardrobe, room and lighting as the first frame throughout; no new people appear. Looks like real phone footage a parent shot for TikTok: natural speed, no slow motion, no smooth cinematic camera glide, casual unposed behavior. No text overlays.`;
 }
@@ -955,7 +1013,7 @@ export async function rewriteShotAction(
       `People in the 3D blocking (exactly these, nobody else in frame): ${figs.length ? figs.join("; ") : "none"}.`,
       layoutText(s.layout),
       blockingText(s.layout, rigOf(v)),
-      operatorPrompt(s.operator, s.layout) || "The person filming is not visible.",
+      operatorPrompt(s.operator, s.layout, filmerText(v, s)) || "The person filming is not visible.",
     ]
       .filter(Boolean)
       .join("\n");

@@ -22,6 +22,7 @@ import {
   saveTemplateAction,
   setVideoThemeAction,
   setVideoFamilyAction,
+  setVideoFilmerAction,
   shotStageAction,
   type StageAction,
   type StudioState,
@@ -84,6 +85,7 @@ export function ShortStudio({
   kit,
   hasBase = false,
   families = [],
+  cast = [],
 }: {
   initial: StudioState;
   templates: { id: string; label: string; look: string }[];
@@ -94,6 +96,8 @@ export function ShortStudio({
   kit?: KitData;
   hasBase?: boolean;
   families?: { id: string; name: string }[];
+  /** 家庭位 1 的成员：选谁拿手机 */
+  cast?: { id: string; name: string }[];
 }) {
   const [st, setSt] = useState(initial);
   const [shots, setShots] = useState<ShortShot[]>(initial.video.shots);
@@ -168,6 +172,15 @@ export function ShortStudio({
         r = await setVideoFamilyAction(v.id, Number(slot), id || null, true);
       }
       apply({ error: r.error, result: r.result?.state }, "已换家庭");
+    });
+  const changeFilmer = (id: string) =>
+    start(async () => {
+      let r = await setVideoFilmerAction(v.id, id || null);
+      if (r.result?.confirm) {
+        if (!window.confirm(r.result.confirm)) return;
+        r = await setVideoFilmerAction(v.id, id || null, true);
+      }
+      apply({ error: r.error, result: r.result?.state }, "已换拿手机的人");
     });
 
   const live = useMemo(() => ({ ...v, shots }), [v, shots]);
@@ -349,6 +362,19 @@ export function ShortStudio({
                 </select>
               </label>
             ))}
+            {cast.length ? (
+              <label className="flex items-center gap-1">
+                拿手机的人：
+                <select disabled={busy} value={v.filmer ?? ""} onChange={(e) => changeFilmer(e.target.value)} className="rounded border border-white/10 bg-neutral-950 px-1 py-0.5 text-white">
+                  <option value="">不指定</option>
+                  {cast.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <a href="/families" className="text-amber-300 hover:underline">
               去家庭库改成员 →
             </a>

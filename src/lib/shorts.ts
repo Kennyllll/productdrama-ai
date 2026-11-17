@@ -158,6 +158,8 @@ export interface ShortShot {
   textBasis?: ShotBasis;
   /** 有值 = 开头版本：多个开头共用同一组正文，不参与正文的顺序锁。cut = 在第几秒剪成 2 个镜头；zoomB = 后半段放大倍数（1–1.5） */
   hook?: ShotHook;
+  /** 谁拿手机：家庭成员 id；"none" = 不指定；空 = 跟视频设定 */
+  filmer?: string;
 }
 
 export interface ShotHook {
@@ -189,6 +191,8 @@ export interface ShortVideoData {
   themeText?: string;
   /** 家庭位（镜头的 family 编号）→ 家庭库 id；没选 = 不写具体成员 */
   families?: Record<string, string>;
+  /** 整条视频谁拿手机（家庭位 1 的成员 id）；空 = 不指定 */
+  filmer?: string;
   /** 从哪个模板（哪一版）套来的 */
   fromTemplate?: { id: string; v: number; name: string; fromProduct: string; fromKind?: string; rewritten?: boolean };
 }

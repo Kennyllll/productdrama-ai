@@ -10,6 +10,7 @@ export function OperatorPicker({
   disabled,
   layout,
   onPose,
+  scale = 1,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -17,13 +18,15 @@ export function OperatorPicker({
   layout?: SetLayout | null;
   /** 选了姿态后把机位高度设成这个姿态的默认值 */
   onPose?: (camH: number) => void;
+  /** 拿手机的人身高 / 1.75 米：默认机位高度和合理范围跟着缩放 */
+  scale?: number;
 }) {
   const o = parseOp(value);
   const set = (p: Partial<typeof o>) => onChange(opString({ ...o, custom: undefined, ...p }));
   const p = poseOf(o.pose);
   const v = layout && !o.custom ? operatorView(o.pose, layout) : null;
   const camH = layout?.camPos[2];
-  const off = camH !== undefined && !o.custom && (camH < p.lo || camH > p.hi);
+  const off = camH !== undefined && !o.custom && (camH < p.lo * scale || camH > p.hi * scale);
   const box = "rounded border border-white/10 bg-neutral-950 px-2 py-1 text-sm text-white disabled:opacity-50";
   return (
     <div className="space-y-1 text-xs text-neutral-300">
@@ -35,7 +38,7 @@ export function OperatorPicker({
             const id = e.target.value;
             if (id === "custom") return onChange("在这里写拍摄者露出什么");
             set({ pose: id as OpPose });
-            onPose?.(poseOf(id as OpPose).camH);
+            onPose?.(Math.round(poseOf(id as OpPose).camH * scale * 100) / 100);
           }}
           className={box}
         >

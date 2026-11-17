@@ -14,7 +14,7 @@ import { ensureScenes, legacyShotScene, versionOf } from "@/lib/shorts-scenes-re
 import type { ShotBinding } from "@/components/shorts/SceneEditor";
 import { JobPill } from "@/components/shorts/JobPill";
 import { castOf } from "@/lib/families-repo";
-import { memberKind, roleOf } from "@/lib/families";
+import { memberKind, roleOf, filmerId } from "@/lib/families";
 
 export const dynamic = "force-dynamic";
 
@@ -56,10 +56,17 @@ export default async function ShortSetPage({ params, searchParams }: { params: P
       layout: s.layout ?? autoLayout(s, i),
       scene: { id: sc.id, name: sc.name, v: ver.v, theme: sh.theme, themeLabel: findTheme(sh.theme).label },
       items: ver.items,
-      members: (castOf(v.families, s.family ?? 1)?.members ?? []).map((m) => ({ id: m.id, name: m.name, kind: memberKind(m), h: m.heightCm / 100, label: `${m.name}（${roleOf(m.role).label}，${(m.heightCm / 100).toFixed(2)} 米）` })),
+      members: (castOf(v.families, s.family ?? 1)?.members ?? []).filter((m) => m.id !== filmerId(v, s)).map((m) => ({ id: m.id, name: m.name, kind: memberKind(m), h: m.heightCm / 100, label: `${m.name}（${roleOf(m.role).label}，${(m.heightCm / 100).toFixed(2)} 米）` })),
     };
     return { code: s.id, label: `#${i + 1}`, scene: sh, family: s.family ?? 1, special: s.special ?? "", locked: shots[i].locked };
   });
+  const filmers = Object.fromEntries(
+    v.shots.map((s) => {
+      const ms = castOf(v.families, s.family ?? 1)?.members ?? [];
+      const id = filmerId(v, s);
+      return [s.id, { value: s.filmer ?? "", h: ms.find((m) => m.id === id)?.heightCm, dflt: ms.find((m) => m.id === v.filmer)?.name ?? "不指定", options: ms.map((m) => ({ id: m.id, label: `${m.name}（${roleOf(m.role).label}，${(m.heightCm / 100).toFixed(2)} 米）` })) }];
+    }),
+  );
   return (
     <>
       <JobPill videoId={videoId} projectId={id} />
@@ -88,6 +95,7 @@ export default async function ShortSetPage({ params, searchParams }: { params: P
           shots={shots}
           bindings={bindings}
           operators={Object.fromEntries(v.shots.map((s) => [s.id, s.operator ?? ""]))}
+          filmers={filmers}
           scenes={scenes}
           sceneItems={sceneItems}
           glbUrl={model ? `/api/models/${model.id}` : null}
