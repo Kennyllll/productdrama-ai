@@ -26,6 +26,7 @@ import {
   setVideoThemeAction,
   setVideoFamilyAction,
   setVideoFilmerAction,
+  deleteHookShotAction,
   shotStageAction,
   type StageAction,
   type StudioState,
@@ -866,14 +867,14 @@ export function ShortStudio({
                       ＋ 照抄第一个开头
                     </button>
                     <button className={btn} disabled={busy || dirty || !hookLib.length} title={dirty ? "先保存分镜" : ""} onClick={() => setHookPanel({})}>
-                      ＋ 从 Hook 库选
+                      用 Hook 库的套路做开头
                     </button>
                     </span>
                   </li>
                 ) : null,
                 i === 0 && hookPanel ? (
                   <li key="h-panel" className="col-span-full">
-                    <HookPanel key={hookPanel.shotId ?? "new"} videoId={v.id} lib={hookLib} shot={hookPanel.shotId ? v.shots.find((x) => x.id === hookPanel.shotId) : undefined} onDone={apply} onClose={() => setHookPanel(null)} />
+                    <HookPanel key={hookPanel.shotId ?? "new"} videoId={v.id} lib={hookLib} shot={hookPanel.shotId ? v.shots.find((x) => x.id === hookPanel.shotId) : undefined} targetId={hookPanel.shotId ? undefined : hookList[0]?.id} setHref={(id) => `/projects/${v.projectId}/shorts/${v.id}/set?shot=${id}&capture=1`} onDone={apply} onClose={() => setHookPanel(null)} />
                   </li>
                 ) : null,
                 !s.hook && i === firstBody ? (
@@ -907,6 +908,23 @@ export function ShortStudio({
                   {s.hook?.libId ? (
                     <button className="mt-1 text-xs text-amber-300 underline" disabled={busy || dirty} onClick={() => setHookPanel({ shotId: s.id })}>
                       Hook 属性（{s.hook.libName}）
+                    </button>
+                  ) : null}
+                  {s.hook ? (
+                    <p className="mt-1 text-[11px] text-neutral-500">
+                      {s.hook.libId ? `Hook：${s.hook.libName}` : "模板自带的开头（没用 Hook 库）"}
+                      {thumb && !s.frameJobId ? " · 图是 3D 构图，画面还没出" : ""}
+                    </p>
+                  ) : null}
+                  {s.hook ? (
+                    <button
+                      className="mt-1 block text-xs text-rose-300 underline"
+                      disabled={busy || dirty}
+                      onClick={async () => {
+                        if (await askConfirm(`删除开头「${s.hook?.name}」？已经生成的画面会留在历史里。`)) act(() => deleteHookShotAction(v.id, s.id), "已删除开头");
+                      }}
+                    >
+                      删除这个开头
                     </button>
                   ) : null}
                   {s.hook ? (

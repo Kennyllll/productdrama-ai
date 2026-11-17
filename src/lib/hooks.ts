@@ -1,5 +1,6 @@
 // Hook 库：所有产品共用的开头套路。库里只存套路和属性定义（带示例值），实际的价格、主张在每条视频里填。
 // 节日、家庭、场地不进 hook：跟整条视频和正文第一镜走。
+import { DEFAULT_STAGE, type HookStage } from "@/lib/hook-stage";
 export type HookEntry = "assembled" | "unbox" | "riding";
 export const HOOK_ENTRIES: { id: HookEntry; label: string; en: string }[] = [
   { id: "assembled", label: "已经组装好", en: "the product is already fully assembled and clearly in view (no box, no packaging)" },
@@ -26,6 +27,8 @@ export interface HookData {
   /** 字幕模板：{key} 换成属性值，{product} 换成产品名 */
   caption: string;
   fields: HookField[];
+  /** 3D 预设：选了这个 Hook 自动摆摄影机、产品朝向和人 */
+  stage?: HookStage;
 }
 
 export interface HookDef extends HookData {
@@ -34,6 +37,25 @@ export interface HookDef extends HookData {
 }
 
 const s = (x: unknown, n: number) => (typeof x === "string" ? x.trim().slice(0, n) : "");
+
+function cleanStage(x: unknown): HookStage {
+  const d = (x ?? {}) as Partial<HookStage>;
+  const n = (v: unknown, lo: number, hi: number, f: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : f);
+  const poses = ["stand", "crouch", "ride", "point", "reach", "hold"];
+  return {
+    dist: n(d.dist, 0.6, 6, DEFAULT_STAGE.dist),
+    camH: n(d.camH, 0.3, 2.2, DEFAULT_STAGE.camH),
+    lens: n(d.lens, 16, 85, DEFAULT_STAGE.lens),
+    view: d.view === "head" || d.view === "side" || d.view === "front34" ? d.view : DEFAULT_STAGE.view,
+    people: (Array.isArray(d.people) ? d.people : DEFAULT_STAGE.people)
+      .slice(0, 3)
+      .map((p) => ({
+        kind: p?.kind === "adult" ? ("adult" as const) : ("child" as const),
+        pose: (poses.includes(p?.pose as string) ? p.pose : "stand") as HookStage["people"][number]["pose"],
+        ...(p?.onProduct && p.kind !== "adult" ? { onProduct: true } : { side: p?.side === "left" || p?.side === "behind" ? p.side : ("right" as const), dist: n(p?.dist, 0.3, 3, 0.7) }),
+      })),
+  };
+}
 
 export function cleanHookData(x: unknown): HookData | null {
   const d = (x ?? {}) as Partial<HookData>;
@@ -53,6 +75,7 @@ export function cleanHookData(x: unknown): HookData | null {
     entry: HOOK_ENTRIES.some((e) => e.id === d.entry) ? (d.entry as HookEntry) : "assembled",
     caption: s(d.caption, 200),
     fields,
+    stage: cleanStage(d.stage),
   };
 }
 
@@ -78,6 +101,7 @@ export const PRESET_HOOKS: HookData[] = [
     seconds: 3,
     entry: "assembled",
     caption: "{deal}: {price} (was {was})",
+    stage: { dist: 1.4, camH: 0.9, lens: 35, view: "front34", people: [] },
     fields: [
       { key: "price", label: "现价", example: "$59.99", visual: false },
       { key: "was", label: "原价", example: "$89.99", visual: false },
@@ -92,6 +116,7 @@ export const PRESET_HOOKS: HookData[] = [
     seconds: 3,
     entry: "riding",
     caption: "{claim}",
+    stage: { dist: 2, camH: 1, lens: 28, view: "front34", people: [{ kind: "child", pose: "ride", onProduct: true }] },
     fields: [
       { key: "claim", label: "主张", example: "The only trike my 2-year-old actually rides", visual: false },
       { key: "proof", label: "画面证据", example: "孩子自己踩着脚踏骑过来，很稳", visual: true },
@@ -104,6 +129,7 @@ export const PRESET_HOOKS: HookData[] = [
     seconds: 3,
     entry: "riding",
     caption: "{line}",
+    stage: { dist: 2.2, camH: 0.9, lens: 28, view: "head", people: [{ kind: "child", pose: "ride", onProduct: true }, { kind: "adult", pose: "stand", side: "right", dist: 0.9 }] },
     fields: [
       { key: "result", label: "结果画面", example: "孩子在前院自己骑了一圈，家长在旁边拍手", visual: true },
       { key: "line", label: "字幕说法", example: "Day 3 with this trike", visual: false },
@@ -116,6 +142,7 @@ export const PRESET_HOOKS: HookData[] = [
     seconds: 3,
     entry: "assembled",
     caption: "{deadline} · {stock}",
+    stage: { dist: 1.2, camH: 0.8, lens: 35, view: "front34", people: [] },
     fields: [
       { key: "deadline", label: "截止时间", example: "Sale ends tonight", visual: false },
       { key: "stock", label: "库存", example: "Only 50 left", visual: false },
@@ -128,6 +155,7 @@ export const PRESET_HOOKS: HookData[] = [
     seconds: 3,
     entry: "riding",
     caption: "{proof}",
+    stage: { dist: 2.4, camH: 1.1, lens: 28, view: "front34", people: [{ kind: "child", pose: "ride", onProduct: true }, { kind: "adult", pose: "crouch", side: "left", dist: 0.6 }] },
     fields: [{ key: "proof", label: "数字或评价", example: "10,000+ parents gave it 5 stars", visual: false }],
   },
   {
@@ -137,6 +165,7 @@ export const PRESET_HOOKS: HookData[] = [
     seconds: 3,
     entry: "assembled",
     caption: "{vs} vs {product}",
+    stage: { dist: 1.8, camH: 1, lens: 28, view: "side", people: [{ kind: "adult", pose: "stand", side: "right", dist: 0.7 }] },
     fields: [
       { key: "vs", label: "和什么比", example: "a heavy metal trike", visual: true },
       { key: "diff", label: "差别（画面里怎么看出来）", example: "妈妈一只手就能拎起这台车", visual: true },

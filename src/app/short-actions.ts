@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { AiError, chatJson } from "@/lib/ai/client";
 import { createHook, getHook } from "@/lib/hooks-repo";
 import { cleanHookValues, fillCaption, HOOK_ENTRIES } from "@/lib/hooks";
+import { buildHookLayout, DEFAULT_STAGE } from "@/lib/hook-stage";
 import { shortConceptPrompt, shortShotsPrompt } from "@/lib/ai/short-prompts";
 import { deleteRequest, estimate, getStatus, HiggsfieldError, submit, uploadFile } from "@/lib/higgsfield";
 import { assetPath, findLocalProject, getProduct, listAssets } from "@/lib/repo";
@@ -262,15 +263,18 @@ export async function draftHookAction(videoId: string, libId: string, values: Re
     const vals = cleanHookValues(lib, values);
     const en = HOOK_ENTRIES.find((x) => x.id === entry) ?? HOOK_ENTRIES.find((x) => x.id === lib.entry) ?? HOOK_ENTRIES[0];
     const first = v.shots.find((s) => !s.hook);
+    const rig = rigOf(v);
+    const layout = buildHookLayout(lib.stage ?? DEFAULT_STAGE, (v.shots.find((s) => s.hook) ?? first)?.layout, rig?.gripY ?? 0.51);
     const caption = fillCaption(lib.caption, vals, getProduct(v.projectId)?.name ?? "");
     const th = videoTheme(v);
     const { data } = await chatJson({
       system:
-        'You write the opening hook shot (the first 2-4 seconds) of a North American TikTok product video. Follow the hook recipe and the filled values exactly. The hook must flow straight into the first body shot (nextShot): same location, same people and family, same product color. The holiday is given in holiday and overrides anything written in nextShot; if it is none, there are no holiday decorations, trees, gifts, bows or holiday outfits at all. The person filming holds the phone and is never visible: never describe them in framePrompt or motionPrompt. If productEntry says no box, there is no box, packaging or wrapping anywhere in the frame. Use only product facts from productFacts; never invent features, prices, parts or packaging. The on-screen caption is fixed and added in editing (caption): write the picture so it supports that caption, and never put text into the image. Values marked showsInPicture must be visible in the picture; the others only live in the caption. Return JSON {"description":"中文：画面里有谁、在哪、在做什么、产品怎么出场","camera":"中文：机位和景别","productNote":"中文：产品在画面里的状态","framePrompt":"English first-frame image prompt, concrete and visual, max 900 characters","motionPrompt":"English motion prompt for the clip, max 500 characters","notes":["中文提醒，最多 3 条"]}.',
+        'You write the opening hook shot (the first 2-4 seconds) of a North American TikTok product video. Follow the hook recipe and the filled values exactly. The hook must flow straight into the first body shot (nextShot): same location, same people and family, same product color. The holiday is given in holiday and overrides anything written in nextShot; if it is none, there are no holiday decorations, trees, gifts, bows or holiday outfits at all. The person filming holds the phone and is never visible: never describe them in framePrompt or motionPrompt. If productEntry says no box, there is no box, packaging or wrapping anywhere in the frame. Who is in frame, where they are, what they do and where the product is come only from facts3d (the 3D blocking of this hook shot): never copy people or actions from nextShot. Use only product facts from productFacts; never invent features, prices, parts or packaging. The on-screen caption is fixed and added in editing (caption): write the picture so it supports that caption, and never put text into the image. Values marked showsInPicture must be visible in the picture; the others only live in the caption. Return JSON {"description":"中文：画面里有谁、在哪、在做什么、产品怎么出场","camera":"中文：机位和景别","productNote":"中文：产品在画面里的状态","framePrompt":"English first-frame image prompt, concrete and visual, max 900 characters","motionPrompt":"English motion prompt for the clip, max 500 characters","notes":["中文提醒，最多 3 条"]}.',
       user: JSON.stringify({
         hook: { name: lib.name, recipe: lib.about, productEntry: en.en, seconds: lib.seconds },
         values: lib.fields.map((f) => ({ label: f.label, value: vals[f.key], showsInPicture: f.visual })),
         caption,
+        facts3d: [layoutText(layout), blockingText(layout, rig)].join("\n"),
         holiday: th.theme && th.theme !== "none" ? th.themeText || th.theme : "none",
         productFacts: productText(v.projectId),
         nextShot: first ? { beat: first.beat, ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, first[k]])) } : null,
@@ -290,7 +294,7 @@ export async function draftHookAction(videoId: string, libId: string, values: Re
 }
 
 /** 采用 Hook 剧本：新建开头（或重写 replaceId 这个开头）。3D 摆位先抄第一个开头，家庭和场地跟正文第一镜（免费） */
-export async function adoptHookAction(videoId: string, libId: string, values: Record<string, string>, entry: string, draft: Partial<Record<TextField, string>>, replaceId?: string): Promise<Result<StudioState>> {
+export async function adoptHookAction(videoId: string, libId: string, values: Record<string, string>, entry: string, draft: Partial<Record<TextField, string>>, replaceId?: string): Promise<Result<StudioState & { shotId: string }>> {
   try {
     const v = load(videoId);
     const lib = getHook(libId);
@@ -326,12 +330,14 @@ export async function adoptHookAction(videoId: string, libId: string, values: Re
       s.special = base?.special;
       v.shots = [...hooks, s, ...body];
     } else v.shots = v.shots.map((x) => (x.id === old.id ? s : x));
+    s.layout = buildHookLayout(lib.stage ?? DEFAULT_STAGE, (old ?? base)?.layout, rigOf(v)?.gripY ?? 0.51);
+    s.compFile = null;
     bindScenes(v);
     s.textBasis = basisOf(s, placeOf(v, s));
     v.hooksReady = true;
     saveShortVideo(v);
     refresh(v);
-    return { result: state(videoId) };
+    return { result: { ...state(videoId), shotId: s.id } };
   } catch (e) {
     return fail(e);
   }
@@ -379,6 +385,24 @@ export async function saveHookAsLibAction(videoId: string, shotId: string, name:
     if (!nm) throw new Error("名字不能为空");
     const entry = HOOK_ENTRIES.find((x) => x.id === h.entry)?.id ?? lib.entry;
     return { result: createHook({ name: nm, about: lib.about, use: lib.use, seconds: lib.seconds, entry, caption: lib.caption, fields: lib.fields.map((f) => ({ ...f, example: h.values?.[f.key] || f.example })) }) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 删除一个开头（已采用、正在生成的不能删；生成过的画面留在历史里） */
+export async function deleteHookShotAction(videoId: string, shotId: string): Promise<Result<StudioState>> {
+  try {
+    const v = load(videoId);
+    const s = v.shots.find((x) => x.id === shotId);
+    if (!s?.hook) throw new Error("只能删除开头镜头");
+    if (s.stage === "accepted") throw new Error("这个开头已采用：先点“退回返工”再删");
+    if (listJobs(videoId).some((j) => j.shotId === s.id && (j.status === "submitting" || j.status === "submitted"))) throw new Error("这个开头正在生成，等生成完再删");
+    v.shots = v.shots.filter((x) => x.id !== shotId);
+    v.exportHooks = (v.exportHooks ?? []).filter((x) => x !== shotId);
+    saveShortVideo(v);
+    refresh(v);
+    return { result: state(videoId) };
   } catch (e) {
     return fail(e);
   }

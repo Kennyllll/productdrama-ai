@@ -1,3 +1,4 @@
+import { DEFAULT_STAGE } from "@/lib/hook-stage";
 // Hook 库读写集中在这里（以后搬 Supabase 只改这一层）
 import "server-only";
 import { randomUUID } from "node:crypto";
@@ -28,7 +29,11 @@ function createIn(d: ReturnType<typeof getDb>, data: HookData): string {
 }
 
 type Row = { id: string; data: string; updated_at: string };
-const toHook = (r: Row): HookDef => ({ ...(JSON.parse(r.data) as HookData), id: r.id, updatedAt: r.updated_at });
+/** 早于 3D 预设存的 Hook：预置的按名字补上预设，自己建的用默认 */
+const toHook = (r: Row): HookDef => {
+  const d = JSON.parse(r.data) as HookData;
+  return { ...d, stage: d.stage ?? PRESET_HOOKS.find((p) => p.name === d.name)?.stage ?? DEFAULT_STAGE, id: r.id, updatedAt: r.updated_at };
+};
 
 export function listHooks(): HookDef[] {
   return (db().prepare("SELECT id, data, updated_at FROM hooks ORDER BY created_at, rowid").all() as Row[]).map(toHook);

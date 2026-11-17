@@ -2,17 +2,18 @@
 
 import { askConfirm, askPrompt } from "@/components/ConfirmHost";
 import { useState, useTransition } from "react";
-import { adoptHookAction, draftHookAction, saveHookAsLibAction, setHookValuesAction } from "@/app/short-actions";
+import { adoptHookAction, deleteHookShotAction, draftHookAction, saveHookAsLibAction, setHookValuesAction } from "@/app/short-actions";
 import { cleanHookValues, HOOK_ENTRIES, type HookDef } from "@/lib/hooks";
+import { VIEW_LABEL } from "@/lib/hook-stage";
 import type { ShortShot } from "@/lib/shorts";
 
-type Done = (r: Awaited<ReturnType<typeof adoptHookAction>>, ok?: string) => void;
+type Done = (r: Awaited<ReturnType<typeof deleteHookShotAction>>, ok?: string) => void;
 const inp = "w-full rounded border border-white/10 bg-neutral-950 px-2 py-1 text-sm text-white disabled:opacity-50";
 const sel = "rounded border border-white/10 bg-neutral-950 px-2 py-1 text-sm text-white disabled:opacity-50";
 const btn = "rounded border border-white/10 px-2 py-1 text-xs text-neutral-200 hover:border-amber-400/60 disabled:opacity-50";
 
 /** 从 Hook 库做开头（shot 为空 = 新建；有 shot = 改这个开头的属性 / 重写剧本 / 另存为新 Hook） */
-export function HookPanel({ videoId, lib, shot, onDone, onClose }: { videoId: string; lib: HookDef[]; shot?: ShortShot; onDone: Done; onClose: () => void }) {
+export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClose }: { videoId: string; lib: HookDef[]; shot?: ShortShot; targetId?: string; setHref: (shotId: string) => string; onDone: Done; onClose: () => void }) {
   const h = shot?.hook;
   const [libId, setLibId] = useState(h?.libId ?? lib[0]?.id ?? "");
   const def = lib.find((x) => x.id === libId);
@@ -43,9 +44,9 @@ export function HookPanel({ videoId, lib, shot, onDone, onClose }: { videoId: st
   const adopt = () =>
     start(async () => {
       if (!draft) return;
-      const r = await adoptHookAction(videoId, libId, values, entry, draft.draft, shot?.id);
-      onDone(r, shot ? "已重写这个开头：去 3D 看一眼、保存构图" : "已新建开头：去 3D 看一眼、保存构图");
-      if (!r.error) onClose();
+      const r = await adoptHookAction(videoId, libId, values, entry, draft.draft, shot?.id ?? targetId);
+      onDone(r, "已换好开头：正在打开 3D，按 Hook 摆好的构图会自动保存");
+      if (!r.error && r.result) window.location.href = setHref(r.result.shotId);
     });
   const saveValues = () =>
     start(async () => {
@@ -70,7 +71,7 @@ export function HookPanel({ videoId, lib, shot, onDone, onClose }: { videoId: st
   return (
     <div className="space-y-2 rounded-lg border border-amber-400/30 bg-neutral-900 p-3 text-xs text-neutral-300">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium text-white">{shot ? `开头「${h?.name}」的 Hook 属性` : "从 Hook 库做一个开头"}</span>
+        <span className="font-medium text-white">{shot ? `开头「${h?.name}」的 Hook 属性` : targetId ? "把开头换成 Hook 库里的套路" : "从 Hook 库做一个开头"}</span>
         <select className={sel} value={libId} disabled={pending || !!shot} onChange={(e) => pick(e.target.value)}>
           {lib.map((x) => (
             <option key={x.id} value={x.id}>
@@ -91,6 +92,11 @@ export function HookPanel({ videoId, lib, shot, onDone, onClose }: { videoId: st
         </button>
       </div>
       {def ? <p className="text-neutral-500">{def.about}</p> : null}
+      {def?.stage ? (
+        <p className="text-sky-200">
+          3D 会自动摆成：产品{VIEW_LABEL[def.stage.view]}，{def.stage.people.length ? def.stage.people.map((p) => (p.onProduct ? "小孩骑在车上" : `${p.kind === "adult" ? "大人" : "小孩"}在车${p.side === "left" ? "左边" : p.side === "behind" ? "后面" : "右边"}`)).join("、") : "不放人，只拍产品"}；摄影机约 {def.stage.dist} 米、高 {def.stage.camH} 米。采用后会打开 3D 自动保存构图，你只要微调。
+        </p>
+      ) : null}
       <div className="grid gap-2 md:grid-cols-2">
         {fields.map((f) => (
           <label key={f.key} className="block">
