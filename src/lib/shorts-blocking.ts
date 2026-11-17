@@ -76,7 +76,7 @@ const vPos = (ny: number) => (ny < -0.33 ? "lower part" : ny > 0.33 ? "upper par
 const POSE_EN: Record<string, string> = {
   stand: "standing",
   crouch: "crouching down",
-  ride: "sitting on the product's seat, riding it, hands on the grips, feet on the ground",
+  ride: "sitting on the product's seat, riding it, hands on the grips",
   sit: "sitting on the ground",
   hold: "standing with both hands reaching forward",
   reach: "reaching one hand forward (an open, empty-handed gesture, not handing anything over)",
@@ -84,11 +84,15 @@ const POSE_EN: Record<string, string> = {
 };
 
 /** 这个人在做什么：用户写的动作为准；手脚拖过但没写动作，就照 3D 人偶的样子，不用姿态名 */
-function doing(f: FigureSpec, l: SetLayout): string {
+/** 骑车时脚在哪：量过脚踏高度（三轮车）= 踩脚踏，否则（平衡车）= 踩地 */
+const rideFeet = (rig: ProductRig | null | undefined) => (rig?.footY !== undefined ? "both feet on the pedals" : "feet on the ground");
+
+function doing(f: FigureSpec, l: SetLayout, rig?: ProductRig | null): string {
   const ride = f.onProduct && !!l.bike;
-  if (f.actionEn) return `${ride ? "sitting on the product's seat, " : ""}${f.actionEn.replace(/[.\s]+$/, "")}`;
+  if (f.actionEn) return `${ride ? `sitting on the product's seat with ${rideFeet(rig)}, ` : ""}${f.actionEn.replace(/[.\s]+$/, "")}`;
   if (f.custom) return ride ? "sitting on the product's seat, posed exactly like this person's mannequin in the 3D blocking render" : "posed exactly like this person's mannequin in the 3D blocking render";
-  return POSE_EN[ride ? "ride" : effPose(f)] ?? f.pose;
+  if (ride) return `${POSE_EN.ride}, ${rideFeet(rig)}`;
+  return POSE_EN[effPose(f)] ?? f.pose;
 }
 
 /** 不在产品上时，“骑”姿态在 3D 里按站着摆（和 Set3D 一致） */
@@ -149,7 +153,8 @@ function figPos(f: FigureSpec, l: SetLayout): [number, number] {
 
 /** 面朝：相对镜头（北 = 0°）；骑在产品上的跟车头 */
 function facingWord(f: FigureSpec, l: SetLayout): string {
-  const yaw = f.onProduct && l.bike ? (l.bikeYaw ?? 0) + 180 : f.yaw;
+  // 骑车的人跟车头：车头方向 (-sin, cos) 换成和人偶 yaw 一样的“北 = 0°、顺时针”
+  const yaw = f.onProduct && l.bike ? -(l.bikeYaw ?? 0) : f.yaw;
   const camYaw = (Math.atan2(l.lookAt[0] - l.camPos[0], l.lookAt[1] - l.camPos[1]) * 180) / Math.PI;
   const d = (((yaw - camYaw) % 360) + 540) % 360 - 180; // 0 = 背对镜头，±180 = 面向镜头
   const a = Math.abs(d);
@@ -199,7 +204,7 @@ export function blockingText(l: SetLayout | null | undefined, rig?: ProductRig |
     const cut = head.ny > 1 ? " (head cropped by the top edge)" : feet.ny < -1 ? " (feet cropped by the bottom edge)" : "";
     // 没写动作也没拖手脚时，“standing / sitting on the ground” 已经在 facts 里，不重复
     const plain = !f.actionEn && !f.custom && ["stand", "sit", "crouch"].includes(effPose(f));
-    const act = [plain && facts ? "" : doing(f, l), facts].filter(Boolean).join(", ");
+    const act = [plain && facts ? "" : doing(f, l, rig), facts].filter(Boolean).join(", ");
     out.push(`Person ${k + 1}: ${who}, ${act}, ${facingWord(f, l)}, in the ${hPos(feet.nx)} of the frame, about ${feet.z.toFixed(1)} m from the camera${rel}${cut}${f.custom && !f.actionEn ? "; arms and legs exactly as posed in the 3D blocking" : ""}.`);
   });
   out.push(`Exactly ${figs.length} ${figs.length === 1 ? "person" : "people"} in the frame, nobody else.`);

@@ -64,3 +64,17 @@ test("自查：动作栏和 3D 手的位置对不上", () => {
   assert.deepEqual(promptConflicts(shot(lay([fig({ custom: onGrips, action: "站在车旁，不骑车，双手扶车把" })])), KB002_RIG), []);
   assert.ok(promptConflicts(shot(lay([fig({ action: "骑在车上" })])), KB002_RIG).some((c) => c.msg.includes("没在产品上")));
 });
+
+test("骑车：三轮车写双脚踩脚踏、平衡车写踩地；人跟车头朝向", () => {
+  const rider = fig({ pose: "ride", onProduct: true });
+  const trike = { ...KB002_RIG, footY: 0.12 };
+  const away = blockingText(lay([rider]), trike).split("Person 1: ")[1] ?? "";
+  assert.match(away, /both feet on the pedals/);
+  assert.doesNotMatch(away, /feet on the ground/);
+  assert.match(away, /with their back to the camera/);
+  assert.match(person(lay([rider])), /feet on the ground/);
+  const toward = blockingText({ ...lay([rider]), bikeYaw: 180 }, trike).split("Person 1: ")[1] ?? "";
+  assert.match(toward, /facing the camera/);
+  const acted = blockingText(lay([{ ...rider, actionEn: "waving" }]), trike).split("Person 1: ")[1] ?? "";
+  assert.match(acted, /seat with both feet on the pedals, waving/);
+});
