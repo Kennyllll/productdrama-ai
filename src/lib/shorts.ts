@@ -380,7 +380,8 @@ export function quoteJob(q: QuoteInput): Quote {
   }
   if (shot.stage === "accepted" && kind !== "scene") blocked.push("本镜已采用；要重做先点“退回返工”");
   if (mine.some((j) => j.status === "submitting" || j.status === "submitted")) blocked.push("本镜还有任务在生成中：只能继续等待结果，不能重复提交");
-  if (sameKind.some((j) => j.paramsHash === q.paramsHash && j.status !== "failed")) blocked.push("参数和之前某次完全相同：重做必须改变构图、首帧、提示词或时长");
+  // 出图 / 视频每次都是随机的：参数相同也可能这次变形、下次正常，所以只提示不拦
+  if (sameKind.some((j) => j.paramsHash === q.paramsHash && j.status !== "failed")) warnings.push("参数和上次完全相同：这次只是重新随机生成一次，结果可能好也可能还一样");
   if (attempt >= 2 && q.reason.trim().length < 4) blocked.push("这是重做：请写重做原因，这次改了什么、为什么（至少 4 个字）");
   if (attempt > DEFAULT_ATTEMPTS && !q.overLimit) blocked.push(`本镜已经 ${charged.length} 次，超过默认上限（1 次 + 1 次重做）：先考虑剪辑或补短镜头；确实要重做请勾选“超限重新审批”`);
   if (overHook) {
