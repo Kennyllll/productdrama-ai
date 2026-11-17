@@ -1,6 +1,7 @@
 // Hook 库：所有产品共用的开头套路。库里只存套路和属性定义（带示例值），实际的价格、主张在每条视频里填。
 // 节日、家庭、场地不进 hook：跟整条视频和正文第一镜走。
 import { DEFAULT_STAGE, type HookStage } from "@/lib/hook-stage";
+import { isHookEffect, PRESET_EFFECT, type HookEffectId } from "@/lib/hook-effects";
 export type HookEntry = "assembled" | "unbox" | "riding";
 export const HOOK_ENTRIES: { id: HookEntry; label: string; en: string }[] = [
   { id: "assembled", label: "已经组装好", en: "the product is already fully assembled and clearly in view (no box, no packaging)" },
@@ -29,6 +30,19 @@ export interface HookData {
   fields: HookField[];
   /** 3D 预设：选了这个 Hook 自动摆摄影机、产品朝向和人 */
   stage?: HookStage;
+  /** 开头字幕效果（hook-effects.ts，照真实案例定的字体和出现方式）；旧数据没有 = 按名字找预设，找不到用逐词大字 */
+  effect?: HookEffectId;
+  /** 照案例切镜头：第 seconds 秒切到第二段（单独的首帧和视频）；null = 一镜到底 */
+  second?: HookSecond | null;
+  /** 第一段默认是自拍（拿手机的人入镜对着前置摄像头，强制开声音） */
+  selfie?: boolean;
+}
+
+export interface HookSecond {
+  seconds: number;
+  /** 第二段怎么拍（给 AI 看） */
+  about: string;
+  stage: HookStage;
 }
 
 export interface HookDef extends HookData {
@@ -57,6 +71,11 @@ function cleanStage(x: unknown): HookStage {
   };
 }
 
+const secOf = (x: unknown, f: number) => {
+  const n = Number(x);
+  return Number.isFinite(n) ? Math.min(4, Math.max(1, Math.round(n * 10) / 10)) : f;
+};
+
 export function cleanHookData(x: unknown): HookData | null {
   const d = (x ?? {}) as Partial<HookData>;
   const name = s(d.name, 40);
@@ -76,6 +95,9 @@ export function cleanHookData(x: unknown): HookData | null {
     caption: s(d.caption, 200),
     fields,
     stage: cleanStage(d.stage),
+    effect: isHookEffect(d.effect) ? d.effect : (PRESET_EFFECT[name] ?? "claimWords"),
+    second: d.second && typeof d.second === "object" ? { seconds: secOf(d.second.seconds, 2), about: s(d.second.about, 400), stage: cleanStage(d.second.stage) } : null,
+    selfie: Boolean(d.selfie),
   };
 }
 
@@ -96,12 +118,15 @@ export function fillCaption(tpl: string, values: Record<string, string>, product
 export const PRESET_HOOKS: HookData[] = [
   {
     name: "价格开场",
-    about: "第一秒就亮价格：产品清楚地出现在画面中央，字幕大字写现价和原价。观众先被价格抓住，再看产品。",
+    effect: "priceBox",
+    about: "照案例：开头是家长自拍，对着前置摄像头做惊讶反应（捂嘴、睁大眼），产品在身后看得见，顶部白框写现价和原价；第 3 秒切到产品画面。",
     use: "有明显折扣时：黑五、节日促销、限时特价",
     seconds: 3,
     entry: "assembled",
     caption: "{deal}: {price} (was {was})",
-    stage: { dist: 1.4, camH: 0.9, lens: 35, view: "front34", people: [] },
+    selfie: true,
+    stage: { dist: 1.8, camH: 1.4, lens: 24, view: "front34", people: [] },
+    second: { seconds: 1.5, about: "切到产品：产品斜前方摆在画面中央，完整清楚，画面里没有人", stage: { dist: 1.4, camH: 0.9, lens: 35, view: "front34", people: [] } },
     fields: [
       { key: "price", label: "现价", example: "$59.99", visual: false },
       { key: "was", label: "原价", example: "$89.99", visual: false },
@@ -111,12 +136,15 @@ export const PRESET_HOOKS: HookData[] = [
   },
   {
     name: "大胆主张",
-    about: "第一秒说一句让人想看下去的强主张，画面立刻给出支撑这句话的证据，不能只是空喊。",
+    effect: "claimWords",
+    selfie: false,
+    about: "照案例：一句强主张用大字压在画面中间；第一段家长站在车旁指着车，第 2 秒切到孩子骑车的画面作证据，不能只是空喊。",
     use: "产品有一个明显、能拍出来的卖点",
-    seconds: 3,
-    entry: "riding",
+    seconds: 2,
+    entry: "assembled",
     caption: "{claim}",
-    stage: { dist: 2, camH: 1, lens: 28, view: "front34", people: [{ kind: "child", pose: "ride", onProduct: true }] },
+    stage: { dist: 2, camH: 1.2, lens: 28, view: "front34", people: [{ kind: "adult", pose: "point", side: "right", dist: 0.7 }] },
+    second: { seconds: 2, about: "切到证据：孩子骑着车，开心、很稳，正好证明那句主张", stage: { dist: 2, camH: 1, lens: 28, view: "front34", people: [{ kind: "child", pose: "ride", onProduct: true }] } },
     fields: [
       { key: "claim", label: "主张", example: "The only trike my 2-year-old actually rides", visual: false },
       { key: "proof", label: "画面证据", example: "孩子自己踩着脚踏骑过来，很稳", visual: true },
@@ -124,12 +152,15 @@ export const PRESET_HOOKS: HookData[] = [
   },
   {
     name: "先给结果",
-    about: "先放最好的结果画面（孩子开心地骑、家长很轻松），让观众想知道怎么做到的，正文再讲过程。",
+    effect: "resultLines",
+    second: null,
+    selfie: false,
+    about: "照案例：一镜到底，第一帧就是结果——从侧面拍孩子骑着车从镜头前经过，上下两行事实小字，不切镜头。让观众想知道怎么做到的，正文再讲过程。",
     use: "使用效果很直观的产品",
     seconds: 3,
     entry: "riding",
     caption: "{line}",
-    stage: { dist: 2.2, camH: 0.9, lens: 28, view: "head", people: [{ kind: "child", pose: "ride", onProduct: true }, { kind: "adult", pose: "stand", side: "right", dist: 0.9 }] },
+    stage: { dist: 2.4, camH: 0.9, lens: 28, view: "side", people: [{ kind: "child", pose: "ride", onProduct: true }] },
     fields: [
       { key: "result", label: "结果画面", example: "孩子在前院自己骑了一圈，家长在旁边拍手", visual: true },
       { key: "line", label: "字幕说法", example: "Day 3 with this trike", visual: false },
@@ -137,7 +168,10 @@ export const PRESET_HOOKS: HookData[] = [
   },
   {
     name: "紧迫感",
-    about: "字幕强调时间或库存快没了；画面里产品清楚可见、状态最好看，让人觉得现在不买就错过。",
+    effect: "ticker",
+    second: null,
+    selfie: false,
+    about: "照案例：产品特写，顶部黑条跑马灯写截止时间和库存；第 1.5 秒镜头往后拉开，露出产品全貌。让人觉得现在不买就错过。",
     use: "限时活动、库存不多、节前最后发货日",
     seconds: 3,
     entry: "assembled",
@@ -150,16 +184,22 @@ export const PRESET_HOOKS: HookData[] = [
   },
   {
     name: "社会认同",
-    about: "开头用数字或真实评价建立信任：画面是一个普通家庭在用产品，字幕写销量或评价。数字必须是真的。",
+    effect: "comment",
+    selfie: false,
+    about: "照案例：左上角评论气泡，像在回复网友的评论；第一段家长蹲在车旁看着车，第 1.5 秒切到产品特写换个角度。评论和数字必须是真的。",
     use: "有销量、评分或真实评价可以引用",
-    seconds: 3,
-    entry: "riding",
+    seconds: 1.5,
+    entry: "assembled",
     caption: "{proof}",
-    stage: { dist: 2.4, camH: 1.1, lens: 28, view: "front34", people: [{ kind: "child", pose: "ride", onProduct: true }, { kind: "adult", pose: "crouch", side: "left", dist: 0.6 }] },
+    stage: { dist: 1.8, camH: 0.8, lens: 28, view: "front34", people: [{ kind: "adult", pose: "crouch", side: "left", dist: 0.5 }] },
+    second: { seconds: 2, about: "切到产品特写：从侧面近拍，产品完整清楚，画面里没有人", stage: { dist: 1, camH: 0.7, lens: 35, view: "side", people: [] } },
     fields: [{ key: "proof", label: "数字或评价", example: "10,000+ parents gave it 5 stars", visual: false }],
   },
   {
     name: "对比",
+    effect: "vsWords",
+    second: null,
+    selfie: false,
     about: "一秒内对比：旧办法 / 别的产品 vs 这个产品。差别要能在画面里直接看出来，不点名贬低别的品牌。",
     use: "和常见替代品相比有明显优势",
     seconds: 3,

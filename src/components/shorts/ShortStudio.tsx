@@ -39,6 +39,7 @@ import {
   DEFAULT_ATTEMPTS,
   finalSeconds,
   hookBudget,
+  hooksOf,
   isExtraHook,
   jobCost,
   MAX_USD_PER_SECOND,
@@ -211,7 +212,7 @@ export function ShortStudio({
   const perSec = secs ? spent / secs : 0;
   const plannedGen = shots.reduce((s, x) => s + x.genSeconds, 0);
   const firstBody = shots.findIndex((x) => !x.hook);
-  const hookList = v.shots.filter((x) => x.hook);
+  const hookList = hooksOf(v);
   const exp = v.exportHooks?.length ? v.exportHooks : hookList[0] ? [hookList[0].id] : [];
   const plan =
     shots.length * 0.1 + plannedGen * VIDEO_USD_PER_SEC[v.resolution];
@@ -480,6 +481,10 @@ export function ShortStudio({
                 ),
               )}
             </select>
+            <label className="flex items-center gap-1 text-xs text-neutral-300" title="开不开声音价格一样">
+              <input type="checkbox" checked={v.sound === true} disabled={busy} onChange={(e) => act(() => saveShortVideoAction(v.id, { sound: e.target.checked }))} />
+              声音（只有环境音和动作声效；自拍开头强制开）
+            </label>
             <span>
               9:16 竖版 · 不用 1080p（$0.65/秒，超出每秒上限）·
               不混入手机实拍素材
@@ -912,22 +917,22 @@ export function ShortStudio({
                   ) : null}
                   {s.hook ? (
                     <p className="mt-1 text-[11px] text-neutral-500">
-                      {s.hook.libId ? `Hook：${s.hook.libName}` : "模板自带的开头（没用 Hook 库）"}
+                      {s.hook.partOf ? "开头切镜后的第二段：字幕和效果跟着开头连着放" : s.hook.libId ? `Hook：${s.hook.libName}` : "模板自带的开头（没用 Hook 库）"}
                       {thumb && !s.frameJobId ? " · 图是 3D 构图，画面还没出" : ""}
                     </p>
                   ) : null}
-                  {s.hook ? (
+                  {s.hook && !s.hook.partOf ? (
                     <button
                       className="mt-1 block text-xs text-rose-300 underline"
                       disabled={busy || dirty}
                       onClick={async () => {
-                        if (await askConfirm(`删除开头「${s.hook?.name}」？已经生成的画面会留在历史里。`)) act(() => deleteHookShotAction(v.id, s.id), "已删除开头");
+                        if (await askConfirm(`删除开头「${s.hook?.name}」${v.shots.some((x) => x.hook?.partOf === s.id) ? "（连切镜后的第二段一起删）" : ""}？已经生成的画面会留在历史里。`)) act(() => deleteHookShotAction(v.id, s.id), "已删除开头");
                       }}
                     >
                       删除这个开头
                     </button>
                   ) : null}
-                  {s.hook ? (
+                  {s.hook && !s.hook.partOf ? (
                     <label className="mt-1 flex items-center gap-1 text-xs text-neutral-400">
                       <input
                         type="checkbox"

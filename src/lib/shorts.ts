@@ -2,6 +2,7 @@
 import type { SetLayout } from "@/lib/production-repo";
 import type { ShotScene } from "@/lib/shorts-scenes";
 import type { ShotBasis } from "@/lib/shorts-sync";
+import type { HookEffectId } from "@/lib/hook-effects";
 
 /** 短视频硬约束：成片每秒的全部花费（含重做和废片）不超过这个数 */
 export const MAX_USD_PER_SECOND = 0.5;
@@ -175,6 +176,14 @@ export interface ShotHook {
   visualKeys?: string[];
   cut?: number;
   zoomB?: number;
+  /** 开头字幕效果；空 = 不烧字幕（旧数据） */
+  effect?: HookEffectId;
+  /** 自拍镜头：拿手机的人入镜对着前置摄像头说台词；强制开声音 */
+  selfie?: boolean;
+  /** 自拍时说的台词（英文）；空 = 用字幕 */
+  line?: string;
+  /** 切镜后的第二段：属于哪个开头（开头镜头的 id）。字幕和效果跟着那个开头 */
+  partOf?: string;
 }
 
 export interface ShortVideoData {
@@ -200,6 +209,8 @@ export interface ShortVideoData {
   themeText?: string;
   /** 家庭位（镜头的 family 编号）→ 家庭库 id；没选 = 不写具体成员 */
   families?: Record<string, string>;
+  /** 生成视频时要不要声音（只有环境音和动作声效）；默认关。自拍开头不管这里，强制开 */
+  sound?: boolean;
   /** 整条视频谁拿手机（家庭位 1 的成员 id）；空 = 不指定 */
   filmer?: string;
   /** 从哪个模板（哪一版）套来的 */
@@ -232,10 +243,16 @@ export const emptyShortData = (templateId = "pov-gift", theme?: { theme: string;
   budgetUsd: null,
 });
 
-export const hooksOf = (v: Pick<ShortVideoData, "shots">) => v.shots.filter((s) => s.hook);
+/** 这一镜生成视频时带不带声音：自拍开头强制带；其余跟视频的声音开关 */
+export const shotSound = (v: Pick<ShortVideoData, "sound">, s: Pick<ShortShot, "hook">): boolean => Boolean(s.hook?.selfie || v.sound);
+
+/** 开头（可选的几种开头，不含切镜后的第二段） */
+export const hooksOf = (v: Pick<ShortVideoData, "shots">) => v.shots.filter((s) => s.hook && !s.hook.partOf);
+/** 一个开头的全部段：开头自己 + 切镜后的第二段 */
+export const hookParts = (v: Pick<ShortVideoData, "shots">, h: ShortShot) => [h, ...v.shots.filter((s) => s.hook?.partOf === h.id)];
 export const bodyOf = (v: Pick<ShortVideoData, "shots">) => v.shots.filter((s) => !s.hook);
 /** 第一个开头之外的开头：各自单独预算，不占正文预算 */
-export const isExtraHook = (v: Pick<ShortVideoData, "shots">, s: Pick<ShortShot, "id" | "hook">) => !!s.hook && hooksOf(v)[0]?.id !== s.id;
+export const isExtraHook = (v: Pick<ShortVideoData, "shots">, s: Pick<ShortShot, "id" | "hook">) => !!s.hook && hooksOf(v)[0]?.id !== (s.hook.partOf ?? s.id);
 /** 额外开头的预算 = 生成秒数 × 每秒上限 */
 export const hookBudget = (s: Pick<ShortShot, "genSeconds" | "useSeconds">) => Math.round(Math.max(s.genSeconds, s.useSeconds) * MAX_USD_PER_SECOND * 100) / 100;
 /** 成片里的片段：开头有剪辑点时，一段生成视频剪成 2 个镜头（后半段可放大） */
@@ -250,7 +267,10 @@ export function shotCuts(s: Pick<ShortShot, "trimStart" | "useSeconds" | "hook">
 }
 
 /** 成片秒数 = 正文 + 一个开头 */
-export const finalSeconds = (v: Pick<ShortVideoData, "shots">) => bodyOf(v).reduce((s, x) => s + x.useSeconds, 0) + (hooksOf(v)[0]?.useSeconds ?? 0);
+export const finalSeconds = (v: Pick<ShortVideoData, "shots">) => {
+  const h = hooksOf(v)[0];
+  return bodyOf(v).reduce((s, x) => s + x.useSeconds, 0) + (h ? hookParts(v, h).reduce((s, x) => s + x.useSeconds, 0) : 0);
+};
 export const defaultBudget = (v: Pick<ShortVideoData, "shots">) => Math.round(finalSeconds(v) * MAX_USD_PER_SECOND * 100) / 100;
 export const budgetOf = (v: Pick<ShortVideoData, "shots" | "budgetUsd">) => v.budgetUsd ?? defaultBudget(v);
 
@@ -338,7 +358,7 @@ export function quoteJob(q: QuoteInput): Quote {
   const charged = sameKind.filter((j) => j.status !== "failed");
   const costUsd = r2(q.unitUsd * (kind === "video" ? q.seconds : 1));
   const extraHook = isExtraHook(video, shot);
-  const extraIds = new Set(hooksOf(video).slice(1).map((s) => s.id));
+  const extraIds = new Set(video.shots.filter((s) => isExtraHook(video, s)).map((s) => s.id));
   const shotSpent = r2(mine.reduce((s, j) => s + jobCost(j), 0));
   const videoSpent = extraHook ? shotSpent : r2(jobs.filter((j) => !j.isTest && !extraIds.has(j.shotId)).reduce((s, j) => s + jobCost(j), 0));
   const budget = extraHook ? hookBudget(shot) : budgetOf(video);

@@ -2,7 +2,9 @@
 
 import { askConfirm, askPrompt } from "@/components/ConfirmHost";
 import { useState, useTransition } from "react";
-import { adoptHookAction, deleteHookShotAction, draftHookAction, saveHookAsLibAction, setHookValuesAction } from "@/app/short-actions";
+import { adoptHookAction, deleteHookShotAction, draftHookAction, saveHookAsLibAction, setHookSelfieAction, setHookValuesAction } from "@/app/short-actions";
+import { HookCases } from "@/components/shorts/HookCases";
+import { effectDef } from "@/lib/hook-effects";
 import { cleanHookValues, HOOK_ENTRIES, type HookDef } from "@/lib/hooks";
 import { VIEW_LABEL, type HookPerson } from "@/lib/hook-stage";
 import type { ShortShot } from "@/lib/shorts";
@@ -19,8 +21,12 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
   const def = lib.find((x) => x.id === libId);
   const [values, setValues] = useState<Record<string, string>>(h?.values ?? (def ? cleanHookValues(def, undefined) : {}));
   const [entry, setEntry] = useState(h?.entry ?? def?.entry ?? "assembled");
-  const [draft, setDraft] = useState<{ draft: Record<string, string>; caption: string; notes: string[]; people: HookPerson[]; who: string[] } | null>(null);
+  type Part = { draft: Record<string, string>; people: HookPerson[]; who: string[] };
+  const [draft, setDraft] = useState<(Part & { caption: string; notes: string[]; second?: Part }) | null>(null);
   const [msg, setMsg] = useState("");
+  const [selfie, setSelfie] = useState(h ? Boolean(h.selfie) : Boolean(def?.selfie));
+  const [line, setLine] = useState(h?.line ?? "");
+  const fx = effectDef(def?.effect ?? h?.effect);
   const [pending, start] = useTransition();
   const fields = def?.fields ?? Object.keys(values).map((k) => ({ key: k, label: k, example: "", visual: Boolean(h?.visualKeys?.includes(k)) }));
   const pick = (id: string) => {
@@ -30,13 +36,14 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
     if (d) {
       setValues(cleanHookValues(d, undefined));
       setEntry(d.entry);
+      setSelfie(Boolean(d.selfie));
     }
   };
   const gen = async () => {
     if (!await askConfirm("用 DeepSeek 写这个开头的剧本（文字调用 1 次，约 $0.01，不出图）。只出草稿，你点“采用”才会改视频。继续？")) return;
     setMsg("");
     start(async () => {
-      const r = await draftHookAction(videoId, libId, values, entry);
+      const r = await draftHookAction(videoId, libId, values, entry, selfie);
       if (r.error) setMsg(`⚠ ${r.error}`);
       else setDraft(r.result ?? null);
     });
@@ -44,14 +51,18 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
   const adopt = () =>
     start(async () => {
       if (!draft) return;
-      const r = await adoptHookAction(videoId, libId, values, entry, draft.draft, shot?.id ?? targetId, draft.people);
+      const r = await adoptHookAction(videoId, libId, values, entry, draft.draft, shot?.id ?? targetId, draft.people, { selfie, line, second: draft.second ? { draft: draft.second.draft, people: draft.second.people } : undefined });
       const fixed = r.result?.fixed ?? [];
       onDone(r, fixed.length ? `已换好开头。AI 写的动作有 ${fixed.length} 处 3D 做不到，程序已改好：${fixed.join("；")}。点「打开 3D」看构图` : "已换好开头：正在打开 3D，按 Hook 摆好的构图会自动保存");
-      if (!r.error && r.result && !fixed.length) window.location.href = setHref(r.result.shotId);
+      if (!r.error && r.result && !fixed.length) window.location.href = setHref(r.result.shotId) + (r.result.secondId ? `&next=${r.result.secondId}` : "");
     });
   const saveValues = () =>
     start(async () => {
       if (!shot) return;
+      if (selfie !== Boolean(h?.selfie) || (selfie && line !== (h?.line ?? ""))) {
+        const r0 = await setHookSelfieAction(videoId, shot.id, selfie, line);
+        if (r0.error) return onDone(r0);
+      }
       let r = await setHookValuesAction(videoId, shot.id, values);
       if (r.result?.confirm) {
         if (!await askConfirm(r.result.confirm)) return;
@@ -93,6 +104,26 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
         </button>
       </div>
       {def ? <p className="text-neutral-500">{def.about}</p> : null}
+      {fx ? (
+        <div className="flex flex-wrap items-center gap-2 text-amber-200">
+          出片效果：{fx.look}
+          {fx.tip ? `（${fx.tip}）` : ""}
+          <HookCases effect={fx.id} name={def?.name ?? h?.name} />
+        </div>
+      ) : null}
+      {def?.second ? (
+        <p className="text-sky-200">
+          切镜头（照案例）：第 {def.seconds} 秒切到第二段（{def.second.seconds} 秒）：{def.second.about}。两段各有自己的 3D、首帧和视频，第二段多一张首帧和一段 4 秒视频（720p 约多 $1.16，生成前照样审批）；字幕跨两段连着放。
+        </p>
+      ) : def ? (
+        <p className="text-neutral-500">一镜到底，不切镜头（照案例）。</p>
+      ) : null}
+      <label className="flex flex-wrap items-center gap-2">
+        <input type="checkbox" checked={selfie} disabled={pending} onChange={(e) => setSelfie(e.target.checked)} />
+        自拍镜头：拿手机的人入镜，对着前置摄像头说一句台词
+        <span className="text-amber-300">选了自拍，这一镜强制开声音（台词人声 + 环境音），价格不变</span>
+      </label>
+      {selfie ? <input className={inp} value={line} placeholder="台词（英文）；不填 = 说字幕那句" disabled={pending} onChange={(e) => setLine(e.target.value)} /> : null}
       {themePicker ? <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">这条视频的节日（开头和正文都跟着它，换了会先提示哪些镜头要重做）：{themePicker}</div> : null}
       {def?.stage ? (
         <p className="text-sky-200">
@@ -136,6 +167,14 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
           <p>机位：{draft.draft.camera}</p>
           <p>产品：{draft.draft.productNote}</p>
           <p>字幕：{draft.caption}</p>
+          {draft.second ? (
+            <div className="mt-1 space-y-1 border-t border-white/10 pt-1">
+              <p className="font-medium text-white">切镜后的第二段</p>
+              <p>出镜：{draft.second.who.length ? draft.second.who.join("；") : "不放人，只拍产品"}</p>
+              <p>画面：{draft.second.draft.description}</p>
+              <p>机位：{draft.second.draft.camera}</p>
+            </div>
+          ) : null}
           {draft.notes.map((n, i) => (
             <p key={i} className="text-amber-300">
               提醒：{n}
@@ -145,6 +184,7 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
             <summary className="cursor-pointer text-neutral-500">英文提示词</summary>
             <p>{draft.draft.framePrompt}</p>
             <p className="mt-1">{draft.draft.motionPrompt}</p>
+            {draft.second ? <p className="mt-1">第二段：{draft.second.draft.framePrompt}</p> : null}
           </details>
           <button className="rounded bg-amber-400 px-3 py-1 text-sm font-medium text-black disabled:opacity-50" disabled={pending} onClick={adopt}>
             采用

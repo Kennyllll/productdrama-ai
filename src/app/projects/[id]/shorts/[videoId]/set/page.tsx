@@ -18,7 +18,7 @@ import { memberKind, roleOf, filmerId } from "@/lib/families";
 
 export const dynamic = "force-dynamic";
 
-export default async function ShortSetPage({ params, searchParams }: { params: Promise<{ id: string; videoId: string }>; searchParams: Promise<{ shot?: string; capture?: string; mode?: string; fig?: string }> }) {
+export default async function ShortSetPage({ params, searchParams }: { params: Promise<{ id: string; videoId: string }>; searchParams: Promise<{ shot?: string; capture?: string; mode?: string; fig?: string; next?: string }> }) {
   const { id, videoId } = await params;
   const sp = await searchParams;
   const v = getShortVideo(videoId);
@@ -103,6 +103,7 @@ export default async function ShortSetPage({ params, searchParams }: { params: P
           rig={base ? getRig(base.id) : null}
           initialCode={sp.shot ?? v.shots.find((s) => s.stage !== "accepted")?.id ?? ""}
           autoCapture={sp.capture === "1"}
+          nextCode={sp.capture === "1" && v.shots.some((s) => s.id === sp.next) ? sp.next : undefined}
           title={v.title}
         />
       )}

@@ -9,6 +9,8 @@ import { AiError, chatJson } from "@/lib/ai/client";
 import { getVisionKey, reviewShortFrame } from "@/lib/vision-qa";
 import { createHook, getHook } from "@/lib/hooks-repo";
 import { cleanHookValues, fillCaption, HOOK_ENTRIES } from "@/lib/hooks";
+import { isHookEffect } from "@/lib/hook-effects";
+import { hookParts, hooksOf, shotSound } from "@/lib/shorts";
 import { buildHookLayout, cleanHookPeople, DEFAULT_STAGE, peopleText, VIEW_LABEL, type HookPerson } from "@/lib/hook-stage";
 import { shortConceptPrompt, shortShotsPrompt } from "@/lib/ai/short-prompts";
 import { deleteRequest, estimate, getStatus, HiggsfieldError, submit, uploadFile } from "@/lib/higgsfield";
@@ -173,7 +175,12 @@ function cleanHook(h: unknown, useSeconds: number): ShotHook {
           visualKeys: Array.isArray(x.visualKeys) ? x.visualKeys.filter((k): k is string => typeof k === "string").slice(0, 12) : [],
         }
       : {};
-  return { name: str(x.name, 30).trim() || "开头", cut, zoomB: cut ? Math.round(clampNum(x.zoomB, 1, 1.5, 1) * 100) / 100 : undefined, ...lib };
+  const fx = {
+    ...(isHookEffect(x.effect) ? { effect: x.effect } : {}),
+    ...(x.selfie ? { selfie: true, line: str(x.line, 200).trim() } : {}),
+    ...(typeof x.partOf === "string" && x.partOf ? { partOf: x.partOf.slice(0, 60) } : {}),
+  };
+  return { name: str(x.name, 30).trim() || "开头", cut, zoomB: cut ? Math.round(clampNum(x.zoomB, 1, 1.5, 1) * 100) / 100 : undefined, ...lib, ...fx };
 }
 
 function cleanShot(s: Partial<ShortShot>, prev?: ShortShot): ShortShot {
@@ -213,7 +220,7 @@ function cleanShot(s: Partial<ShortShot>, prev?: ShortShot): ShortShot {
 
 export async function saveShortVideoAction(
   videoId: string,
-  patch: { title?: string; brief?: string; templateId?: string; resolution?: VideoResolution; conceptId?: string | null; shots?: Partial<ShortShot>[]; exportHooks?: string[]; colorId?: string | null },
+  patch: { title?: string; brief?: string; templateId?: string; resolution?: VideoResolution; sound?: boolean; conceptId?: string | null; shots?: Partial<ShortShot>[]; exportHooks?: string[]; colorId?: string | null },
 ): Promise<Result<StudioState>> {
   try {
     const v = load(videoId);
@@ -227,6 +234,7 @@ export async function saveShortVideoAction(
     if (patch.brief !== undefined) v.brief = patch.brief.slice(0, 1000);
     if (patch.templateId !== undefined) v.templateId = findTemplate(patch.templateId).id;
     if (patch.resolution !== undefined && patch.resolution in VIDEO_USD_PER_SEC) v.resolution = patch.resolution;
+    if (patch.sound !== undefined) v.sound = patch.sound === true;
     if (patch.conceptId !== undefined) v.conceptId = v.concepts.some((c) => c.id === patch.conceptId) ? patch.conceptId : null;
     if (patch.shots) {
       const jobs = listJobs(videoId);
@@ -257,7 +265,8 @@ export async function saveShortVideoAction(
 const HOOK_LIM: Record<TextField, number> = { description: 600, camera: 200, productNote: 300, framePrompt: 2000, motionPrompt: 1000 };
 
 /** 从 Hook 库写开头剧本（DeepSeek 文字调用 1 次，约 $0.01，不出图）；只返回草稿，用户点“采用”才变成开头镜头 */
-export async function draftHookAction(videoId: string, libId: string, values: Record<string, string>, entry: string): Promise<Result<{ draft: Record<TextField, string>; caption: string; notes: string[]; people: HookPerson[]; who: string[] }>> {
+type HookDraftPart = { draft: Record<TextField, string>; people: HookPerson[]; who: string[] };
+export async function draftHookAction(videoId: string, libId: string, values: Record<string, string>, entry: string, selfie = false): Promise<Result<HookDraftPart & { caption: string; notes: string[]; second?: HookDraftPart }>> {
   try {
     const v = load(videoId);
     const lib = getHook(libId);
@@ -277,9 +286,13 @@ export async function draftHookAction(videoId: string, libId: string, values: Re
     const th = videoTheme(v);
     const { data } = await chatJson({
       system:
-        'You write the opening hook shot (the first 2-4 seconds) of a North American TikTok product video. Follow the hook recipe and the filled values exactly. The hook must flow straight into the first body shot (nextShot): same location, same people and family, same product color. The holiday is given in holiday and overrides anything written in nextShot; if it is none, there are no holiday decorations, trees, gifts, bows or holiday outfits at all. The person filming holds the phone and is never visible: never describe them in framePrompt or motionPrompt. If productEntry says no box, there is no box, packaging or wrapping anywhere in the frame. First decide who is in frame (people), following the story (story, brief, nextShotPeople) and the hook recipe: pick only from family by memberId, never the filmer; at most 3 people; only a child can ride the product and at most one rider; return an empty list only when the story and recipe are clearly better with the product alone. presetPeople is the recipe default and only a suggestion. The program places exactly these people in 3D around the product (side = left, right or behind the product) with exactly these poses, and the camera comes from camera3d. Nobody except the rider touches the product: in 3D the people beside it cannot reach the handlebar, seat or frame, so never write them holding, steadying or touching any part of it (looking at it, pointing at it or cheering is fine). Anyone riding follows rideRule exactly in action, actionEn, description and framePrompt: describe exactly these people doing exactly these poses and actions, and nobody else. Use only product facts from productFacts; never invent features, prices, parts or packaging. The on-screen caption is fixed and added in editing (caption): write the picture so it supports that caption, and never put text into the image. Values marked showsInPicture must be visible in the picture; the others only live in the caption. Return JSON {"people":[{"memberId":"family 里的 memberId","pose":"stand|crouch|ride|point|reach|hold","onProduct":false,"side":"left|right|behind","action":"中文：这个人在做什么，一句话","actionEn":"the same action in English"}],"description":"中文：画面里有谁、在哪、在做什么、产品怎么出场","camera":"中文：机位和景别","productNote":"中文：产品在画面里的状态","framePrompt":"English first-frame image prompt, concrete and visual, max 900 characters","motionPrompt":"English motion prompt for the clip, max 500 characters","notes":["中文提醒，最多 3 条"]}.',
+        'You write the opening hook shot (the first 2-4 seconds) of a North American TikTok product video. Follow the hook recipe and the filled values exactly. The hook must flow straight into the first body shot (nextShot): same location, same people and family, same product color. The holiday is given in holiday and overrides anything written in nextShot; if it is none, there are no holiday decorations, trees, gifts, bows or holiday outfits at all. Unless selfie is true, the person filming holds the phone and is never visible: never describe them in framePrompt or motionPrompt. If selfie is true, the first shot is a front-camera selfie: the filmer holds the phone at arm\'s length and IS in frame, face and shoulders in the foreground reacting to the lens, with the product visible behind or beside them; describe the filmer in description and framePrompt, but never list the filmer in people. If productEntry says no box, there is no box, packaging or wrapping anywhere in the frame. First decide who is in frame (people), following the story (story, brief, nextShotPeople) and the hook recipe: pick only from family by memberId, never the filmer; at most 3 people; only a child can ride the product and at most one rider; return an empty list only when the story and recipe are clearly better with the product alone. presetPeople is the recipe default and only a suggestion. The program places exactly these people in 3D around the product (side = left, right or behind the product) with exactly these poses, and the camera comes from camera3d. Nobody except the rider touches the product: in 3D the people beside it cannot reach the handlebar, seat or frame, so never write them holding, steadying or touching any part of it (looking at it, pointing at it or cheering is fine). Anyone riding follows rideRule exactly in action, actionEn, description and framePrompt: describe exactly these people doing exactly these poses and actions, and nobody else. Use only product facts from productFacts; never invent features, prices, parts or packaging. The on-screen caption is fixed and added in editing (caption): write the picture so it supports that caption, and never put text into the image. Values marked showsInPicture must be visible in the picture; the others only live in the caption. Return JSON {"people":[{"memberId":"family 里的 memberId","pose":"stand|crouch|ride|point|reach|hold","onProduct":false,"side":"left|right|behind","action":"中文：这个人在做什么，一句话","actionEn":"the same action in English"}],"description":"中文：画面里有谁、在哪、在做什么、产品怎么出场","camera":"中文：机位和景别","productNote":"中文：产品在画面里的状态","framePrompt":"English first-frame image prompt, concrete and visual, max 900 characters","motionPrompt":"English motion prompt for the clip, max 500 characters","notes":["中文提醒，最多 3 条"]}. If secondShot is not null, the hook is two shots joined by a hard cut at hook.seconds: everything above describes the first shot; also return "second" with the same fields (people, description, camera, productNote, framePrompt, motionPrompt) for the shot after the cut, following secondShot.recipe, secondShot.camera3d and secondShot.presetPeople, with the same place, family, product color and holiday, never a selfie; the people rules above apply to it too.',
       user: JSON.stringify({
         hook: { name: lib.name, recipe: lib.about, productEntry: en.en, seconds: lib.seconds },
+        selfie,
+        secondShot: lib.second
+          ? { recipe: lib.second.about, seconds: lib.second.seconds, presetPeople: lib.second.stage.people, camera3d: { distanceM: Math.round(lib.second.stage.dist * k * 10) / 10, heightM: lib.second.stage.camH, lensMm: lib.second.stage.lens, product: VIEW_LABEL[lib.second.stage.view] } }
+          : null,
         values: lib.fields.map((f) => ({ label: f.label, value: vals[f.key], showsInPicture: f.visual })),
         caption,
         camera3d: { distanceM: Math.round(stage.dist * k * 10) / 10, heightM: stage.camH, lensMm: stage.lens, product: VIEW_LABEL[stage.view] },
@@ -294,23 +307,33 @@ export async function draftHookAction(videoId: string, libId: string, values: Re
         productFacts: productText(v.projectId),
         nextShot: first ? { beat: first.beat, ...Object.fromEntries(TEXT_FIELDS.map((k) => [k, first[k]])) } : null,
       }),
-      maxTokens: 3000,
+      maxTokens: lib.second ? 5000 : 3000,
       thinking: false,
       timeoutMs: 180_000,
     });
     const d = (data ?? {}) as Record<string, unknown>;
-    const draft = Object.fromEntries(TEXT_FIELDS.map((k) => [k, typeof d[k] === "string" ? String(d[k]).trim().replace(/^English:\s*/i, "").slice(0, HOOK_LIM[k]) : ""])) as Record<TextField, string>;
+    const textOf = (o: Record<string, unknown>) => Object.fromEntries(TEXT_FIELDS.map((k) => [k, typeof o[k] === "string" ? String(o[k]).trim().replace(/^English:\s*/i, "").slice(0, HOOK_LIM[k]) : ""])) as Record<TextField, string>;
+    const draft = textOf(d);
     if (!draft.description || !draft.framePrompt) throw new AiError("AI 没有写出剧本，请重试");
     const notes = Array.isArray(d.notes) ? d.notes.filter((n): n is string => typeof n === "string" && !!n.trim()).slice(0, 3) : [];
     const { people, dropped } = cleanHookPeople(d.people, cast?.members, filmer);
-    return { result: { draft, caption, notes: [...dropped, ...notes].slice(0, 5), people, who: peopleText(people, cast?.members) } };
+    let second: HookDraftPart | undefined;
+    if (lib.second) {
+      const d2 = (d.second && typeof d.second === "object" ? d.second : {}) as Record<string, unknown>;
+      const draft2 = textOf(d2);
+      if (!draft2.description || !draft2.framePrompt) throw new AiError("AI 没写切镜后的第二段，请重试");
+      const p2 = cleanHookPeople(d2.people, cast?.members, filmer);
+      dropped.push(...p2.dropped.map((x) => `第二段：${x}`));
+      second = { draft: draft2, people: p2.people, who: peopleText(p2.people, cast?.members) };
+    }
+    return { result: { draft, caption, notes: [...dropped, ...notes].slice(0, 5), people, who: peopleText(people, cast?.members), second } };
   } catch (e) {
     return fail(e);
   }
 }
 
 /** 采用 Hook 剧本：新建开头（或重写 replaceId 这个开头）。3D 摆位先抄第一个开头，家庭和场地跟正文第一镜（免费） */
-export async function adoptHookAction(videoId: string, libId: string, values: Record<string, string>, entry: string, draft: Partial<Record<TextField, string>>, replaceId?: string, people?: unknown): Promise<Result<StudioState & { shotId: string; fixed?: string[] }>> {
+export async function adoptHookAction(videoId: string, libId: string, values: Record<string, string>, entry: string, draft: Partial<Record<TextField, string>>, replaceId?: string, people?: unknown, opts?: { selfie?: boolean; line?: string; second?: { draft: Partial<Record<TextField, string>>; people?: unknown } }): Promise<Result<StudioState & { shotId: string; secondId?: string; fixed?: string[] }>> {
   try {
     const v = load(videoId);
     const lib = getHook(libId);
@@ -334,6 +357,8 @@ export async function adoptHookAction(videoId: string, libId: string, values: Re
       entry: HOOK_ENTRIES.some((x) => x.id === entry) ? entry : lib.entry,
       captionTpl: lib.caption,
       visualKeys: lib.fields.filter((f) => f.visual).map((f) => f.key),
+      effect: lib.effect,
+      ...((opts ? opts.selfie : old?.hook?.selfie) ? { selfie: true, line: str(opts ? opts.line : old?.hook?.line, 200).trim() } : {}),
     };
     const caption = fillCaption(lib.caption, vals, getProduct(v.projectId)?.name ?? "");
     const s = old
@@ -349,25 +374,69 @@ export async function adoptHookAction(videoId: string, libId: string, values: Re
     const stage = lib.stage ?? DEFAULT_STAGE;
     const crew = people === undefined ? stage.people : cleanHookPeople(people, castOf(v.families, s.family ?? 1)?.members, filmerId(v, s)).people;
     s.layout = buildHookLayout({ ...stage, people: crew }, (old ?? base)?.layout, rigOf(v)?.gripY ?? 0.51);
+    s.useSeconds = lib.seconds;
     const fixed = fitFigureActions(s.layout, rigOf(v));
     // Hook 的机位高度定了拍摄者姿势：0.9 米就是蹲着拍，不能还写站着
-    const op = parseOp(s.operator);
-    const ok = (id: typeof op.pose) => stage.camH >= poseOf(id).lo && stage.camH <= poseOf(id).hi;
-    const fit = OP_POSES.find((x) => ok(x.id));
-    if (!op.custom && fit && !ok(op.pose)) s.operator = opString({ ...op, pose: fit.id });
+    const fitOp = (x: ShortShot, camH: number) => {
+      const op = parseOp(x.operator);
+      const ok = (id: typeof op.pose) => camH >= poseOf(id).lo && camH <= poseOf(id).hi;
+      const fit = OP_POSES.find((y) => ok(y.id));
+      if (!op.custom && fit && !ok(op.pose)) x.operator = opString({ ...op, pose: fit.id });
+    };
+    fitOp(s, stage.camH);
     s.compFile = null;
+    // 切镜后的第二段：单独一镜（自己的 3D、首帧、视频），换 Hook 时旧的第二段一起换掉
+    const oldParts = v.shots.filter((x) => x.hook?.partOf === s.id);
+    if (oldParts.some((x) => x.stage !== "draft")) throw new Error("切镜后的第二段构图已确认：先把它退回构图");
+    v.shots = v.shots.filter((x) => x.hook?.partOf !== s.id);
+    let s2: ShortShot | undefined;
+    if (lib.second) {
+      const t2 = Object.fromEntries(TEXT_FIELDS.map((k) => [k, str(opts?.second?.draft?.[k], HOOK_LIM[k]).trim()])) as Record<TextField, string>;
+      if (!t2.description || !t2.framePrompt) throw new Error("切镜后的第二段剧本是空的：重新生成剧本");
+      const prev = oldParts[0];
+      s2 = cleanShot({ ...(prev ?? {}), ...t2, id: prev?.id, hook: { name: `${hook.name} · 切镜后`, partOf: s.id }, caption: "", beat: "开头切镜后", useSeconds: lib.second.seconds, operator: s.operator, checkNote: "" }, prev);
+      s2.scene = s.scene ? { ...s.scene } : undefined;
+      s2.family = s.family;
+      s2.special = s.special;
+      const crew2 = cleanHookPeople(opts?.second?.people ?? lib.second.stage.people, castOf(v.families, s2.family ?? 1)?.members, filmerId(v, s2)).people;
+      s2.layout = buildHookLayout({ ...lib.second.stage, people: crew2 }, s.layout, rigOf(v)?.gripY ?? 0.51);
+      fixed.push(...fitFigureActions(s2.layout, rigOf(v)).map((x) => `第二段：${x}`));
+      fitOp(s2, lib.second.stage.camH);
+      s2.compFile = null;
+      v.shots.splice(v.shots.indexOf(s) + 1, 0, s2);
+    }
     bindScenes(v);
     s.textBasis = basisOf(s, placeOf(v, s));
+    if (s2) s2.textBasis = basisOf(s2, placeOf(v, s2));
     v.hooksReady = true;
     saveShortVideo(v);
     refresh(v);
-    return { result: { ...state(videoId), shotId: s.id, fixed } };
+    return { result: { ...state(videoId), shotId: s.id, secondId: s2?.id, fixed } };
   } catch (e) {
     return fail(e);
   }
 }
 
 /** 改开头的 Hook 属性：只进字幕的直接改字幕（免费）；影响画面的、画面已经做过，先列出费用让用户确认，再退回构图 */
+/** 自拍开头：拿手机的人入镜说台词，强制开声音。改自拍要先退回构图（画面里多了一个人）；只改台词随时可以 */
+export async function setHookSelfieAction(videoId: string, shotId: string, selfie: boolean, line: string): Promise<Result<StudioState>> {
+  try {
+    const v = load(videoId);
+    const s = v.shots.find((x) => x.id === shotId);
+    if (!s?.hook) throw new Error("开头不存在");
+    if (Boolean(s.hook.selfie) !== selfie && (s.stage !== "draft" || s.frameJobId)) throw new Error("这个开头已经出过首帧或确认了构图：要改自拍，先点“退回构图”");
+    if (listJobs(videoId).some((j) => j.shotId === s.id && (j.status === "submitting" || j.status === "submitted"))) throw new Error("这个开头正在生成，等生成完再改");
+    const { selfie: _s, line: _l, ...rest } = s.hook;
+    void _s;
+    void _l;
+    s.hook = selfie ? { ...rest, selfie: true, line: str(line, 200).trim() } : rest;
+    saveShortVideo(v);
+    return { result: state(videoId) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 export async function setHookValuesAction(videoId: string, shotId: string, values: Record<string, string>, confirmed = false): Promise<Result<{ confirm?: string; state?: StudioState; rewrite?: boolean }>> {
   try {
     const v = load(videoId);
@@ -420,9 +489,11 @@ export async function deleteHookShotAction(videoId: string, shotId: string): Pro
     const v = load(videoId);
     const s = v.shots.find((x) => x.id === shotId);
     if (!s?.hook) throw new Error("只能删除开头镜头");
-    if (s.stage === "accepted") throw new Error("这个开头已采用：先点“退回返工”再删");
-    if (listJobs(videoId).some((j) => j.shotId === s.id && (j.status === "submitting" || j.status === "submitted"))) throw new Error("这个开头正在生成，等生成完再删");
-    v.shots = v.shots.filter((x) => x.id !== shotId);
+    // 删开头连切镜后的第二段一起删
+    const gone = s.hook.partOf ? [s] : hookParts(v, s);
+    if (gone.some((x) => x.stage === "accepted")) throw new Error("这个开头已采用：先点“退回返工”再删");
+    if (listJobs(videoId).some((j) => gone.some((x) => x.id === j.shotId) && (j.status === "submitting" || j.status === "submitted"))) throw new Error("这个开头正在生成，等生成完再删");
+    v.shots = v.shots.filter((x) => !gone.includes(x));
     v.exportHooks = (v.exportHooks ?? []).filter((x) => x !== shotId);
     saveShortVideo(v);
     refresh(v);
@@ -436,7 +507,7 @@ export async function deleteHookShotAction(videoId: string, shotId: string): Pro
 export async function addHookAction(videoId: string): Promise<Result<StudioState>> {
   try {
     const v = load(videoId);
-    const hooks = v.shots.filter((s) => s.hook);
+    const hooks = hooksOf(v);
     const body = v.shots.filter((s) => !s.hook);
     if (v.shots.length >= 16) throw new Error("镜头太多了（最多 16 个）");
     const base = hooks[0] ?? body[0];
@@ -943,6 +1014,11 @@ async function runFrameCheck(videoId: string, shotId: string, jobId: string, byt
 }
 
 
+/** 自拍开头：拿手机的人自己入镜（前置摄像头，手臂伸直），其余人和产品在他身后 / 旁边 */
+function selfieFrameText(filmer: string): string {
+  return `Selfie shot from the phone's front camera: ${filmer || "the parent filming"} holds the phone at arm's length and is in the frame, face and shoulders in the foreground looking into the lens, mouth slightly open as if about to speak; the product and anyone else stay clearly visible behind or beside them. The phone itself is not visible.`;
+}
+
 function framePromptOf(v: ShortVideo, s: ShortShot): string {
   const p = getProduct(v.projectId);
   const look = findTemplate(v.templateId).look;
@@ -962,7 +1038,7 @@ function framePromptOf(v: ShortVideo, s: ShortShot): string {
     otherFamily ? "This shot shows a different family from the earlier shots: different people and a different home; only the product is the same model." : "",
     specialText(v, s),
     NOTES,
-    operatorPrompt(s.operator, s.layout, filmerText(v, s)),
+    s.hook?.selfie ? selfieFrameText(filmerText(v, s)) : operatorPrompt(s.operator, s.layout, filmerText(v, s)),
     s.productNote.trim()
       ? `Product: ${p?.name || "the product"} — use the product reference photos: keep exact geometry, proportions, colors, materials and logo placement; do not redesign, recolor or add parts.`
       : "",
@@ -1016,10 +1092,20 @@ function scenePromptOf(me: NonNullable<ReturnType<typeof shotScene>>): string {
     .join("\n");
 }
 
+/** 声音：关 = 不写；开 = 只要环境音和动作声效；自拍 = 拿手机的人说一句台词 */
+function soundPrompt(v: Pick<ShortVideo, "sound">, s: Pick<ShortShot, "hook" | "caption">, filmer: string): string {
+  if (s.hook?.selfie) {
+    const line = (s.hook.line?.trim() || s.caption.trim()).replace(/"/g, "'");
+    return `Selfie video: ${filmer || "the person filming"} holds the phone at arm's length with the front camera, looks into the lens and says: "${line}". Audio: only that spoken line plus ambient sound and the sounds of the actions on screen; no music, nobody else speaks.`;
+  }
+  return shotSound(v, s) ? "Audio: only ambient sound and the sound effects of the actions on screen; nobody speaks, no music." : "";
+}
+
 function videoPromptOf(v: ShortVideo, s: ShortShot): string {
-  const op = operatorPrompt(s.operator, s.layout, filmerText(v, s));
+  const op = s.hook?.selfie ? "" : operatorPrompt(s.operator, s.layout, filmerText(v, s));
+  const au = soundPrompt(v, s, filmerText(v, s));
   const sp = specialText(v, s);
-  return `${s.motionPrompt.trim()}\n${sp ? `${sp}\n` : ""}${moveText(s.layout)}\n${op ? `${op}${operatorShows(s.operator, s.layout) ? " Keep what shows of them partly visible and moving naturally through the clip." : ""}\n` : ""}Keep the product's shape, colors and logo exactly as in the first frame. Same people, wardrobe, room and lighting as the first frame throughout; no new people appear. Looks like real phone footage a parent shot for TikTok: natural speed, no slow motion, no smooth cinematic camera glide, casual unposed behavior. No text overlays.`;
+  return `${s.motionPrompt.trim()}\n${sp ? `${sp}\n` : ""}${moveText(s.layout)}\n${op ? `${op}${operatorShows(s.operator, s.layout) ? " Keep what shows of them partly visible and moving naturally through the clip." : ""}\n` : ""}Keep the product's shape, colors and logo exactly as in the first frame. Same people, wardrobe, room and lighting as the first frame throughout; no new people appear. Looks like real phone footage a parent shot for TikTok: natural speed, no slow motion, no smooth cinematic camera glide, casual unposed behavior. No text overlays.${au ? `\n${au}` : ""}`;
 }
 
 interface Prepared {
@@ -1049,7 +1135,7 @@ async function prepare(videoId: string, shotId: string, kind: JobKind, seconds: 
   try {
     const est =
       kind === "video"
-        ? await estimate(VIDEO_MODEL, { image_url: "https://example.com/a.jpg", duration: secs || VIDEO_MIN_SEC, resolution: v.resolution, generate_audio: false })
+        ? await estimate(VIDEO_MODEL, { image_url: "https://example.com/a.jpg", duration: secs || VIDEO_MIN_SEC, resolution: v.resolution, generate_audio: v.sound === true })
         : await estimate(FRAME_MODEL, { prompt: "estimate", quality: "high", resolution: "2k", aspect_ratio: "9:16" });
     if (Number.isFinite(est.usd) && est.usd > 0) unit = kind === "video" ? est.usd / (secs || VIDEO_MIN_SEC) : est.usd;
   } catch {
@@ -1254,7 +1340,7 @@ export async function rewriteShotAction(
       `People in the 3D blocking (exactly these, nobody else in frame): ${figs.length ? figs.join("; ") : "none"}.`,
       layoutText(s.layout),
       blockingText(s.layout, rig),
-      operatorPrompt(s.operator, s.layout, filmerText(v, s)) || "The person filming is not visible.",
+      (s.hook?.selfie ? selfieFrameText(filmerText(v, s)) : operatorPrompt(s.operator, s.layout, filmerText(v, s))) || "The person filming is not visible.",
     ]
       .filter(Boolean)
       .join("\n");
@@ -1364,7 +1450,7 @@ async function runInBackground(key: string, videoId: string, shotId: string, kin
               const fp = f && jobFilePath(f);
               if (!f || !fp || !fs.existsSync(fp)) throw new Error("首帧文件不存在");
               const image_url = await uploadFile(fs.readFileSync(fp), f.outputMime ?? "image/png");
-              return { prompt: p.prompt, image_url, duration: p.seconds, resolution: p.v.resolution, generate_audio: false };
+              return { prompt: p.prompt, image_url, duration: p.seconds, resolution: p.v.resolution, generate_audio: shotSound(p.v, p.s) };
             })()
           : kind === "scene"
             ? { prompt: p.prompt, quality: "high", resolution: "2k", aspect_ratio: "9:16", enhance_prompt: false }
@@ -1540,9 +1626,9 @@ async function drive(job: JobRecord): Promise<void> {
 export async function renderShortAction(videoId: string): Promise<Result<StudioState>> {
   try {
     const v = load(videoId);
-    const hooks = v.shots.filter((s) => s.hook);
+    const hooks = hooksOf(v);
     const picked = (v.exportHooks?.length ? hooks.filter((h) => v.exportHooks!.includes(h.id)) : hooks.slice(0, 1));
-    const notReady = picked.filter((h) => h.stage !== "accepted");
+    const notReady = picked.filter((h) => hookParts(v, h).some((p) => p.stage !== "accepted"));
     if (notReady.length) throw new Error(`这些开头还没采用：${notReady.map((h) => h.hook?.name).join("、")}`);
     if (!picked.length) await renderShort(v);
     for (const [k, h] of picked.entries()) {
@@ -1597,7 +1683,7 @@ export async function saveTemplateAction(videoId: string, name: string): Promise
     if (!nm) throw new Error("给模板起个名字");
     const body = v.shots.filter((s) => !s.hook);
     if (!body.length) throw new Error("还没有正文镜头，先出分镜再存模板");
-    const hook = v.shots.find((s) => s.hook);
+    const hook = hooksOf(v)[0];
     const pick = hook ? [hook, ...body] : body;
     const lessons = [...new Set(v.shots.flatMap((s) => (s.issues ?? []).filter((i) => i.scope === "video").map((i) => i.text.trim())).filter(Boolean))];
     const scenes: TemplateScene[] = [];

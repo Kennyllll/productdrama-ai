@@ -4,12 +4,15 @@ import { askConfirm } from "@/components/ConfirmHost";
 import { useState, useTransition } from "react";
 import { deleteHookAction, saveHookAction } from "@/app/hook-actions";
 import { HOOK_ENTRIES, type HookData, type HookDef, type HookEntry, type HookField } from "@/lib/hooks";
+import { effectDef, HOOK_EFFECTS, type HookEffectId } from "@/lib/hook-effects";
+import { HookCases } from "@/components/shorts/HookCases";
+import { DEFAULT_STAGE } from "@/lib/hook-stage";
 
 const inp = "w-full rounded border border-white/10 bg-neutral-950 px-2 py-1 text-sm text-white";
-const blank = (): HookData => ({ name: "", about: "", use: "", seconds: 3, entry: "assembled", caption: "", fields: [] });
+const blank = (): HookData => ({ name: "", about: "", use: "", seconds: 3, entry: "assembled", caption: "", fields: [], effect: "claimWords" });
 
 function HookCard({ h, onDone }: { h: HookDef | null; onDone?: () => void }) {
-  const [d, setD] = useState<HookData>(h ? { name: h.name, about: h.about, use: h.use, seconds: h.seconds, entry: h.entry, caption: h.caption, fields: h.fields } : blank());
+  const [d, setD] = useState<HookData>(h ? { name: h.name, about: h.about, use: h.use, seconds: h.seconds, entry: h.entry, caption: h.caption, fields: h.fields, stage: h.stage, effect: h.effect, second: h.second ?? null, selfie: Boolean(h.selfie) } : blank());
   const [open, setOpen] = useState(!h);
   const [msg, setMsg] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -78,6 +81,45 @@ function HookCard({ h, onDone }: { h: HookDef | null; onDone?: () => void }) {
             字幕模板（{"{属性代号}"} 换成视频里填的值，{"{product}"} 换成产品名）
             <input className={inp} value={d.caption} onChange={(e) => set({ caption: e.target.value })} />
           </label>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="block">
+              出片效果（照真实案例定的字体和出现方式）
+              <select className={inp} value={d.effect ?? "claimWords"} onChange={(e) => set({ effect: e.target.value as HookEffectId })}>
+                {HOOK_EFFECTS.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="pb-1 text-neutral-300">{effectDef(d.effect)?.look}</span>
+            <span className="pb-1">
+              <HookCases effect={d.effect} name={d.name} />
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-1">
+              <input type="checkbox" checked={Boolean(d.selfie)} onChange={(e) => set({ selfie: e.target.checked })} />
+              默认自拍（第一段拿手机的人入镜对着前置摄像头，强制开声音）
+            </label>
+            <label className="flex items-center gap-1">
+              <input type="checkbox" checked={Boolean(d.second)} onChange={(e) => set({ second: e.target.checked ? { seconds: 2, about: "", stage: d.stage ?? DEFAULT_STAGE } : null })} />
+              切镜头（拍两段）
+            </label>
+            {d.second ? (
+              <span className="flex items-center gap-1">
+                第 {d.seconds} 秒切到第二段，第二段
+                <input className={`${inp} w-16`} type="number" min={1} max={4} step={0.5} value={d.second.seconds} onChange={(e) => set({ second: { ...d.second!, seconds: Number(e.target.value) } })} />
+                秒
+              </span>
+            ) : null}
+          </div>
+          {d.second ? (
+            <label className="block">
+              第二段怎么拍（AI 写剧本时照这个；3D 摆位照预设）
+              <input className={inp} value={d.second.about} onChange={(e) => set({ second: { ...d.second!, about: e.target.value } })} />
+            </label>
+          ) : null}
           <div className="space-y-1">
             <p>专属属性（示例值只是提示，实际值在每条视频里填）</p>
             {d.fields.map((f, i) => (

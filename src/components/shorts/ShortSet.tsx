@@ -38,6 +38,7 @@ export function ShortSet({
   operators,
   filmers = {},
   autoCapture,
+  nextCode,
   modelId,
   stage,
   initialSel,
@@ -57,6 +58,8 @@ export function ShortSet({
   /** 每镜谁拿手机：value = 镜头自己设的；h = 现在拿手机的人身高（厘米）；dflt = 视频设定里的人 */
   filmers?: Record<string, { value: string; h?: number; dflt: string; options: { id: string; label: string }[] }>;
   autoCapture?: boolean;
+  /** 自动保存完这一镜后接着自动保存哪一镜（开头切镜后的第二段） */
+  nextCode?: string;
   title: string;
   /** 摆放编辑器每镜要用的数据 */
   stage: Record<string, StageProps>;
@@ -256,7 +259,11 @@ export function ShortSet({
             codePrefix="#"
             onShotChange={(c) => (setCode(c), setDraft(null), setLive(null), setStageDirty(false), window.history.replaceState(window.history.state, "", `?shot=${c}`))}
             onSave={(c, layout) => saveShortLayoutAction(videoId, c, layout)}
-            onCapture={(c, png) => saveShortCompAction(videoId, c, png)}
+            onCapture={async (c, png) => {
+              const r = await saveShortCompAction(videoId, c, png);
+              if (autoCapture && nextCode && c === initialCode) window.location.href = `?shot=${nextCode}&capture=1`;
+              return r;
+            }}
             onCaptureProduct={(c, png) => saveShortAngleAction(videoId, c, png)}
             moveExtra={operatorBox}
             operators={ops}
