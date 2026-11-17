@@ -1593,7 +1593,6 @@ export function ShortStudio({
                                     <video
                                       src={`/api/shorts/${id}`}
                                       controls
-                                      muted
                                       playsInline
                                       className="aspect-[9/16] w-full rounded bg-black object-cover"
                                     />
@@ -1770,7 +1769,6 @@ function JobThumb({ job, current }: { job: GenJob; current: boolean }) {
           <video
             src={`/api/shorts/${job.id}`}
             controls
-            muted
             className="aspect-[9/16] w-full rounded bg-black object-cover"
           />
         ) : (
