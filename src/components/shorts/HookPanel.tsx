@@ -15,7 +15,7 @@ const sel = "rounded border border-white/10 bg-neutral-950 px-2 py-1 text-sm tex
 const btn = "rounded border border-white/10 px-2 py-1 text-xs text-neutral-200 hover:border-amber-400/60 disabled:opacity-50";
 
 /** 从 Hook 库做开头（shot 为空 = 新建；有 shot = 改这个开头的属性 / 重写剧本 / 另存为新 Hook） */
-export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClose, themePicker, cast = [] }: { cast?: { id: string; name: string }[]; themePicker?: React.ReactNode; videoId: string; lib: HookDef[]; shot?: ShortShot; targetId?: string; setHref: (shotId: string) => string; onDone: Done; onClose: () => void }) {
+export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClose, themePicker, cast = [], onBgCapture }: { onBgCapture?: (url: string) => void; cast?: { id: string; name: string }[]; themePicker?: React.ReactNode; videoId: string; lib: HookDef[]; shot?: ShortShot; targetId?: string; setHref: (shotId: string) => string; onDone: Done; onClose: () => void }) {
   const h = shot?.hook;
   const [libId, setLibId] = useState(h?.libId ?? lib[0]?.id ?? "");
   const def = lib.find((x) => x.id === libId);
@@ -55,8 +55,15 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
       if (!draft) return;
       const r = await adoptHookAction(videoId, libId, values, entry, draft.draft, shot?.id ?? targetId, draft.people, { selfie: selfie || car, line, who, second: draft.second ? { draft: draft.second.draft, people: draft.second.people } : undefined });
       const fixed = r.result?.fixed ?? [];
-      onDone(r, fixed.length ? `已换好开头。AI 写的动作有 ${fixed.length} 处 3D 做不到，程序已改好：${fixed.join("；")}。点「打开 3D」看构图` : car && r.result?.secondId ? "已换好开头（两段）：第一段在车里不用 3D；正在打开第二段的 3D，构图会自动保存" : r.result?.secondId ? "已换好开头（两段）：正在打开 3D，先自动保存切镜后的第二段，再停在第一段" : "已换好开头：正在打开 3D，按 Hook 摆好的构图会自动保存");
-      if (!r.error && r.result && !fixed.length) window.location.href = car && r.result.secondId ? setHref(r.result.secondId) : r.result.secondId ? `${setHref(r.result.secondId)}&next=${r.result.shotId}` : setHref(r.result.shotId);
+      onDone(r, `已换好开头${fixed.length ? `。AI 写的动作有 ${fixed.length} 处 3D 做不到，程序已改好：${fixed.join("；")}` : ""}。${car ? "第一段在车里不用 3D；" : ""}3D 构图正在后台自动保存，不用离开这页，保存好卡片上会出现构图缩略图`);
+      // 采用后留在视频页：3D 构图在后台自动保存（先存切镜后的第二段，再存第一段；车里自拍第一段不用 3D）
+      if (!r.error && r.result) {
+        const url = car ? (r.result.secondId ? setHref(r.result.secondId) : "") : r.result.secondId ? `${setHref(r.result.secondId)}&next=${r.result.shotId}` : setHref(r.result.shotId);
+        if (url) {
+          if (onBgCapture) onBgCapture(url);
+          else window.location.href = url;
+        }
+      }
     });
   // 自拍：勾上就保存（已有开头：3D 跟着重摆，文字要重写）；草稿是按旧设置写的，作废
   const toggleSelfie = (on: boolean) => {

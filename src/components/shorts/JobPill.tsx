@@ -46,7 +46,8 @@ export function JobPill({
       clearInterval(tick);
     };
   }, [videoId]);
-  const list = st ? Object.entries(st.running) : [];
+  // 镜头已经删掉的任务不再显示（以前会显示成「#0」）
+  const list = st ? Object.entries(st.running).filter(([id]) => st.video.shots.some((s) => s.id === id)) : [];
   if (!st || (!list.length && !done)) return null;
   const href = (id: string) =>
     `/projects/${projectId}/shorts/${videoId}?shot=${id}`;

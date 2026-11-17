@@ -45,6 +45,8 @@ export default async function ShortSetPage({ params, searchParams }: { params: P
       ],
     };
   });
+  // 车里自拍的第一段不用 3D：不放进 3D 页
+  const carIds = new Set(v.shots.filter((s) => s.hook?.scene === "car").map((s) => s.id));
   const scenes = ensureScenes(id, listShortVideos(id));
   const sceneItems: Record<string, SceneItem[]> = {};
   const stage: Record<string, StageProps> = {};
@@ -83,6 +85,13 @@ export default async function ShortSetPage({ params, searchParams }: { params: P
           </p>
         </Card>
       ) : null}
+      {carIds.size ? (
+        <Card title="车里自拍">
+          <p className="text-sm text-neutral-300">
+            {v.shots.flatMap((s, i) => (carIds.has(s.id) ? [`#${i + 1}`] : [])).join("、")} 开头在车里自拍，不用 3D，三轮车不入镜，所以这里没有这一段。切镜后的第二段照案例只拍产品，没有人。
+          </p>
+        </Card>
+      ) : null}
       {shots.length === 0 ? (
         <Card title="还没有分镜">
           <p className="text-sm text-neutral-300">先在工作台选创意、出分镜。</p>
@@ -94,8 +103,8 @@ export default async function ShortSetPage({ params, searchParams }: { params: P
           initialSel={sp.fig}
           projectId={id}
           videoId={videoId}
-          shots={shots}
-          bindings={bindings}
+          shots={shots.filter((x) => !carIds.has(x.code))}
+          bindings={bindings.filter((x) => !carIds.has(x.code))}
           operators={Object.fromEntries(v.shots.map((s) => [s.id, s.operator ?? ""]))}
           filmers={filmers}
           scenes={scenes}

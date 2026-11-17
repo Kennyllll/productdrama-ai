@@ -115,6 +115,7 @@ export function ShortStudio({
   cast?: { id: string; name: string }[];
 }) {
   const [st, setSt] = useState(initial);
+  const [bgCap, setBgCap] = useState<string | null>(null);
   const [shots, setShots] = useState<ShortShot[]>(initial.video.shots);
   const [dirty, setDirty] = useState(false);
   const [brief, setBrief] = useState(initial.video.brief);
@@ -270,6 +271,26 @@ export function ShortStudio({
         : next.video.shots,
     );
   };
+  // 后台保存 3D 构图：隐藏的 3D 页存完会发消息回来
+  useEffect(() => {
+    if (!bgCap) return;
+    const on = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin || (e.data as { type?: string } | null)?.type !== "pd-3d-saved") return;
+      setBgCap(null);
+      void studioStateAction(v.id).then(merge);
+      setMsg({ tone: "ok", text: "3D 构图已在后台自动保存" });
+    };
+    window.addEventListener("message", on);
+    const t = setTimeout(() => {
+      setBgCap(null);
+      setMsg({ tone: "err", text: "3D 构图没能在后台保存好：点卡片上的「打开 3D 摆位 + 机位」，再点「保存」" });
+    }, 120_000);
+    return () => {
+      window.removeEventListener("message", on);
+      clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bgCap]);
   const pollOn = Object.values(running).some((r) => !r.error);
   useEffect(() => {
     if (!pollOn) return;
@@ -592,6 +613,12 @@ export function ShortStudio({
           {msg.text}
         </p>
       ) : null}
+      {bgCap ? (
+        <>
+          <p className="rounded-md bg-sky-400/10 px-3 py-2 text-sm text-sky-200">3D 构图正在后台自动保存…</p>
+          <iframe src={bgCap} title="后台保存 3D 构图" aria-hidden className="pointer-events-none fixed bottom-0 right-0 h-[900px] w-[1400px] opacity-0" />
+        </>
+      ) : null}
       {!hfReady ? (
         <p className="rounded-md bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
           尚未配置 Higgsfield Key：免费步骤可用，付费生成不可用。
@@ -891,7 +918,7 @@ export function ShortStudio({
                 ) : null,
                 i === 0 && hookPanel ? (
                   <li key="h-panel" className="col-span-full">
-                    <HookPanel cast={cast} themePicker={themeSelect} key={hookPanel.shotId ?? "new"} videoId={v.id} lib={hookLib} shot={hookPanel.shotId ? v.shots.find((x) => x.id === hookPanel.shotId) : undefined} targetId={hookPanel.shotId ? undefined : hookList[0]?.id} setHref={(id) => `/projects/${v.projectId}/shorts/${v.id}/set?shot=${id}&capture=1`} onDone={apply} onClose={() => setHookPanel(null)} />
+                    <HookPanel onBgCapture={setBgCap} cast={cast} themePicker={themeSelect} key={hookPanel.shotId ?? "new"} videoId={v.id} lib={hookLib} shot={hookPanel.shotId ? v.shots.find((x) => x.id === hookPanel.shotId) : undefined} targetId={hookPanel.shotId ? undefined : hookList[0]?.id} setHref={(id) => `/projects/${v.projectId}/shorts/${v.id}/set?shot=${id}&capture=1`} onDone={apply} onClose={() => setHookPanel(null)} />
                   </li>
                 ) : null,
                 !s.hook && i === firstBody ? (
@@ -1258,6 +1285,7 @@ export function ShortStudio({
                       {saved?.layout?.move
                         ? ` · 运镜 ${MOVES.find((m) => m.id === saved.layout?.move?.kind)?.label ?? saved.layout.move.kind}`
                         : ""}
+                      {s.hook?.partOf && !(saved?.layout?.figures ?? []).length ? " · 照案例只拍产品，没有人" : ""}
                     </p>
                     {s.hook?.scene === "car" ? (
                       <p className="text-sky-200">车里自拍：这一段不用 3D，三轮车不入镜</p>
@@ -1723,7 +1751,7 @@ export function ShortStudio({
       )}
 
       <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2">
-        {Object.entries(running).map(([id, r]) => {
+        {Object.entries(running).filter(([id]) => shots.some((x) => x.id === id)).map(([id, r]) => {
           const label = `#${shots.findIndex((x) => x.id === id) + 1} ${r.kind === "video" ? "视频" : "首帧"}`;
           return (
             <button

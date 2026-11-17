@@ -263,6 +263,8 @@ export function ShortSet({
               const r = await saveShortCompAction(videoId, c, png);
               // 开头两段：先存好切镜后的第二段，再回到第一段（有人、有动作的那段）存好并停在那里
               if (autoCapture && nextCode && c === initialCode) window.location.href = `?shot=${nextCode}&capture=1`;
+              // 视频页在后台打开的 3D 页：存完告诉视频页
+              else if (autoCapture && window.parent !== window) window.parent.postMessage({ type: "pd-3d-saved", shot: c }, window.location.origin);
               return r;
             }}
             onCaptureProduct={(c, png) => saveShortAngleAction(videoId, c, png)}
