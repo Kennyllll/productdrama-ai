@@ -65,6 +65,7 @@ export function ShortSet({
   stage: Record<string, StageProps>;
   initialSel?: string;
 }) {
+  const afterCapture = useRef<(() => void) | null>(null);
   const [code, setCode] = useState(shots.some((s) => s.code === initialCode) ? initialCode : shots[0]?.code ?? "");
   const [draft, setDraft] = useState<SceneItem[] | null>(null);
   const [live, setLive] = useState<{ figures: FigureSpec[]; bike?: [number, number]; bikeYaw: number; bikeLift: number; bikePitch: number; bikeRoll: number; bikeGround: number; items: SceneItem[] } | null>(null);
@@ -261,13 +262,30 @@ export function ShortSet({
             onSave={(c, layout) => saveShortLayoutAction(videoId, c, layout)}
             onCapture={async (c, png) => {
               const r = await saveShortCompAction(videoId, c, png);
-              // 开头两段：先存好切镜后的第二段，再回到第一段（有人、有动作的那段）存好并停在那里
-              if (autoCapture && nextCode && c === initialCode) window.location.href = `?shot=${nextCode}&capture=1`;
-              // 视频页在后台打开的 3D 页：存完告诉视频页
-              else if (autoCapture && window.parent !== window) window.parent.postMessage({ type: "pd-3d-saved", shot: c }, window.location.origin);
+              // 构图存好后 3D 页还要再存同角度产品参考图：等它存完再跳走 / 通知视频页，不然出首帧时少一张参考图
+              if (!r.error && autoCapture) {
+                const go = () => {
+                  // 开头两段：先存好切镜后的第二段，再回到第一段（有人、有动作的那段）存好并停在那里
+                  if (nextCode && c === initialCode) window.location.href = `?shot=${nextCode}&capture=1`;
+                  // 视频页在后台打开的 3D 页：存完告诉视频页
+                  else if (window.parent !== window) window.parent.postMessage({ type: "pd-3d-saved", shot: c }, window.location.origin);
+                };
+                afterCapture.current = go;
+                setTimeout(() => {
+                  if (afterCapture.current !== go) return;
+                  afterCapture.current = null;
+                  go();
+                }, 5000);
+              }
               return r;
             }}
-            onCaptureProduct={(c, png) => saveShortAngleAction(videoId, c, png)}
+            onCaptureProduct={async (c, png) => {
+              const r = await saveShortAngleAction(videoId, c, png);
+              const go = afterCapture.current;
+              afterCapture.current = null;
+              go?.();
+              return r;
+            }}
             moveExtra={operatorBox}
             operators={ops}
             autoCapture={autoCapture && cap === 0}

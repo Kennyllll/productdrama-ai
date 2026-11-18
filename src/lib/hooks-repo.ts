@@ -34,6 +34,28 @@ function db() {
       for (const p of PRESET_HOOKS) if (p.scene === "car" && !names.has(p.name)) createIn(d, p);
       d.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('hooks_preset_v', '3')").run();
     }
+    // 第 4 版：「车里自拍」的卖点不再给示例值（示例会被当成真卖点），改成必填
+    const v4 = d.prepare("SELECT value FROM settings WHERE key = 'hooks_preset_v'").get() as { value: string } | undefined;
+    if (Number(v4?.value ?? 0) < 4) {
+      const car = PRESET_HOOKS.find((p) => p.scene === "car");
+      for (const r of d.prepare("SELECT id, data FROM hooks").all() as { id: string; data: string }[]) {
+        const x = JSON.parse(r.data) as HookData;
+        if (car && x.name === car.name && x.fields?.some((f) => f.example === "Folds flat in seconds")) d.prepare("UPDATE hooks SET data = ? WHERE id = ?").run(JSON.stringify({ ...x, fields: car.fields }), r.id);
+      }
+      d.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('hooks_preset_v', '4')").run();
+    }
+    // 第 5 版：示例值不再当真值（价格、卖点必填）；预置模板里本来就选填的属性（赠品）标成选填
+    const v5 = d.prepare("SELECT value FROM settings WHERE key = 'hooks_preset_v'").get() as { value: string } | undefined;
+    if (Number(v5?.value ?? 0) < 5) {
+      for (const r of d.prepare("SELECT id, data FROM hooks").all() as { id: string; data: string }[]) {
+        const x = JSON.parse(r.data) as HookData;
+        const p = PRESET_HOOKS.find((y) => y.name === x.name);
+        const opt = new Set(p?.fields.filter((f) => f.optional).map((f) => f.key) ?? []);
+        if (opt.size && x.fields?.some((f) => opt.has(f.key) && !f.optional))
+          d.prepare("UPDATE hooks SET data = ? WHERE id = ?").run(JSON.stringify({ ...x, fields: x.fields.map((f) => (opt.has(f.key) ? { ...f, optional: true } : f)) }), r.id);
+      }
+      d.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('hooks_preset_v', '5')").run();
+    }
     ready = true;
   }
   return d;

@@ -1,11 +1,11 @@
-// 产品短视频成片：把已采用的镜头按顺序裁剪成 1080×1920 后拼接；开头按 Hook 效果烧字幕（assets/fonts 里的开源字体）。仅服务端。
+// 产品短视频成片：把已采用的镜头按顺序裁剪成 1080×1920 后拼接；字幕开着时开头按 Hook 效果、正文同款样式烧字幕（assets/fonts 里的开源字体）。仅服务端。
 import "server-only";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import ffmpegPath from "ffmpeg-static";
-import { hookAss } from "@/lib/hook-effects";
+import { bodyAss, hookAss } from "@/lib/hook-effects";
 import { hookEffectOf, hookParts, hooksOf, shotCuts, shotSound, type ShortShot, type ShortVideo } from "@/lib/shorts";
 import { finalPath, getJob, jobFilePath, videoDir } from "@/lib/shorts-repo";
 
@@ -62,7 +62,7 @@ export async function renderShort(v: ShortVideo, dest = finalPath(v), hookId?: s
       const zoom = c.zoom > 1 ? [`scale=${Math.round(1080 * c.zoom / 2) * 2}:${Math.round(1920 * c.zoom / 2) * 2}`, "crop=1080:1920"] : [];
       const vf = ["scale=1080:1920:force_original_aspect_ratio=increase", "crop=1080:1920", ...zoom, "setsar=1", "fps=30"];
       const fx = hookEffectOf(hook?.hook);
-      const ass = inHook.has(s.id) && fx && hook ? hookAss(fx, hook.caption, hookLen, hookT + at, { line: hook.hook?.line, cut: parts[0]?.useSeconds }) : null;
+      const ass = v.captions === false ? null : inHook.has(s.id) ? (fx && hook ? hookAss(fx, hook.caption, hookLen, hookT + at, { line: hook.hook?.line, cut: parts[0]?.useSeconds }) : null) : bodyAss(fx, s.caption, s.useSeconds, at);
       if (ass) {
         const f = path.join(work, `seg${i}-${k}.ass`);
         fs.writeFileSync(f, ass);

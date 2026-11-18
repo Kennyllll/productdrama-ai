@@ -18,7 +18,7 @@ export const HOOK_EFFECTS: HookEffectDef[] = [
   { id: "ticker", label: "顶部黑条跑马灯", look: "顶部黑条，TikTok Sans 白色粗体从右往左一直滚" },
   { id: "comment", label: "左上角评论气泡", look: "左上角白色评论气泡（Reply to comment），0 秒弹出" },
   { id: "vsWords", label: "每 0.5 秒跳一个大字", look: "TikTok Sans 特粗，黄绿色字黑描边，每 0.5 秒换一个词" },
-  { id: "talkWords", label: "中下方跟读字幕", look: "TikTok Sans 白色粗体黑描边，在画面中下方跟着台词一次出 3 个词，最后一个词加紫色底框；切镜后顶部换成紫底白字", tip: "跟读字幕直接用自拍台词；这里填的字写在切镜后的顶部" },
+  { id: "talkWords", label: "中下方跟读字幕", look: "TikTok Sans 白色粗体黑描边，在画面中下方跟着台词一次出 3 个词，正在说的那个词加紫色底框；切镜后顶部换成紫底白字", tip: "跟读字幕直接用自拍台词；这里填的字写在切镜后的顶部" },
 ];
 
 export const isHookEffect = (x: unknown): x is HookEffectId => HOOK_EFFECTS.some((e) => e.id === x);
@@ -205,20 +205,36 @@ export function hookAss(effect: HookEffectId, caption: string, seconds: number, 
       break;
     }
     case "talkWords": {
-      // 照案例：跟着台词一次出 3 个词，最后一个词紫底；切镜后顶部紫底白字（这里填的字）
+      // 照案例：跟着台词一次出 3 个词，正在说的词紫底；切镜后顶部紫底白字（这里填的字）
       const said = esc(talk?.line ?? "").split(/\s+/).filter(Boolean);
       const words = said.length ? said : text.split(/\s+/).filter(Boolean);
       const cut = said.length && talk?.cut && talk.cut < end ? talk.cut : end;
       const chunks: string[][] = [];
       for (let i = 0; i < words.length; i += 3) chunks.push(words.slice(i, i + 3));
-      const step = cut / Math.max(1, chunks.length);
-      chunks.forEach((c, i) => {
-        const last = `{\\rTalkHi}${c[c.length - 1]}`;
-        at(i * step, (i + 1) * step, "Talk", `{\\an5\\pos(${W / 2},${Math.round(H * 0.68)})}${c.length > 1 ? `${c.slice(0, -1).join(" ")} ${last}` : last}`);
+      // 紫底跟着正在说的词走：按词长估每个词的时长（长词说得久），一组 3 个词同屏，说到哪个词哪个词亮
+      const weight = (w: string) => w.replace(/[^A-Za-z0-9']/g, "").length + 2;
+      const total = words.reduce((a, w) => a + weight(w), 0) || 1;
+      let t0 = 0;
+      chunks.forEach((c) => {
+        c.forEach((w, k) => {
+          const d = (weight(w) / total) * cut;
+          const shown = c.map((x, j) => (j === k ? `{\\rTalkHi}${x}{\\rTalk}` : x)).join(" ");
+          at(t0, t0 + d, "Talk", `{\\an5\\pos(${W / 2},${Math.round(H * 0.68)})}${shown}`);
+          t0 += d;
+        });
       });
       if (said.length && text && cut < end) at(cut, end, "TopBox", `{\\an8\\pos(${W / 2},220)}${wrap(text, 28).join("\\N")}`);
       break;
     }
   }
   return lines.length ? HEAD + lines.join("\n") + "\n" : null;
+}
+
+/** 正文镜头的字幕，和开头同一款：跟读字幕按词亮紫底，其他效果在中下方白色粗体整句出 */
+export function bodyAss(effect: HookEffectId | null | undefined, caption: string, seconds: number, offset = 0): string | null {
+  if (!esc(caption)) return null;
+  if (effect === "talkWords") return hookAss("talkWords", "", seconds, offset, { line: caption });
+  const end = Math.max(0.5, seconds) - offset;
+  if (end <= 0) return null;
+  return HEAD + ev(0, end, "Talk", `{\\an5\\pos(${W / 2},${Math.round(H * 0.68)})}${wrap(esc(caption), 24).join("\\N")}`) + "\n";
 }

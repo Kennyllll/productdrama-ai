@@ -78,8 +78,9 @@ test("第二段跟着自拍开头开声音；旧 Hook 开头按名字补效果�
 
 test("车里自拍跟读字幕：台词每 3 个词一组，最后一个词紫底，切镜后顶部出卖点", () => {
   const a = hookAss("talkWords", "Folds flat in 3 seconds", 6, 0, { line: "one two three four five six", cut: 4 })!;
-  assert.equal(a.match(/,Talk,/g)?.length, 2);
-  assert.match(a, /one two \{\\rTalkHi\}three/);
+  assert.equal(a.match(/,Talk,/g)?.length, 6);
+  assert.match(a, /\{\\rTalkHi\}one\{\\rTalk\} two three/);
+  assert.match(a, /one two \{\\rTalkHi\}three\{\\rTalk\}/);
   assert.match(a, /0:00:04\.00,0:00:06\.00,TopBox/);
   assert.ok(hookAss("talkWords", "", 4, 0, { line: "hi there" }));
 });

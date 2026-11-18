@@ -23,7 +23,9 @@ import {
   paramsKey,
   quoteJob,
   VIDEO_MIN_SEC,
-  VIDEO_MODEL,
+  shotHasPeople,
+  videoModelOf,
+  videoUsdPerSec,
   VIDEO_USD_PER_SEC,
   type GenJob,
   type JobKind,
@@ -38,7 +40,7 @@ import {
   type ShotHook,
 } from "@/lib/shorts";
 import { lastFrame, renderShort } from "@/lib/shorts-render";
-import { cleanLayout, guessRoom, layoutText, moveText, PRODUCT_REF_VIEWS } from "@/lib/shorts-set";
+import { cleanLayout, dropCameraMoves, guessRoom, layoutText, moveText, PRODUCT_REF_VIEWS } from "@/lib/shorts-set";
 import { findTheme, sceneText } from "@/lib/shorts-scenes";
 import { createScene, ensureScenes, getScene, legacyShotScene, saveScene, themedScene, versionOf } from "@/lib/shorts-scenes-repo";
 import { createTemplate, deleteTemplate, getTemplate, saveTemplate, type TemplateScene, type TemplateShot } from "@/lib/shorts-templates-repo";
@@ -73,8 +75,8 @@ import {
 } from "@/lib/shorts-repo";
 import { runKey, runningOf, runs, type RunInfo } from "@/lib/shorts-runs";
 import { getRig } from "@/lib/product-rig-repo";
-import { castOf, getFamily } from "@/lib/families-repo";
-import { memberKind, memberText, filmerId, type FamilyMember } from "@/lib/families";
+import { castOf, getFamily, portraitPath } from "@/lib/families-repo";
+import { memberKind, memberText, filmerId, portraitFor, type FamilyMember } from "@/lib/families";
 import { fitFigureActions, promptConflicts } from "@/lib/shorts-conflicts";
 
 type Result<T> = { error?: string; result?: T };
@@ -222,7 +224,7 @@ function cleanShot(s: Partial<ShortShot>, prev?: ShortShot): ShortShot {
 
 export async function saveShortVideoAction(
   videoId: string,
-  patch: { title?: string; brief?: string; templateId?: string; resolution?: VideoResolution; sound?: boolean; conceptId?: string | null; shots?: Partial<ShortShot>[]; exportHooks?: string[]; colorId?: string | null },
+  patch: { title?: string; brief?: string; templateId?: string; resolution?: VideoResolution; sound?: boolean; conceptId?: string | null; shots?: Partial<ShortShot>[]; exportHooks?: string[]; captions?: boolean; colorId?: string | null },
 ): Promise<Result<StudioState>> {
   try {
     const v = load(videoId);
@@ -257,6 +259,7 @@ export async function saveShortVideoAction(
       }
     }
     bindScenes(v);
+    if (typeof patch.captions === "boolean") v.captions = patch.captions;
     if (patch.exportHooks) v.exportHooks = patch.exportHooks.filter((id) => v.shots.some((s) => s.hook && s.id === id));
     saveShortVideo(v);
     refresh(v);
@@ -270,12 +273,15 @@ const HOOK_LIM: Record<TextField, number> = { description: 600, camera: 200, pro
 
 /** 从 Hook 库写开头剧本（DeepSeek 文字调用 1 次，约 $0.01，不出图）；只返回草稿，用户点“采用”才变成开头镜头 */
 type HookDraftPart = { draft: Record<TextField, string>; people: HookPerson[]; who: string[] };
-export async function draftHookAction(videoId: string, libId: string, values: Record<string, string>, entry: string, selfie = false, who = ""): Promise<Result<HookDraftPart & { caption: string; notes: string[]; second?: HookDraftPart; selfieName?: string }>> {
+export async function draftHookAction(videoId: string, libId: string, values: Record<string, string>, entry: string, selfie = false, who = ""): Promise<Result<HookDraftPart & { caption: string; notes: string[]; second?: HookDraftPart; selfieName?: string; line?: string; lineZh?: string }>> {
   try {
     const v = load(videoId);
     const lib = getHook(libId);
     if (!lib) throw new Error("Hook 不存在");
     const vals = cleanHookValues(lib, values);
+    // 除了选填的都必填：模板示例不能当真价格、真卖点
+    const empty = lib.fields.filter((f) => !f.optional && !vals[f.key]);
+    if (empty.length) throw new Error(`先填：${empty.map((f) => f.label).join("、")}`);
     const en = HOOK_ENTRIES.find((x) => x.id === entry) ?? HOOK_ENTRIES.find((x) => x.id === lib.entry) ?? HOOK_ENTRIES[0];
     const first = v.shots.find((s) => !s.hook);
     const rig = rigOf(v);
@@ -292,7 +298,7 @@ export async function draftHookAction(videoId: string, libId: string, values: Re
     const th = videoTheme(v);
     const { data } = await chatJson({
       system:
-        'You write the opening hook shot (the first 2-4 seconds) of a North American TikTok product video. Follow the hook recipe and the filled values exactly. The hook must flow straight into the first body shot (nextShot): same location, same people and family, same product color. The holiday is given in holiday and overrides anything written in nextShot; if it is none, there are no holiday decorations, trees, gifts, bows or holiday outfits at all; otherwise the place clearly shows the typical decorations of that holiday, never write that there are no holiday decorations. Unless selfie is true, the person filming holds the phone and is never visible: never describe them in framePrompt or motionPrompt. If selfie is true, the first shot is a front-camera selfie: selfiePerson holds the phone at arm\'s length and IS in frame (write exactly that person, by name), face and shoulders in the foreground reacting to the lens, with the product visible behind or beside them; describe the filmer in description and framePrompt as in frame (never write that they are not in frame or unseen), with their face on the right side of the frame and the product behind them on the left, but never list the filmer in people. If carScene is true, the first shot happens inside a parked car instead of the usual place: selfiePerson sits in the driver\'s seat with the seat belt on and talks to the front camera; the product is NOT in the first shot at all (never mention or show it in description, productNote, framePrompt or motionPrompt, and people is an empty list); carScene overrides where the product goes in a selfie. The product appears only in the second shot. If productEntry says no box, there is no box, packaging or wrapping anywhere in the frame. First decide who is in frame (people), following the story (story, brief, nextShotPeople) and the hook recipe: pick only from family by memberId, never the filmer; at most 3 people; only a child can ride the product and at most one rider; return an empty list only when the story and recipe are clearly better with the product alone. presetPeople is the recipe default and only a suggestion. The program places exactly these people in 3D around the product (side = left, right or behind the product) with exactly these poses, and the camera comes from camera3d. Nobody except the rider touches the product: in 3D the people beside it cannot reach the handlebar, seat or frame, so never write them holding, steadying or touching any part of it (looking at it, pointing at it or cheering is fine). Anyone riding follows rideRule exactly in action, actionEn, description and framePrompt: describe exactly these people doing exactly these poses and actions, and nobody else. Use only product facts from productFacts; never invent features, prices, parts or packaging. The on-screen caption is fixed and added in editing (caption): write the picture so it supports that caption, and never put text into the image. Values marked showsInPicture must be visible in the picture; the others only live in the caption. Return JSON {"people":[{"memberId":"family 里的 memberId","pose":"stand|crouch|ride|point|reach|hold","onProduct":false,"side":"left|right|behind","action":"中文：这个人在做什么，一句话","actionEn":"the same action in English"}],"description":"中文：画面里有谁、在哪、在做什么、产品怎么出场","camera":"中文：机位和景别","productNote":"中文：产品在画面里的状态","framePrompt":"English first-frame image prompt, concrete and visual, max 900 characters","motionPrompt":"English motion prompt for the clip, max 500 characters","notes":["中文提醒，最多 3 条"]}. If secondShot is not null, the hook is two shots joined by a hard cut at hook.seconds: everything above describes the first shot; also return "second" with the same fields (people, description, camera, productNote, framePrompt, motionPrompt) for the shot after the cut, following secondShot.recipe, secondShot.camera3d and secondShot.presetPeople, with the same place, family, product color and holiday, never a selfie; the people rules above apply to it too.',
+        'You write the opening hook shot (the first 2-4 seconds) of a North American TikTok product video. Follow the hook recipe and the filled values exactly. The hook must flow straight into the first body shot (nextShot): same location, same people and family, same product color. The holiday is given in holiday and overrides anything written in nextShot; if it is none, there are no holiday decorations, trees, gifts, bows or holiday outfits at all; otherwise the place clearly shows the typical decorations of that holiday, never write that there are no holiday decorations. Unless selfie is true, the person filming holds the phone and is never visible: never describe them in framePrompt or motionPrompt. If selfie is true, the first shot is a front-camera selfie: selfiePerson holds the phone at arm\'s length and IS in frame (write exactly that person, by name), face and shoulders in the foreground reacting to the lens, with the product visible behind or beside them; describe the filmer in description and framePrompt as in frame (never write that they are not in frame or unseen), with their face on the right side of the frame and the product behind them on the left, but never list the filmer in people. If carScene is true, the first shot happens inside a parked car instead of the usual place: selfiePerson sits in the driver\'s seat with the seat belt on and talks to the front camera; the product is NOT in the first shot at all (never mention or show it in description, productNote, framePrompt or motionPrompt, and people is an empty list); carScene overrides where the product goes in a selfie. The product appears only in the second shot. For carScene never write which side of the frame the face is on and never describe clothes (wardrobe comes from the family data). If productEntry says no box, there is no box, packaging or wrapping anywhere in the frame. First decide who is in frame (people), following the story (story, brief, nextShotPeople) and the hook recipe: pick only from family by memberId, never the filmer; at most 3 people; if only one adult is in frame it is the mom (role mom), unless she is the filmer or the family has no mom; only a child can ride the product and at most one rider; return an empty list only when the story and recipe are clearly better with the product alone. presetPeople is the recipe default and only a suggestion. The program places exactly these people in 3D around the product (side = left, right or behind the product) with exactly these poses, and the camera comes from camera3d. Nobody except the rider touches the product: in 3D the people beside it cannot reach the handlebar, seat or frame, so never write them holding, steadying or touching any part of it (looking at it, pointing at it or cheering is fine). Anyone riding follows rideRule exactly in action, actionEn, description and framePrompt: describe exactly these people doing exactly these poses and actions, and nobody else. Use only product facts from productFacts; never invent features, prices, parts or packaging. The on-screen caption is fixed and added in editing (caption): write the picture so it supports that caption, and never put text into the image. Values marked showsInPicture must be visible in the picture; the others only live in the caption. Return JSON {"people":[{"memberId":"family 里的 memberId","pose":"stand|crouch|ride|point|reach|hold","onProduct":false,"side":"left|right|behind","action":"中文：这个人在做什么，一句话","actionEn":"the same action in English"}],"description":"中文：画面里有谁、在哪、在做什么、产品怎么出场","camera":"中文：机位和景别","productNote":"中文：产品在画面里的状态","framePrompt":"English first-frame image prompt, concrete and visual, max 900 characters","motionPrompt":"English motion prompt for the clip, max 500 characters","line":"only if selfie is true: the one English sentence selfiePerson says to the camera, like talking to a friend (a reaction, a confession or a question that fits THIS hook recipe: for a price hook react to the deal itself), written fresh for this video, never a stock phrase, max 20 words, never just repeat the caption, only facts from productFacts and the filled values, no holiday unless holiday is set; empty string otherwise","lineZh":"台词的中文意思","notes":["中文提醒，最多 3 条"]}. If secondShot is not null, the hook is two shots joined by a hard cut at hook.seconds: everything above describes the first shot; also return "second" with the same fields (people, description, camera, productNote, framePrompt, motionPrompt) for the shot after the cut, following secondShot.recipe, secondShot.camera3d and secondShot.presetPeople, with the same place, family, product color and holiday, never a selfie; the people rules above apply to it too.',
       user: JSON.stringify({
         hook: { name: lib.name, recipe: lib.about, productEntry: en.en, seconds: lib.seconds },
         selfie: selfie || car,
@@ -335,7 +341,7 @@ export async function draftHookAction(videoId: string, libId: string, values: Re
       dropped.push(...p2.dropped.map((x) => `第二段：${x}`));
       second = { draft: draft2, people: p2.people, who: peopleText(p2.people, cast?.members) };
     }
-    return { result: { draft, caption, notes: [...dropped, ...notes].slice(0, 5), people, who: peopleText(people, cast?.members), second, selfieName: selfiePerson?.name } };
+    return { result: { draft, caption, notes: [...dropped, ...notes].slice(0, 5), people, who: peopleText(people, cast?.members), second, selfieName: selfiePerson?.name, line: selfiePerson ? str(d.line, 200).trim().replace(/^"|"$/g, "") : "", lineZh: selfiePerson ? str(d.lineZh, 200).trim() : "" } };
   } catch (e) {
     return fail(e);
   }
@@ -528,7 +534,7 @@ export async function setHookValuesAction(videoId: string, shotId: string, value
     if (visual.length && made && !confirmed) {
       const lib = getHook(h.libId);
       const names = visual.map((k) => lib?.fields.find((f) => f.key === k)?.label ?? k).join("、");
-      const usd = FRAME_USD_FALLBACK + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * VIDEO_USD_PER_SEC[v.resolution] : 0);
+      const usd = FRAME_USD_FALLBACK + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * videoUsdPerSec(s, v.resolution) : 0);
       return { result: { confirm: `改了影响画面的属性（${names}），开头「${h.name}」已经做过的画面要退回构图、重写剧本再重做：\n剧本 DeepSeek 约 $0.01 + 重做大约 $${usd.toFixed(2)}（每次生成照样先审批）。已经生成的画面会留在历史里。` } };
     }
     s.hook = { ...h, values: vals };
@@ -643,7 +649,7 @@ export async function setVideoFamilyAction(videoId: string, slot: number, family
     if (accepted.length) throw new Error(`已采用的镜头 ${accepted.map(label).join("、")} 不会被自动改：要换家庭，先在这些镜头点“退回返工”`);
     const redo = changed.filter((s) => s.stage !== "draft" || s.frameJobId || s.videoJobId);
     if (redo.length && !confirmed) {
-      const usd = redo.reduce((a, s) => a + FRAME_USD_FALLBACK + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * VIDEO_USD_PER_SEC[v.resolution] : 0), 0);
+      const usd = redo.reduce((a, s) => a + FRAME_USD_FALLBACK + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * videoUsdPerSec(s, v.resolution) : 0), 0);
       const to = familyId ? getFamily(familyId)!.name : "不指定";
       return { result: { confirm: `家庭位 ${k} 换成「${to}」以后，这些已经做过的镜头画面里还是原来的人，要退回构图重做：\n${redo.map(label).join("、")}\n\n重做大约 $${usd.toFixed(2)}（每次生成照样先审批）。已经生成的画面会留在历史里。` } };
     }
@@ -683,7 +689,7 @@ export async function setVideoFilmerAction(videoId: string, memberId: string | n
     if (accepted.length) throw new Error(`已采用的镜头 ${accepted.map(label).join("、")} 不会被自动改：要换拍摄者，先在这些镜头点“退回返工”`);
     const redo = changed.filter((s) => s.stage !== "draft" || s.frameJobId || s.videoJobId);
     if (redo.length && !confirmed) {
-      const usd = redo.reduce((a, s) => a + FRAME_USD_FALLBACK + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * VIDEO_USD_PER_SEC[v.resolution] : 0), 0);
+      const usd = redo.reduce((a, s) => a + FRAME_USD_FALLBACK + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * videoUsdPerSec(s, v.resolution) : 0), 0);
       return { result: { confirm: `拿手机的人换成「${who?.name ?? "不指定"}」以后，这些已经做过的镜头里露出的手、衣服和拍摄高度还是原来的，要退回构图重做：\n${redo.map(label).join("、")}\n\n重做大约 $${usd.toFixed(2)}（每次生成照样先审批）。已经生成的画面会留在历史里。` } };
     }
     for (const s of redo) {
@@ -733,7 +739,7 @@ export async function setVideoThemeAction(videoId: string, theme: string, themeT
     if (accepted.length) throw new Error(`已采用的镜头 ${accepted.map(label).join("、")} 不会被自动改：要换节日，先在这些镜头点“退回返工”`);
     const redo = changed.filter((s) => s.stage !== "draft" || s.frameJobId || s.videoJobId);
     if (redo.length && !confirmed) {
-      const usd = redo.reduce((a, s) => a + FRAME_USD_FALLBACK + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * VIDEO_USD_PER_SEC[v.resolution] : 0), 0);
+      const usd = redo.reduce((a, s) => a + FRAME_USD_FALLBACK + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * videoUsdPerSec(s, v.resolution) : 0), 0);
       return {
         result: {
           confirm: `换成「${findTheme(t).label}」以后，这些已经做过的镜头画面里还是旧节日，要退回构图重做：\n${redo.map(label).join("、")}\n\n重做大约 $${usd.toFixed(2)}（每次生成照样先审批）。已经生成的图和视频会留在历史里。\n\n确定要换吗？`,
@@ -1019,6 +1025,9 @@ function refPlan(v: ShortVideo, s: ShortShot): RefPart[] {
   // 车里自拍：只发出镜的人在别的镜头里的首帧（认脸、发型、衣服），不发 3D 和产品
   if (s.hook?.scene === "car") {
     const id = selfieId(v, s);
+    // 家庭库有采用的定妆照就用它认脸（比别的镜头的首帧干净）
+    const pr = id ? portraitRef(v, s, id, selfieWho(v, s)) : null;
+    if (pr) return [pr];
     const ref = id ? v.shots.find((x) => x !== s && x.frameJobId && ["frame_ok", "video_ready", "accepted"].includes(x.stage) && (x.layout?.figures ?? []).some((f) => f.memberId === id)) : undefined;
     if (ref)
       out.push({
@@ -1082,7 +1091,34 @@ function refPlan(v: ShortVideo, s: ShortShot): RefPart[] {
         file: () => stillOf(v, people),
       });
   }
-  return out;
+  return [...out, ...castPortraits(v, s)];
+}
+
+/** 家庭库采用的定妆照：认脸；这个节日自己那张连衣服一起认 */
+function portraitRef(v: ShortVideo, s: ShortShot, memberId: string, who: string): RefPart | null {
+  const fam = castOf(v.families, famOf(s));
+  const m = fam?.members.find((x) => x.id === memberId);
+  const hit = m ? portraitFor(m, videoTheme(v).theme) : null;
+  if (!fam || !hit) return null;
+  const f = portraitPath(fam.id, hit.p);
+  if (!fs.existsSync(f)) return null;
+  return {
+    text: `is the approved casting photo of ${who}: the same face, age, hair, skin tone and build.${hit.outfit ? " Same clothes too." : " Ignore its clothes: dress them as described in this prompt."} Ignore its plain gray background and standing pose.`,
+    file: async () => f,
+  };
+}
+
+/** 3D 里绑了成员的人偶各发一张定妆照（最多 4 张，Sunburst 一共 16 张参考图） */
+function castPortraits(v: ShortVideo, s: ShortShot): RefPart[] {
+  if (!s.layout) return [];
+  const fam = castOf(v.families, famOf(s));
+  return figuresOf(s.layout)
+    .flatMap((f, k) => {
+      const m = fam?.members.find((x) => x.id === f.memberId);
+      const r = m ? portraitRef(v, s, m.id, `Person ${k + 1} (${m.name})`) : null;
+      return r ? [r] : [];
+    })
+    .slice(0, 4);
 }
 
 const FRAME_PROMPT_MAX = 4900;
@@ -1130,7 +1166,8 @@ function selfieFrameText(filmer: string): string {
 /** 自拍的人：镜头指定的拿手机的人 → AI 放进画面的大人 → 家里第一个大人 */
 /** 自拍的人：视频设定里「拿手机的人」，没设就用家里第一个大人（写剧本和摆 3D 用同一个） */
 function selfieMember(members: FamilyMember[], filmer?: string): FamilyMember | undefined {
-  return members.find((x) => x.id === filmer) ?? members.find((x) => memberKind(x) === "adult");
+  // 规则：只有一个大人出镜时首选妈妈，没有妈妈才用拿手机的人 / 第一个大人
+  return members.find((x) => x.role === "mom") ?? members.find((x) => x.id === filmer) ?? members.find((x) => memberKind(x) === "adult");
 }
 
 /** 自拍的人在提示词里怎么称呼：按 3D 里「自拍」人偶绑定的家庭成员，没有再用拿手机的人 */
@@ -1140,7 +1177,7 @@ function selfieWho(v: ShortVideo, s: ShortShot): string {
   return m ? `${m.name} (the ${m.role === "other" ? "adult" : m.role})` : filmerText(v, s);
 }
 
-/** 出镜的人：Hook 面板里选的 → 视频设定里拿手机的人 → 家里第一个大人 */
+/** 出镜的人：Hook 面板里选的 → 妈妈 → 视频设定里拿手机的人 → 家里第一个大人 */
 function selfieId(v: ShortVideo, s: ShortShot): string | undefined {
   const members = castOf(v.families, s.family ?? 1)?.members ?? [];
   return (members.find((x) => x.id === s.hook?.who) ?? selfieMember(members, filmerId(v, s)))?.id;
@@ -1150,7 +1187,8 @@ function selfieId(v: ShortVideo, s: ShortShot): string | undefined {
 function carPersonText(v: ShortVideo, s: ShortShot): string {
   const fam = castOf(v.families, famOf(s));
   const m = fam?.members.find((x) => x.id === selfieId(v, s));
-  return fam && m ? memberText(fam, m, videoTheme(v).theme) : selfieWho(v, s);
+  // 家庭的族裔写在家庭资料里，不写的话出图模型会随便挑
+  return fam && m ? `${memberText(m, videoTheme(v).theme)}, from ${fam.about.en.replace(/\s+(in|with)\b.*$/, "")}` : selfieWho(v, s);
 }
 
 /** 车里自拍第一段：只有出镜的人坐在停着的车里说话，产品不入镜（不发产品图，补充文字里提到产品的句子删掉） */
@@ -1158,9 +1196,11 @@ function carFramePrompt(v: ShortVideo, s: ShortShot): string {
   const name = getProduct(v.projectId)?.name ?? "";
   const bad = new RegExp(`\\b(tricycles?|trikes?|bikes?|strollers?|ride-on|products?|toys?)\\b${name ? `|${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}` : ""}`, "i");
   const notes = cleanShotNotes(s.framePrompt.trim().replace(/^English:\s*/i, ""), { wardrobe: true, selfie: true })
-    .text.split(/(?<=[.!?])\s+/)
-    .filter((x) => x && !bad.test(x))
-    .join(" ");
+    .text.split(/(?<=[.!?;,])\s+/)
+    // 脸在左边还是右边由程序定（画面中间），AI 写的左右删掉
+    .filter((x) => x && !bad.test(x) && !/\b(left|right)\b/i.test(x))
+    .join(" ")
+    .replace(/,\s*$/, "");
   return [
     SELFIE_STYLE,
     ...refPlan(v, s).map((r, k) => `Image ${k + 1} ${r.text}`),
@@ -1237,7 +1277,7 @@ function filmerText(v: ShortVideo, s: ShortShot): string {
   const id = filmerId(v, s);
   const fam = id ? castOf(v.families, famOf(s)) : null;
   const m = fam?.members.find((x) => x.id === id);
-  return fam && m ? memberText(fam, m, videoTheme(v).theme) : "";
+  return fam && m ? memberText(m, videoTheme(v).theme) : "";
 }
 
 /** 绑定了家庭成员的人偶：“Person 1 is Leo, a 3-year-old boy, …”（衣服跟视频节日） */
@@ -1247,9 +1287,11 @@ function castText(v: ShortVideo, s: ShortShot): string {
   const th = videoTheme(v).theme;
   const who = figuresOf(s.layout).flatMap((f, k) => {
     const m = fam.members.find((x) => x.id === f.memberId);
-    return m ? [`Person ${k + 1} is ${memberText(fam, m, th)}.`] : [];
+    return m ? [`Person ${k + 1} is ${memberText(m, th)}.`] : [];
   });
-  return who.length ? `People (the same real people in every shot of this family; match their age, height, hair and clothes): ${who.join(" ")}` : "";
+  // 家庭的族裔写在家庭资料里：不写的话出图模型会随便挑（车里自拍之外的镜头也一样）
+  const from = fam.about.en.replace(/\s+(in|with)\b.*$/, "").trim();
+  return who.length ? `People (the same real people in every shot of this family; match their age, height, hair and clothes${from ? `; they are ${from}` : ""}): ${who.join(" ")}` : "";
 }
 
 /** 空场景参考图：只有房间和主题布置，没有人、没有产品 */
@@ -1277,11 +1319,18 @@ function soundPrompt(v: Pick<ShortVideo, "sound">, s: Pick<ShortShot, "hook" | "
 
 function videoPromptOf(v: ShortVideo, s: ShortShot): string {
   if (s.hook?.scene === "car")
-    return `${s.motionPrompt.trim()}\nCamera: the phone is held at arm's length by the person in the driver's seat; natural slight hand shake and small drifts, not stabilized.\nThe product does not appear in this clip: no tricycle, bike, stroller or ride-on toy. Same person, wardrobe, car interior and light as the first frame throughout; nobody else appears. Looks like real phone footage for TikTok: natural speed, casual and unposed. No text overlays.\n${soundPrompt(v, s, selfieWho(v, s))}`;
-  const op = s.hook?.selfie ? "" : operatorPrompt(s.operator, s.layout, filmerText(v, s));
+    return `${dropCameraMoves(s.motionPrompt)}\nCamera: the phone is held at arm's length by the person in the driver's seat; natural slight hand shake and small drifts, not stabilized.\nThe product does not appear in this clip: no tricycle, bike, stroller or ride-on toy. Same person, wardrobe, car interior and light as the first frame throughout; nobody else appears. Looks like real phone footage for TikTok: natural speed, casual and unposed. No text overlays.\n${soundPrompt(v, s, selfieWho(v, s))}`;
+  // 画面里没人：产品不能自己动（没人推它）
+  const still = !shotHasPeople(s) && !operatorShows(s.operator, s.layout);
+  const op = s.hook?.selfie || still ? "" : operatorPrompt(s.operator, s.layout, filmerText(v, s));
   const au = soundPrompt(v, s, s.hook?.selfie ? selfieWho(v, s) : filmerText(v, s));
   const sp = specialText(v, s);
-  return `${s.motionPrompt.trim()}\n${sp ? `${sp}\n` : ""}${s.hook?.selfie && s.layout?.move?.kind === "handheld" ? "Camera: the phone is held at arm's length by the person taking the selfie; natural slight hand shake and small drifts, not stabilized." : moveText(s.layout)}\n${op ? `${op}${operatorShows(s.operator, s.layout) ? " Keep what shows of them partly visible and moving naturally through the clip." : ""}\n` : ""}Keep the product's shape, colors and logo exactly as in the first frame. Same people, wardrobe, room and lighting as the first frame throughout; no new people appear. Looks like real phone footage a parent shot for TikTok: natural speed, no slow motion, no smooth cinematic camera glide, casual unposed behavior. No text overlays.${au ? `\n${au}` : ""}`;
+  const motion = dropCameraMoves(s.motionPrompt);
+  const moving = !!s.layout?.move && s.layout.move.kind !== "static";
+  const stay = still
+    ? `The product stands still on the ground for the whole clip: it never rolls, turns, slides or moves by itself, and its wheels do not spin.${moving ? " Only the camera moves." : " Nothing moves except natural ambient motion in the background."}\n`
+    : "";
+  return `${motion ? `${motion}\n` : ""}${sp ? `${sp}\n` : ""}${s.hook?.selfie && s.layout?.move?.kind === "handheld" ? "Camera: the phone is held at arm's length by the person taking the selfie; natural slight hand shake and small drifts, not stabilized." : moveText(s.layout)}\n${op ? `${op}${operatorShows(s.operator, s.layout) ? " Keep what shows of them partly visible and moving naturally through the clip." : ""}\n` : ""}${stay}Keep the product's shape, colors and logo exactly as in the first frame. ${still ? "Same place and lighting as the first frame throughout; no people appear." : "Same people, wardrobe, room and lighting as the first frame throughout; no new people appear."} Looks like real phone footage a parent shot for TikTok: natural speed, no slow motion, no smooth cinematic camera glide, casual unposed behavior. No text overlays.${au ? `\n${au}` : ""}`;
 }
 
 interface Prepared {
@@ -1307,7 +1356,7 @@ async function prepare(videoId: string, shotId: string, kind: JobKind, seconds: 
   const prompt = kind === "video" ? videoPromptOf(v, s) : kind === "scene" ? scenePromptOf(me!) : framePromptOf(v, s);
   if (kind !== "video" && prompt.length > 5000) throw new Error(`提示词 ${prompt.length} 字符，超过 Sunburst 的 5000 上限：先删减场地或镜头的特殊要求`);
   const hash = paramsKey(kind, { prompt, seconds: secs, resolution: kind === "video" ? v.resolution : "", frameJobId: kind === "video" ? s.frameJobId : kind === "scene" ? `${me!.sc.id}:v${me!.ver.v}` : s.compFile });
-  let unit: number = kind === "video" ? VIDEO_USD_PER_SEC[v.resolution] : FRAME_USD_FALLBACK;
+  let unit: number = kind === "video" ? videoUsdPerSec(s, v.resolution) : FRAME_USD_FALLBACK;
   // 估价接口免费；能拿到金额就以它为准
   try {
     const est =
@@ -1388,7 +1437,7 @@ async function frameRefs(v: ShortVideo, s: ShortShot): Promise<string[]> {
   const urls: string[] = [];
   for (const r of refPlan(v, s)) {
     const f = await r.file();
-    if (!f) throw new Error("参考图文件不存在，请重新保存 3D 构图");
+    if (!f) throw new Error("参考图文件不存在：先点「退回构图」，再打开 3D 点「保存」");
     urls.push(await uploadFile(readFile(keyFromPath(f)), "image/png"));
   }
   if (!car && findTemplate(v.templateId).needsPackaging) {
@@ -1396,7 +1445,7 @@ async function frameRefs(v: ShortVideo, s: ShortShot): Promise<string[]> {
     if (!pk.length) throw new Error("开箱视频要先在产品页上传真实包装照片");
     for (const a of pk) urls.push(await uploadFile(readFile(keyFromPath(assetPath(a))), a.mime));
   }
-  for (const f of files) urls.push(await uploadFile(readFile(keyFromPath(f.file)), f.mime));
+  for (const f of files.slice(0, Math.max(1, 16 - urls.length))) urls.push(await uploadFile(readFile(keyFromPath(f.file)), f.mime));
   return urls;
 }
 
@@ -1627,7 +1676,9 @@ async function runInBackground(key: string, videoId: string, shotId: string, kin
               const f = getJob(p.s.frameJobId!);
               const fp = f && jobFilePath(f);
               if (!f || !fp || !fs.existsSync(fp)) throw new Error("首帧文件不存在");
-              const a: ArkVideoInput = { prompt: p.prompt, first_frame_file: fp, first_frame_mime: f.outputMime ?? "image/png", duration: p.seconds, resolution: p.v.resolution, generate_audio: shotSound(p.v, p.s) };
+              const audio = shotSound(p.v, p.s);
+              if (shotHasPeople(p.s)) return { prompt: p.prompt, image_url: await uploadFile(fs.readFileSync(fp), f.outputMime ?? "image/png"), duration: p.seconds, resolution: p.v.resolution, generate_audio: audio };
+              const a: ArkVideoInput = { prompt: p.prompt, first_frame_file: fp, first_frame_mime: f.outputMime ?? "image/png", duration: p.seconds, resolution: p.v.resolution, generate_audio: audio };
               return { ...a };
             })()
           : kind === "scene"
@@ -1641,7 +1692,7 @@ async function runInBackground(key: string, videoId: string, shotId: string, kin
         videoId,
         shotId,
         kind,
-        model: kind === "video" ? VIDEO_MODEL : FRAME_MODEL,
+        model: kind === "video" ? videoModelOf(p.s) : FRAME_MODEL,
         input,
         paramsHash: p.hash,
         seconds: p.seconds,

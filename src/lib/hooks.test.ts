@@ -14,8 +14,8 @@ test("字幕按属性填，空值不留残渣", () => {
   const price = PRESET_HOOKS[0];
   const v = cleanHookValues(price, { price: "$49.99" });
   assert.equal(v.price, "$49.99");
-  assert.equal(v.was, "$89.99");
-  assert.equal(fillCaption(price.caption, v, "KRIDDO"), "Black Friday deal: $49.99 (was $89.99)");
+  assert.equal(v.was, "", "示例值不能当真价格");
+  assert.equal(fillCaption(price.caption, { ...v, was: "$89.99", deal: "Black Friday deal" }, "KRIDDO"), "Black Friday deal: $49.99 (was $89.99)");
   assert.equal(fillCaption("{deadline} · {stock}", { deadline: "Ends tonight", stock: "" }, ""), "Ends tonight");
   assert.equal(fillCaption("{vs} vs {product}", { vs: "a metal trike" }, "KRIDDO TC003"), "a metal trike vs KRIDDO TC003");
 });

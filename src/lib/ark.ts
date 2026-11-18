@@ -92,25 +92,58 @@ export interface ArkVideoInput {
   generate_audio: boolean;
 }
 
+/** 首帧压成 ≤1080×1920 的 JPEG 再发：原图 PNG 约 6MB，从国外上传到北京常常 2 分钟都传不完 */
+async function firstFrameDataUrl(file: string): Promise<string> {
+  const sharp = (await import("sharp")).default;
+  const jpg = await sharp(fs.readFileSync(file))
+    .resize({ width: 1080, height: 1920, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 90 })
+    .toBuffer();
+  return `data:image/jpeg;base64,${jpg.toString("base64")}`;
+}
+
+/** 提交时连接断了：查一下方舟这段时间有没有新建任务（免费）。只有一个就接着用它，一个都没有说明没提交上 */
+async function findSubmitted(sinceSec: number): Promise<string | "none" | null> {
+  try {
+    const r = (await ark("/contents/generations/tasks?page_num=1&page_size=10", { timeoutMs: 30_000 })) as {
+      items?: { id: string; created_at: number }[];
+    } | null;
+    const hits = (r?.items ?? []).filter((t) => t.created_at >= sinceSec);
+    return hits.length === 1 ? hits[0].id : hits.length === 0 ? "none" : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function arkSubmitVideo(model: string, input: ArkVideoInput): Promise<{ request_id: string }> {
   if (!fs.existsSync(input.first_frame_file)) throw new ArkError("首帧文件不存在", 400);
-  const b64 = fs.readFileSync(input.first_frame_file).toString("base64");
-  const r = (await ark("/contents/generations/tasks", {
-    method: "POST",
-    timeoutMs: 120_000,
-    body: {
-      model,
-      content: [
-        { type: "text", text: input.prompt },
-        { type: "image_url", image_url: { url: `data:${input.first_frame_mime.toLowerCase()};base64,${b64}` }, role: "first_frame" },
-      ],
-      resolution: input.resolution,
-      ratio: "9:16",
-      duration: input.duration,
-      generate_audio: input.generate_audio,
-      watermark: false,
-    },
-  })) as { id?: string } | null;
+  const url = await firstFrameDataUrl(input.first_frame_file);
+  const since = Math.floor(Date.now() / 1000) - 5;
+  let r: { id?: string } | null;
+  try {
+    r = (await ark("/contents/generations/tasks", {
+      method: "POST",
+      timeoutMs: 180_000,
+      body: {
+        model,
+        content: [
+          { type: "text", text: input.prompt },
+          { type: "image_url", image_url: { url }, role: "first_frame" },
+        ],
+        resolution: input.resolution,
+        // 首帧生视频时方舟按首帧的比例出片，传 ratio 会被拒
+        duration: input.duration,
+        generate_audio: input.generate_audio,
+        watermark: false,
+      },
+    })) as { id?: string } | null;
+  } catch (e) {
+    if (e instanceof ArkError && e.status) throw e;
+    const found = await findSubmitted(since);
+    if (found === "none") throw new ArkError("连不上火山方舟，这次没提交上，不收费：检查网络后再点一次", 408);
+    if (found) return { request_id: found };
+    throw e;
+  }
   if (!r?.id) throw new ArkError("方舟没有返回任务 ID");
   return { request_id: r.id };
 }

@@ -49,6 +49,10 @@ import {
   MAX_USD_PER_SECOND,
   STAGE_LABELS,
   VIDEO_MIN_SEC,
+  HF_VIDEO_USD_PER_SEC,
+  shotHasPeople,
+  videoModelLabel,
+  videoUsdPerSec,
   VIDEO_USD_PER_SEC,
   type GenJob,
   type JobKind,
@@ -223,7 +227,7 @@ export function ShortStudio({
   const hookList = hooksOf(v);
   const exp = v.exportHooks?.length ? v.exportHooks : hookList[0] ? [hookList[0].id] : [];
   const plan =
-    shots.length * 0.1 + plannedGen * VIDEO_USD_PER_SEC[v.resolution];
+    shots.length * 0.1 + shots.reduce((a, x) => a + x.genSeconds * videoUsdPerSec(x, v.resolution), 0);
   const jobsOf = (shotId: string) => st.jobs.filter((j) => j.shotId === shotId);
   const inflight = st.jobs.filter(
     (j) => j.status === "submitting" || j.status === "submitted",
@@ -504,7 +508,7 @@ export function ShortStudio({
               {(Object.keys(VIDEO_USD_PER_SEC) as VideoResolution[]).map(
                 (r) => (
                   <option key={r} value={r}>
-                    {r} · ${VIDEO_USD_PER_SEC[r]}/秒
+                    {r} · ${VIDEO_USD_PER_SEC[r]}–${HF_VIDEO_USD_PER_SEC[r]}/秒
                   </option>
                 ),
               )}
@@ -608,7 +612,7 @@ export function ShortStudio({
 
       {msg ? (
         <p
-          className={`rounded-md px-3 py-2 text-sm ${msg.tone === "err" ? "bg-rose-500/15 text-rose-200" : "bg-emerald-500/15 text-emerald-200"}`}
+          className={`fixed bottom-6 left-1/2 z-50 max-w-xl -translate-x-1/2 rounded-md px-3 py-2 text-sm shadow-lg shadow-black/50 ${msg.tone === "err" ? "bg-rose-500/15 text-rose-200" : "bg-emerald-500/15 text-emerald-200"}`}
         >
           {msg.text}
         </p>
@@ -626,7 +630,7 @@ export function ShortStudio({
       ) : null}
       {!arkReady ? (
         <p className="rounded-md bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
-          尚未配置火山方舟 Key：生成视频不可用，到「模型设置」填写。
+          尚未配置火山方舟 Key：只拍产品的镜头生成不了视频，到「模型设置」填写。
         </p>
       ) : null}
       {productPhotos === 0 ? (
@@ -869,7 +873,7 @@ export function ShortStudio({
                 : dirty
                   ? "有没保存的修改：先点「保存分镜」，下面的按钮才能点"
                   : s.stage === "draft"
-                    ? saved?.compFile
+                    ? saved?.compFile || s.hook?.scene === "car"
                       ? "下一步：① 确认构图（免费）"
                       : "下一步：先在场地地图摆好机位，点「保存机位 + 3D 构图」"
                     : s.stage === "comp_ok"
@@ -911,14 +915,14 @@ export function ShortStudio({
                       ＋ 照抄第一个开头
                     </button>
                     <button className={btn} disabled={busy || dirty || !hookLib.length} title={dirty ? "先保存分镜" : ""} onClick={() => setHookPanel({})}>
-                      用 Hook 库的套路做开头
+                      ＋ 用 Hook 库加一个开头
                     </button>
                     </span>
                   </li>
                 ) : null,
                 i === 0 && hookPanel ? (
                   <li key="h-panel" className="col-span-full">
-                    <HookPanel onBgCapture={setBgCap} cast={cast} themePicker={themeSelect} key={hookPanel.shotId ?? "new"} videoId={v.id} lib={hookLib} shot={hookPanel.shotId ? v.shots.find((x) => x.id === hookPanel.shotId) : undefined} targetId={hookPanel.shotId ? undefined : hookList[0]?.id} setHref={(id) => `/projects/${v.projectId}/shorts/${v.id}/set?shot=${id}&capture=1`} onDone={apply} onClose={() => setHookPanel(null)} />
+                    <HookPanel onBgCapture={setBgCap} cast={cast} themePicker={themeSelect} key={hookPanel.shotId ?? "new"} videoId={v.id} lib={hookLib} shot={hookPanel.shotId ? v.shots.find((x) => x.id === hookPanel.shotId) : undefined} targetId={undefined} setHref={(id) => `/projects/${v.projectId}/shorts/${v.id}/set?shot=${id}&capture=1`} onDone={apply} onClose={() => setHookPanel(null)} />
                   </li>
                 ) : null,
                 !s.hook && i === firstBody ? (
@@ -1000,7 +1004,7 @@ export function ShortStudio({
               >
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <ol className="flex flex-wrap gap-1 text-xs">
-                    {["写内容", "3D 摆位 + 机位", "首帧", "视频 → 采用"].map((label, k) => (
+                    {["写内容", s.hook?.scene === "car" ? "确认画面（车里，不用 3D）" : "3D 摆位 + 机位", "首帧", "视频 → 采用"].map((label, k) => (
                       <li
                         key={label}
                         className={`rounded-full px-3 py-1 ${k + 1 < stepNo ? "bg-emerald-500/15 text-emerald-200" : k + 1 === stepNo ? "bg-amber-400 text-black" : "bg-white/5 text-neutral-500"}`}
@@ -1171,7 +1175,9 @@ export function ShortStudio({
                     {s.hook?.partOf
                       ? "字幕（第二段不用：开头的字幕跨两段连着放）"
                       : hookEffectOf(s.hook)
-                        ? `字幕（英文，出片时按 Hook 效果烧进开头：${effectDef(hookEffectOf(s.hook))?.label ?? ""}）`
+                        ? hookEffectOf(s.hook) === "talkWords"
+                          ? "切镜后顶部的卖点（英文；中下方的跟读字幕自动用自拍台词）"
+                          : `字幕（英文，出片时按 Hook 效果烧进开头：${effectDef(hookEffectOf(s.hook))?.label ?? ""}）`
                         : s.hook
                           ? "字幕（英文，这个开头没选 Hook 效果，出片不烧）"
                           : "字幕（英文，正文出片不烧，只作参考）"}
@@ -1430,7 +1436,7 @@ export function ShortStudio({
                       ) : null}
                       {s.stage === "frame_ready" ? (
                         <span className="self-center text-xs text-amber-300">
-                          对照 3D 构图：机位、产品朝向、大小一致才算通过
+                          {s.hook?.scene === "car" ? "对照选的人：是 TA、坐在车里、画面里没有三轮车才算通过" : "对照 3D 构图：机位、产品朝向、大小一致才算通过"}
                         </span>
                       ) : null}
                       {(() => {
@@ -1521,7 +1527,7 @@ export function ShortStudio({
                         disabled={
                           busy ||
                           dirty ||
-                          !arkReady ||
+                          (!arkReady && !shotHasPeople(s)) ||
                           wait > 0 ||
                           runBusy ||
                           (s.hook?.selfie && !s.hook.line?.trim())
@@ -1532,6 +1538,9 @@ export function ShortStudio({
                       </button>
                       ) : null}
                       {gate("accept", "采用", s.stage === "video_ready")}
+                      {s.stage === "video_ready" && (s.issues ?? []).some((x) => x.status === "open") ? (
+                        <span className="text-xs text-amber-300">先在下面逐条点「已解决」或「仍存在」，才能采用</span>
+                      ) : null}
                       {s.stage === "video_ready" || s.stage === "accepted" ? (
                       <button
                         className={btn}
@@ -1709,15 +1718,34 @@ export function ShortStudio({
         </ol>
       </section>
 
-      {focus ? null : (
+      {(
       <section className="rounded-xl border border-white/10 bg-neutral-900/70 p-4">
         <h2 className="mb-2 text-sm font-semibold text-amber-300/90">
           预览与导出（免费，本机合成）
         </h2>
         <p className="mb-2 text-xs text-neutral-500">
-          每个勾选的开头各出一条「开头 + 正文」，裁成 1080×1920，不加字幕（字幕在后期加）。
+          每个勾选的开头各出一条「开头 + 正文」，裁成 1080×1920。
           {exp.length ? ` 现在勾选了：${hookList.filter((h) => exp.includes(h.id)).map((h) => h.hook?.name).join("、")}。` : ""}
         </p>
+        <label className="mb-1 flex items-center gap-2 text-sm text-neutral-200">
+          <input
+            type="checkbox"
+            checked={v.captions !== false}
+            disabled={busy || dirty}
+            onChange={(e) => act(() => saveShortVideoAction(v.id, { captions: e.target.checked }))}
+          />
+          整条视频加字幕（开头按 Hook 效果，正文用同款样式）
+        </label>
+        {v.captions !== false && shots.some((s) => !s.hook && !s.caption.trim()) ? (
+          <p className="mb-2 flex flex-wrap items-center gap-2 text-xs text-amber-300">
+            这几镜的字幕还空着，导出时不显示：
+            {shots.filter((s) => !s.hook && !s.caption.trim()).map((s) => (
+              <button key={s.id} className="underline hover:text-amber-100" onClick={() => setFocus(s.id)}>
+                #{shots.indexOf(s) + 1}
+              </button>
+            ))}
+          </p>
+        ) : null}
         <button
           className={primary}
           disabled={busy || !v.shots.some((s) => s.stage === "accepted")}
@@ -1942,7 +1970,7 @@ function Approval({
           <p className="text-neutral-400">估价中（免费）…</p>
         ) : (
           <div className="space-y-1 rounded-lg border border-white/10 p-3 text-xs">
-            {row("模型", q.model)}
+            {row("模型", videoModelLabel(q.model))}
             {row("分辨率", q.resolution)}
             {pending.kind === "video" ? row("时长", `${q.seconds} 秒`) : null}
             {row(

@@ -103,6 +103,15 @@ export function cleanHookPeople(raw: unknown, members: FamilyMember[] | undefine
       ...(action ? { action, actionEn: actionEn || undefined } : {}),
     });
   }
+  // 规则：只有一个大人出镜时首选妈妈（她在拿手机拍、或家里没有妈妈时除外）
+  const adults = people.filter((x) => x.kind === "adult");
+  const mom = members?.find((y) => y.role === "mom");
+  if (adults.length === 1 && mom && mom.id !== filmer && adults[0].memberId !== mom.id && !used.has(mom.id)) {
+    const was = members?.find((y) => y.id === adults[0].memberId)?.name ?? "大人";
+    adults[0].memberId = mom.id;
+    adults[0].h = mom.heightCm / 100;
+    dropped.push(`只有一个大人出镜，按规则换成妈妈 ${mom.name}（原来是 ${was}）`);
+  }
   return { people, dropped };
 }
 

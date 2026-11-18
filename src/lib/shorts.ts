@@ -16,6 +16,16 @@ export const FRAME_MODEL = "marketing-studio/image/sunburst";
 /** 方舟官方价估算（美元/秒）：70 元/百万 token × 宽×高×24 帧/1024，按 7.1 换汇；完成后按方舟返回的实际 token 记账 */
 export const VIDEO_USD_PER_SEC = { "480p": 0.0958, "720p": 0.213 } as const;
 export type VideoResolution = keyof typeof VIDEO_USD_PER_SEC;
+/** 方舟 Seedance 2.x 不收含真人脸的首帧：画面有人的镜头走 Higgsfield（同一个 Seedance 2.5），只拍产品的走方舟 */
+export const HF_VIDEO_MODEL = "bytedance/seedance-2.5/image-to-video";
+export const HF_VIDEO_USD_PER_SEC = { "480p": 0.1177, "720p": 0.2647 } as const;
+export function shotHasPeople(s: Pick<ShortShot, "hook" | "layout">): boolean {
+  return s.hook?.scene === "car" || !!s.hook?.selfie || (s.layout?.figures?.length ?? 0) > 0;
+}
+export const videoModelOf = (s: Pick<ShortShot, "hook" | "layout">) => (shotHasPeople(s) ? HF_VIDEO_MODEL : VIDEO_MODEL);
+export const videoUsdPerSec = (s: Pick<ShortShot, "hook" | "layout">, r: VideoResolution) => (shotHasPeople(s) ? HF_VIDEO_USD_PER_SEC : VIDEO_USD_PER_SEC)[r];
+export const videoModelLabel = (model: string) =>
+  model === VIDEO_MODEL ? "火山方舟 Seedance 2.5（只拍产品）" : model === HF_VIDEO_MODEL ? "Higgsfield Seedance 2.5（画面有人：方舟不收真人脸）" : model;
 export const VIDEO_MIN_SEC = 4;
 export const VIDEO_MAX_SEC = 12;
 /** Sunburst 首帧实测平均约 $0.10/张；估价接口能返回金额时以接口为准 */
@@ -204,6 +214,8 @@ export interface ShortVideoData {
   budgetUsd: number | null;
   /** 导出时要出的开头（shot id）；空 = 第一个开头 */
   exportHooks?: string[];
+  /** 导出时整条视频加字幕（开头按 Hook 效果，正文同款样式）；默认开 */
+  captions?: boolean;
   /** 旧数据已迁移：第 1 镜标成开头「原版」 */
   hooksReady?: boolean;
   /** 产品颜色款（产品资料里的 product_colors）；空 = 原色 */
@@ -399,7 +411,7 @@ export function quoteJob(q: QuoteInput): Quote {
 
   return {
     kind,
-    model: kind === "video" ? VIDEO_MODEL : FRAME_MODEL,
+    model: kind === "video" ? videoModelOf(shot) : FRAME_MODEL,
     seconds: kind === "video" ? q.seconds : 0,
     resolution: kind === "video" ? video.resolution : "2k 竖版",
     unitUsd: q.unitUsd,

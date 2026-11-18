@@ -154,6 +154,26 @@ export function moveText(l: SetLayout | null | undefined): string {
   return map[m.kind];
 }
 
+const CAMERA_MOVE =
+  /\b(push(es|ed|ing)?[- ]?in|pull(s|ed|ing)?[- ]?(back|out)|zoom(s|ed|ing)?|dolly|dollies|orbit(s|ed|ing)?|crane(s|d)?|tracking shot|camera (slowly |gently )?(moves|glides|drifts|circles|rotates|follows|rises|lowers|pushes|pulls|tracks|pans|tilts))\b/i;
+
+/** 运镜只听「运镜」选项：动作文字里写的推近、环绕等删掉。两边打架时（镜头不让动又要推近），模型会让产品自己动 */
+export function dropCameraMoves(text: string): string {
+  return text
+    .trim()
+    .split(/(?<=[.!?])\s+/)
+    .map((sen) =>
+      sen
+        .split(/,\s*/)
+        .filter((c) => !CAMERA_MOVE.test(c))
+        .join(", ")
+        .trim(),
+    )
+    .filter((x) => x && !/^[.,!?\s]+$/.test(x))
+    .map((x) => (/[.!?]$/.test(x) ? x : `${x}.`))
+    .join(" ");
+}
+
 /** 写进首帧提示词的机位（英文），和 3D 构图图一起交给 AI */
 export function layoutText(l: SetLayout): string {
   // 和 3D 摆位描述同一算法：产品中部（离地 0.3 米）沿镜头方向的深度

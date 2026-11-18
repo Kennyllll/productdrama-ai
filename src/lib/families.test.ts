@@ -2,7 +2,7 @@ import { filmerId, filmerScale } from "@/lib/families";
 import { operatorPrompt } from "@/lib/shorts-operator";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanFamily, memberKind, memberText, PRESET_FAMILIES } from "@/lib/families";
+import { cleanFamily, DAILY, memberKind, memberText, portraitFor, portraitState, PRESET_FAMILIES, WEAR_THEMES, type FamilyMember } from "@/lib/families";
 import { cleanFigures, figureDims, KB002_RIG, presetPose, rideOf } from "@/lib/figures";
 
 test("人偶按成员身高缩放：站姿髋部跟身高走", () => {
@@ -34,8 +34,8 @@ test("预置 4 家 14 人，成员提示词带名字和节日衣服", () => {
   const miller = PRESET_FAMILIES[0];
   const leo = miller.members.find((m) => m.id === "leo")!;
   assert.equal(memberKind(leo), "child");
-  assert.match(memberText(miller, leo, "christmas"), /^Leo, a 3-year-old boy, light brown curly hair, wearing matching red plaid Christmas pajamas$/);
-  assert.match(memberText(miller, leo, "none"), /wearing a blue long-sleeve tee/);
+  assert.match(memberText(leo, "christmas"), /^Leo, a 3-year-old boy, light brown curly hair, wearing a red sweater with a reindeer pattern and navy pants$/);
+  assert.match(memberText(leo, "none"), /wearing a blue long-sleeve tee/);
   assert.equal(cleanFamily({ name: "" }), null);
   assert.equal(cleanFamily({ name: "X", members: [{ id: "BAD ID", name: "a" }] })!.members.length, 0);
 });
@@ -49,4 +49,31 @@ test("拿手机的人：镜头优先，none = 不指定；提示词写成员，�
   assert.equal(filmerScale(undefined), 1);
   assert.match(operatorPrompt("stand", null, "Emily, a 32-year-old woman"), /holding the phone and filming is Emily/);
   assert.doesNotMatch(operatorPrompt("stand", null), /Emily|holding the phone and filming is/);
+});
+
+test("节日衣服每人一套：预置每家每个节日人人不同；旧的整家同款分给没写的人", () => {
+  for (const f of PRESET_FAMILIES)
+    for (const t of WEAR_THEMES) {
+      const ens = f.members.map((m) => m.themeWear[t.id]?.en);
+      assert.ok(ens.every(Boolean), `${f.name} ${t.id} 有人没写`);
+      assert.equal(new Set(ens).size, ens.length, `${f.name} ${t.id} 有人撞款`);
+    }
+  const c = cleanFamily({ name: "X", themeWear: { christmas: { zh: "睡衣", en: "pajamas" } }, members: [{ id: "a", name: "A" }, { id: "b", name: "B", themeWear: { christmas: { zh: "毛衣", en: "a sweater" } } }] })!;
+  assert.equal(c.members[0].themeWear.christmas.en, "pajamas");
+  assert.equal(c.members[1].themeWear.christmas.en, "a sweater");
+  assert.equal("themeWear" in c, false);
+});
+
+test("定妆照：长相改了作废；节日用自己那张，没有就拿平时那张只认脸", () => {
+  const leo: FamilyMember = structuredClone(PRESET_FAMILIES[0].members.find((m) => m.id === "leo")!);
+  assert.equal(portraitFor(leo, "christmas"), null);
+  leo.portraits = { [DAILY]: { file: "d.png", usd: 0.1, at: "", look: leo.look.en, wear: leo.wear.en } };
+  assert.equal(portraitState(leo, leo.portraits[DAILY], DAILY), "ok");
+  assert.deepEqual(portraitFor(leo, "christmas"), { p: leo.portraits[DAILY], outfit: false });
+  assert.equal(portraitFor(leo, "none")!.outfit, true);
+  leo.portraits.christmas = { file: "c.png", usd: 0.1, at: "", look: leo.look.en, wear: leo.themeWear.christmas.en };
+  assert.equal(portraitFor(leo, "christmas")!.p.file, "c.png");
+  assert.equal(portraitFor(leo, "christmas")!.outfit, true);
+  leo.look = { zh: "黑发", en: "black hair" };
+  assert.equal(portraitFor(leo, "christmas"), null);
 });

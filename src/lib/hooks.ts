@@ -15,6 +15,8 @@ export interface HookField {
   example: string;
   /** true = 影响画面（改了要重做）；false = 只进字幕（改了免费） */
   visual: boolean;
+  /** 选填（例如赠品）；其余都必填：示例只当提示，不能当真值（价格、卖点不能编） */
+  optional?: boolean;
 }
 
 export interface HookData {
@@ -84,7 +86,7 @@ export function cleanHookData(x: unknown): HookData | null {
   if (!name) return null;
   const seen = new Set<string>();
   const fields = (Array.isArray(d.fields) ? d.fields : [])
-    .map((f) => ({ key: s(f?.key, 30).replace(/[^\w]/g, ""), label: s(f?.label, 30), example: s(f?.example, 200), visual: Boolean(f?.visual) }))
+    .map((f) => ({ key: s(f?.key, 30).replace(/[^\w]/g, ""), label: s(f?.label, 30), example: s(f?.example, 200), visual: Boolean(f?.visual), ...(f?.optional ? { optional: true } : {}) }))
     .filter((f) => f.key && f.label && !seen.has(f.key) && f.key !== "product" && seen.add(f.key))
     .slice(0, 8);
   const sec = Number(d.seconds);
@@ -104,9 +106,9 @@ export function cleanHookData(x: unknown): HookData | null {
   };
 }
 
-/** 视频里填的属性值：只留这个 hook 有的属性，没填用示例值 */
+/** 视频里填的属性值：只留这个 hook 有的属性；没填就是空，示例值只当提示 */
 export const cleanHookValues = (lib: Pick<HookData, "fields">, values: Record<string, string> | undefined): Record<string, string> =>
-  Object.fromEntries(lib.fields.map((f) => [f.key, (typeof values?.[f.key] === "string" ? values[f.key] : f.example).trim().slice(0, 200)]));
+  Object.fromEntries(lib.fields.map((f) => [f.key, (typeof values?.[f.key] === "string" ? values[f.key] : "").trim().slice(0, 200)]));
 
 export function fillCaption(tpl: string, values: Record<string, string>, product: string): string {
   return tpl
@@ -134,7 +136,7 @@ export const PRESET_HOOKS: HookData[] = [
       { key: "price", label: "现价", example: "$59.99", visual: false },
       { key: "was", label: "原价", example: "$89.99", visual: false },
       { key: "deal", label: "优惠说法", example: "Black Friday deal", visual: false },
-      { key: "gift", label: "赠品（画面里会出现）", example: "", visual: true },
+      { key: "gift", label: "赠品（画面里会出现）", example: "", visual: true, optional: true },
     ],
   },
   {
@@ -226,6 +228,6 @@ export const PRESET_HOOKS: HookData[] = [
     scene: "car",
     stage: { dist: 1.8, camH: 1.4, lens: 24, view: "front34", people: [] },
     second: { seconds: 2, about: "切到产品特写：产品斜前方近拍，完整清楚，画面里没有人", stage: { dist: 1.2, camH: 0.8, lens: 35, view: "front34", people: [] } },
-    fields: [{ key: "point", label: "切镜后顶部的卖点", example: "Folds flat in seconds", visual: false }],
+    fields: [{ key: "point", label: "切镜后顶部的卖点（必填，只写真有的）", example: "", visual: false }],
   },
 ];

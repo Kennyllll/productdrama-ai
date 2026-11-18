@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Card, PageHeader } from "@/components/ui";
 import { DeleteProjectButton, NewProjectForm } from "@/components/workbench/NewProjectForm";
 import { getProductModel } from "@/lib/model-repo";
+import { listFamilyLedger } from "@/lib/families-repo";
 import { listLedger } from "@/lib/production-repo";
 import { countAssets, getProduct, listLocalProjects } from "@/lib/repo";
 import { listShortVideos } from "@/lib/shorts-repo";
@@ -78,6 +79,12 @@ export default function DashboardPage() {
         <div>
           <Card title="新建产品">
             <NewProjectForm />
+          </Card>
+          <Card title="家庭库" className="mt-6">
+            <p className="text-sm text-neutral-300">定妆照花费 {usd(listFamilyLedger().reduce((s, e) => s + e.usd, 0))}（不算进上面任何产品）</p>
+            <Link href="/families" className="mt-2 inline-block text-sm text-amber-300 underline">
+              打开家庭库和账本
+            </Link>
           </Card>
         </div>
       </div>
