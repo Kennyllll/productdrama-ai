@@ -82,6 +82,10 @@ import {
   type JobRecord,
 } from "@/lib/shorts-repo";
 import { runKey, runningOf, runs, type RunInfo } from "@/lib/shorts-runs";
+import { requireAdmin } from "@/lib/admin";
+import { applyBudgetChange } from "@/lib/budget-change";
+import { missingBody } from "@/lib/spend";
+import { auditJobEnd, auditStage, auditSubmit, gateOverLimit, recordExport, trashCleared, trashReplaced, trashShortVideo, trashShots } from "@/lib/short-audit";
 import { getRig } from "@/lib/product-rig-repo";
 import { castOf, getFamily, portraitPath } from "@/lib/families-repo";
 import { memberKind, memberText, filmerId, portraitFor, type FamilyMember } from "@/lib/families";
@@ -163,6 +167,7 @@ export async function deleteShortVideoAction(videoId: string): Promise<Result<tr
   try {
     const v = load(videoId);
     if (listJobs(videoId).some((j) => j.status === "submitting" || j.status === "submitted")) throw new Error("还有任务在生成中，等结束再删");
+    await trashShortVideo(v);
     deleteShortVideo(videoId);
     revalidatePath(`/projects/${v.projectId}/shorts`);
     return { result: true };
@@ -269,6 +274,7 @@ export async function saveShortVideoAction(
       const next = patch.shots.slice(0, 16).map((s) => cleanShot(s, old.find((p) => p.id === s.id)));
       // 开头被删了，它切镜后的第二段也一起删，不留看不见的镜头
       const kept = next.filter((s) => !s.hook?.partOf || next.some((x) => x.id === s.hook!.partOf));
+      await trashShots(v, v.shots.filter((s) => !kept.some((k) => k.id === s.id)), "删除镜头");
       v.shots = [...kept.filter((s) => s.hook), ...kept.filter((s) => !s.hook)];
       v.hooksReady = true;
       // 文字改过（或第一次保存）：记下这份文字对应的 3D
@@ -404,7 +410,8 @@ export async function adoptHookAction(videoId: string, libId: string, values: Re
     const s = old
       ? cleanShot({ ...old, ...text, hook, caption }, old)
       : cleanShot({ ...(base ?? {}), ...text, id: undefined, hook, caption, beat: "开头", useSeconds: lib.seconds, trimStart: 0, checkNote: "" });
-    // 重写剧本：旧首帧 / 视频和新文字对不上，从卡片上摘掉（生成记录还在历史里）
+    // 重写剧本：旧首帧 / 视频和新文字对不上，从卡片上摘掉（进回收站，可恢复）
+    if (old) await trashCleared(v, old, "重写开头剧本");
     s.frameJobId = null;
     s.frameCheck = undefined;
     s.videoJobId = null;
@@ -576,6 +583,7 @@ export async function setHookValuesAction(videoId: string, shotId: string, value
 /** 把改好属性的开头另存成 Hook 库里的新 Hook（示例值换成这条视频填的值，免费） */
 export async function saveHookAsLibAction(videoId: string, shotId: string, name: string): Promise<Result<string>> {
   try {
+    await requireAdmin();
     const v = load(videoId);
     const h = v.shots.find((x) => x.id === shotId)?.hook;
     const lib = h?.libId ? getHook(h.libId) : null;
@@ -599,6 +607,7 @@ export async function deleteHookShotAction(videoId: string, shotId: string): Pro
     const gone = s.hook.partOf ? [s] : hookParts(v, s);
     if (gone.some((x) => x.stage === "accepted")) throw new Error("这个开头已采用：先点“退回返工”再删");
     if (listJobs(videoId).some((j) => gone.some((x) => x.id === j.shotId) && (j.status === "submitting" || j.status === "submitted"))) throw new Error("这个开头正在生成，等生成完再删");
+    await trashShots(v, gone, "删除开头");
     v.shots = v.shots.filter((x) => !gone.includes(x));
     v.exportHooks = (v.exportHooks ?? []).filter((x) => x !== shotId);
     saveShortVideo(v);
@@ -817,15 +826,11 @@ export async function setVideoThemeAction(videoId: string, theme: string, themeT
 }
 
 /** 用户主动调整预算；不能低于已花费 */
-export async function setBudgetAction(videoId: string, usd: number | null): Promise<Result<StudioState>> {
+/** 改预算：降低随时可以；提高要管理员 PIN + 原因（规则和日志在 budget-change.ts） */
+export async function setBudgetAction(videoId: string, usd: number | null, reason = "", pin = "", bigOk = false): Promise<Result<StudioState>> {
   try {
     const v = load(videoId);
-    const spent = listJobs(videoId)
-      .filter((j) => !j.isTest)
-      .reduce((s, j) => s + (j.status === "failed" ? 0 : (j.actualUsd ?? j.estUsd)), 0);
-    if (usd !== null && (!Number.isFinite(usd) || usd < spent)) throw new Error(`预算不能低于已花费 $${spent.toFixed(2)}`);
-    v.budgetUsd = usd === null ? null : Math.round(usd * 100) / 100;
-    saveShortVideo(v);
+    await applyBudgetChange(v, usd, reason, pin, bigOk);
     refresh(v);
     return { result: state(videoId) };
   } catch (e) {
@@ -1018,6 +1023,7 @@ export async function shotStageAction(videoId: string, shotId: string, action: S
     }
     if (note.trim()) s.checkNote = note.trim().slice(0, 400);
     saveShortVideo(v);
+    await auditStage(v, s, action, note);
     refresh(v);
     return { result: state(videoId) };
   } catch (e) {
@@ -1825,7 +1831,9 @@ export async function runJobAction(
     const key = runKey(videoId, shotId);
     const cur = runs.get(key);
     if (cur && !cur.error) throw new Error("这一镜正在生成，等它完成");
+    const approval = overLimit ? gateOverLimit(videoId, shotId, kind, p.quote.costUsd) : "";
     runs.set(key, { kind, startedAt: Date.now(), step: "prep" });
+    await auditSubmit(p.v, p.s, kind, p.quote.costUsd, kind === "video" ? videoModelOf(p.s) : FRAME_MODEL, reason, approval);
     void runInBackground(key, videoId, shotId, kind, p, reason);
     return { result: state(videoId) };
   } catch (e) {
@@ -1940,6 +1948,7 @@ async function drive(job: JobRecord): Promise<void> {
       saveJobOutput(job, bytes, ext, mime);
       const usd = isArkModel(job.model) && r.tokens ? Math.round(arkUsd(r.tokens) * 10000) / 10000 : job.estUsd;
       updateJob(job.id, { status: "completed", actualUsd: usd, error: null });
+      auditJobEnd({ ...job, requestId }, true, usd);
       const v = getShortVideo(job.videoId);
       const s = v?.shots.find((x) => x.id === job.shotId);
       if (v && s && job.kind === "scene") {
@@ -1951,6 +1960,7 @@ async function drive(job: JobRecord): Promise<void> {
         }
         addLedgerEntry({ projectId: job.projectId, shotCode: `${v.title} / 场地参考`, kind: "first_frame", model: job.model, usd, note: `短视频 · 场地空场景参考图${me ? ` · ${me.sc.name} v${me.ver.v}` : ""}` });
       } else if (v && s) {
+        trashReplaced(v, s, job);
         if (job.kind === "frame") {
           s.frameJobId = job.id;
           s.stage = "frame_ready";
@@ -1977,6 +1987,7 @@ async function drive(job: JobRecord): Promise<void> {
     }
     if (r.status === "failed" || r.status === "nsfw" || r.status === "canceled") {
       updateJob(job.id, { status: "failed", actualUsd: 0, error: r.status === "nsfw" ? "内容被审核拦截（不收费）" : `生成失败（不收费）${r.error ? `：${r.error}` : ""}` });
+      auditJobEnd(job, false, 0, r.status === "nsfw" ? "内容被审核拦截" : (r.error ?? "生成失败"));
       throw new HiggsfieldError(r.status === "nsfw" ? "内容被审核拦截（不收费），请调整画面描述" : "生成失败（不收费），可调整后重试");
     }
     if (Date.now() > end) throw new HiggsfieldError("还在生成中，任务已保存；稍后点“继续等待”，不会重复扣费");
@@ -2008,10 +2019,13 @@ export async function renderShortAction(videoId: string, preview = false): Promi
     );
     if (formalErr) throw new Error(formalErr);
     if (notReady.length) throw new Error(`这些开头还没采用：${notReady.map((h) => h.hook?.name).join("、")}`);
-    if (!picked.length) await renderShort(v);
+    const gap = missingBody(v);
+    if (gap.length) throw new Error(`正文还有镜头没采用：${gap.join("、")}。全部采用后才能正式导出`);
+    if (!picked.length) await recordExport(v, null, await renderShort(v));
     for (const [k, h] of picked.entries()) {
       const out = await renderShort(v, hookFinalPath(v, h.id), h.id);
       if (k === 0) fs.copyFileSync(out, finalPath(v));
+      await recordExport(v, h, out);
     }
     saveShortVideo(v);
     refresh(v);

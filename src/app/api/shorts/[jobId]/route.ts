@@ -1,6 +1,7 @@
 import { fileResponse } from "@/lib/file-response";
 import path from "node:path";
 import { previewPath } from "@/lib/export-paths";
+import { getExportVersion, versionPath } from "@/lib/export-versions-repo";
 import { finalPath, getJob, getShortVideo, hookFinalPath, jobFilePath, videoDir } from "@/lib/shorts-repo";
 
 /** /api/shorts/<jobId> 取生成结果；/api/shorts/<videoId>?final=1 取成片 */
@@ -18,6 +19,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ jobId: s
     const v = getShortVideo(jobId);
     if (!v) return new Response("Not found", { status: 404 });
     return fileResponse(req, previewPath(v), "video/mp4", csp);
+  }
+  const version = new URL(req.url).searchParams.get("version");
+  if (version) {
+    const ver = getExportVersion(version);
+    if (!ver || ver.videoId !== jobId || !/^v\d+-[0-9a-f]{8}\.mp4$/.test(ver.file)) return new Response("Not found", { status: 404 });
+    return fileResponse(req, versionPath(ver), "video/mp4", { ...csp, "Content-Disposition": `attachment; filename="export-v${ver.n}.mp4"` });
   }
   const final = new URL(req.url).searchParams.get("final");
   if (final) {

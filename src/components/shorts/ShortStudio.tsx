@@ -1,5 +1,9 @@
 "use client";
 
+import { BudgetEditor } from "@/components/admin/BudgetEditor";
+import { ExportHistory } from "@/components/admin/ExportHistory";
+import { OverLimitApproval } from "@/components/admin/OverLimitApproval";
+import { missingBody, replaceLoss, shotsSpend } from "@/lib/spend";
 import { askConfirm, askPrompt } from "@/components/ConfirmHost";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { fmtWait } from "@/components/shorts/JobPill";
@@ -139,7 +143,6 @@ export function ShortStudio({
   );
   const [busy, start] = useTransition();
   const [pending, setPending] = useState<Pending | null>(null);
-  const [budgetDraft, setBudgetDraft] = useState("");
   const [finalAt, setFinalAt] = useState(initialFinalAt);
   const [rw, setRw] = useState<{ shotId: string; text: string } | null>(null);
   const [proposal, setProposal] = useState<{
@@ -596,35 +599,13 @@ export function ShortStudio({
               已用掉 {Math.round(ratio * 100)}% 预算。
             </p>
           ) : null}
-          <div className="mt-2 flex gap-1">
-            <input
-              value={budgetDraft}
-              onChange={(e) => setBudgetDraft(e.target.value)}
-              placeholder="新预算 $"
-              className={`${input} py-1 text-xs`}
-            />
-            <button
-              className={btn}
-              disabled={busy || !budgetDraft}
-              onClick={() =>
-                act(
-                  () => setBudgetAction(v.id, Number(budgetDraft)),
-                  "预算已更新",
-                )
-              }
-            >
-              调整预算
-            </button>
-            {v.budgetUsd !== null ? (
-              <button
-                className={btn}
-                disabled={busy}
-                onClick={() => act(() => setBudgetAction(v.id, null))}
-              >
-                恢复默认 {usd(defaultBudget(live))}
-              </button>
-            ) : null}
-          </div>
+          <BudgetEditor
+            budget={budgetOf(live)}
+            defaultUsd={defaultBudget(live)}
+            custom={v.budgetUsd !== null}
+            busy={busy}
+            onSet={(n, reason, pin, bigOk) => act(() => setBudgetAction(v.id, n, reason, pin, bigOk), "预算已更新，已记进操作日志")}
+          />
           </details>
         </div>
       </header>
@@ -1025,7 +1006,7 @@ export function ShortStudio({
                       className="mt-1 block text-xs text-rose-300 underline"
                       disabled={busy || dirty}
                       onClick={async () => {
-                        if (await askConfirm(`删除开头「${s.hook?.name}」${v.shots.some((x) => x.hook?.partOf === s.id) ? "（连切镜后的第二段一起删）" : ""}？已经生成的画面会留在历史里。`)) act(() => deleteHookShotAction(v.id, s.id), "已删除开头");
+                        if (await askConfirm(`删除开头「${s.hook?.name}」${v.shots.some((x) => x.hook?.partOf === s.id) ? "（连切镜后的第二段一起删）" : ""}？\n\n会丢掉 ${usd(shotsSpend(st.jobs, [s.id, ...v.shots.filter((x) => x.hook?.partOf === s.id).map((x) => x.id)]))} 的结果。删掉的开头进回收站，可以恢复。`)) act(() => deleteHookShotAction(v.id, s.id), "已删除开头，可在回收站恢复");
                       }}
                     >
                       删除这个开头
@@ -1894,6 +1875,7 @@ export function ShortStudio({
             ))}
           </div>
         ) : null}
+        <ExportHistory videoId={v.id} refreshKey={finalAt} />
       </section>
       )}
 
@@ -1935,6 +1917,7 @@ export function ShortStudio({
 
       {pending ? (
         <Approval
+          videoId={v.id}
           pending={pending}
           shotIndex={shots.findIndex((s) => s.id === pending.shotId) + 1}
           busy={busy}
@@ -1944,9 +1927,12 @@ export function ShortStudio({
           }
           onCancel={() => setPending(null)}
           onFix={(c, ai) => fixConflict(pending.shotId, c, ai)}
-          onApprove={() => {
+          onApprove={async () => {
             const p = pending;
             if (!p.quote) return;
+            const cur = shots.find((x) => x.id === p.shotId);
+            const loss = cur ? replaceLoss(st.jobs, cur, p.kind) : 0;
+            if (loss > 0 && !await askConfirm(`这一镜已经有${p.kind === "video" ? "视频" : "首帧"}，新的出来后会替换掉它：会丢掉 ${usd(loss)} 的结果。\n\n旧的进回收站，可以恢复。确定生成吗？`)) return;
             setPending(null);
             setMsg({
               tone: "ok",
@@ -2041,6 +2027,7 @@ function JobThumb({ job, current }: { job: GenJob; current: boolean }) {
 }
 
 function Approval({
+  videoId,
   pending,
   shotIndex,
   busy,
@@ -2049,6 +2036,7 @@ function Approval({
   onFix,
   onApprove,
 }: {
+  videoId: string;
   pending: Pending;
   shotIndex: number;
   busy: boolean;
@@ -2134,14 +2122,7 @@ function Approval({
           </label>
         ) : null}
         {q?.needsOverLimit ? (
-          <label className="flex items-center gap-2 text-xs text-amber-200">
-            <input
-              type="checkbox"
-              checked={pending.overLimit}
-              onChange={(e) => onChange({ overLimit: e.target.checked })}
-            />
-            超限重新审批：本镜已超过默认 1 次 + 1 次重做
-          </label>
+          <OverLimitApproval videoId={videoId} shotId={pending.shotId} kind={pending.kind} usd={q.costUsd} approved={pending.overLimit} onApproved={(ok) => onChange({ overLimit: ok })} />
         ) : null}
         {q?.conflicts?.length ? (
           <div className="space-y-1 rounded-lg border border-amber-400/40 bg-amber-500/10 p-3 text-xs text-amber-200">
