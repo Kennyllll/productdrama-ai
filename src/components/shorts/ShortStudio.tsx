@@ -7,6 +7,8 @@ import { missingBody, replaceLoss, shotsSpend } from "@/lib/spend";
 import { askConfirm, askPrompt } from "@/components/ConfirmHost";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { fmtWait } from "@/components/shorts/JobPill";
+import { RunProgress } from "@/components/shorts/RunProgress";
+import { useRunPoll } from "@/lib/use-run-poll";
 import { OperatorPicker } from "@/components/shorts/OperatorPicker";
 import { effectDef } from "@/lib/hook-effects";
 import { HookPanel } from "@/components/shorts/HookPanel";
@@ -318,18 +320,13 @@ export function ShortStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bgCap]);
   const pollOn = Object.values(running).some((r) => !r.error);
+  // 只在有任务时轮询；每次只取几百字节的「变了没」，变了才取完整状态（见 useRunPoll）
+  const typical = useRunPoll(v.id, pollOn, () => void studioStateAction(v.id).then(merge));
   useEffect(() => {
     if (!pollOn) return;
     const tick = setInterval(() => setNow(Date.now()), 1000);
-    const poll = setInterval(
-      () => void studioStateAction(v.id).then(merge),
-      3000,
-    );
-    return () => {
-      clearInterval(tick);
-      clearInterval(poll);
-    };
-  }, [pollOn, v.id]);
+    return () => clearInterval(tick);
+  }, [pollOn]);
   const goShot = (id: string) => setFocus(id);
 
   const rewrite = (shotId: string, feedback = "", draft?: Record<TextField, string>) =>
@@ -1393,21 +1390,22 @@ export function ShortStudio({
                         : "第 1 步：按机位渲染产品角度图、上传参考图（免费，约 1–2 分钟）"
                       : lj?.status === "submitting"
                         ? `第 2 步：提交给 ${model}`
-                        : `第 2 步：${model} 生成中（${r.kind === "video" ? "视频通常 3–8 分钟" : "首帧通常 1–2 分钟"}）`;
+                        : `第 2 步：${model} 生成中`;
                   return (
                     <div className="mt-3 flex items-start gap-3 rounded-lg border border-sky-400/50 bg-sky-500/10 p-3 text-sm text-sky-100">
                       <span className="mt-1 inline-block h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-sky-300 border-t-transparent" />
-                      <div>
+                      <div className="min-w-0 flex-1">
                         <p className="font-medium">
                           #{i + 1} {name}生成中 · 已等{" "}
                           {fmtWait(
                             Math.max(0, Math.round((now - r.startedAt) / 1000)),
                           )}
                         </p>
-                        <p className="text-xs text-sky-200/80">
+                        <p className="text-xs text-sky-100">
                           {step}
                           。这期间可以去做别的镜头或页面，好了右下角会提示；不会重复扣费。
                         </p>
+                        <RunProgress kind={r.kind} step={r.step} startedAt={r.startedAt} jobCreatedAt={lj?.createdAt} typicalSec={typical[r.kind]} now={now} />
                       </div>
                     </div>
                   );

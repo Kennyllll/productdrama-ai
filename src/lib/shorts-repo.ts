@@ -240,3 +240,25 @@ export function addLedgerEntry(e: { projectId: string; shotCode: string; kind: "
     .prepare("INSERT INTO ledger (id, project_id, episode, shot_code, kind, model, usd, exact, used, note, created_at) VALUES (?, ?, 0, ?, ?, ?, ?, 1, 0, ?, ?)")
     .run(randomUUID(), e.projectId, e.shotCode, e.kind, e.model, e.usd, e.note, now());
 }
+
+/** 轮询用的「有没有变化」戳：只读两个时间，不解析整条视频 */
+export function videoStamp(videoId: string): { videoAt: string; jobsAt: string } | null {
+  const db = getDb();
+  const v = db.prepare("SELECT updated_at FROM short_videos WHERE id = ?").get(videoId) as { updated_at: string } | undefined;
+  if (!v) return null;
+  const j = db.prepare("SELECT MAX(updated_at) AS at, COUNT(*) AS n FROM gen_jobs WHERE video_id = ?").get(videoId) as { at: string | null; n: number };
+  return { videoAt: v.updated_at, jobsAt: `${j.at ?? ""}|${j.n}` };
+}
+
+/** 最近完成的真实任务用了多少秒（按种类），用来估「还要多久」 */
+export function recentJobSeconds(limit = 20): Partial<Record<JobKind, number[]>> {
+  const rows = getDb()
+    .prepare(
+      `SELECT kind, (julianday(updated_at) - julianday(created_at)) * 86400 AS sec FROM gen_jobs
+       WHERE status = 'completed' AND is_test = 0 ORDER BY updated_at DESC LIMIT ?`,
+    )
+    .all(limit * 3) as { kind: JobKind; sec: number }[];
+  const out: Partial<Record<JobKind, number[]>> = {};
+  for (const r of rows) if ((out[r.kind] ??= []).length < limit) out[r.kind]!.push(r.sec);
+  return out;
+}

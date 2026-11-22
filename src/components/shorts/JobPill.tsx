@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { studioStateAction, type StudioState } from "@/app/short-actions";
+import { useRunPoll } from "@/lib/use-run-poll";
 
 export const fmtWait = (sec: number) =>
   `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
@@ -21,6 +22,7 @@ export function JobPill({
     null,
   );
   const prev = useRef<StudioState | null>(null);
+  const loadRef = useRef<() => void>(() => {});
   useEffect(() => {
     let alive = true;
     const load = () =>
@@ -37,15 +39,19 @@ export function JobPill({
         prev.current = next;
         setSt(next);
       });
+    loadRef.current = load;
     load();
-    const poll = setInterval(load, 4000);
-    const tick = setInterval(() => setNow(Date.now()), 1000);
     return () => {
       alive = false;
-      clearInterval(poll);
-      clearInterval(tick);
     };
   }, [videoId]);
+  const runOn = Object.values(st?.running ?? {}).some((r) => !r.error);
+  useRunPoll(videoId, runOn, () => loadRef.current());
+  useEffect(() => {
+    if (!runOn) return;
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, [runOn]);
   // 镜头已经删掉的任务不再显示（以前会显示成「#0」）
   const list = st ? Object.entries(st.running).filter(([id]) => st.video.shots.some((s) => s.id === id)) : [];
   if (!st || (!list.length && !done)) return null;
