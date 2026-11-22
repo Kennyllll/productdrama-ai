@@ -1,7 +1,7 @@
 // 3D 构图里的人偶（每镜保存）和产品接触点（每个产品模型保存）。纯数据，网页预览和以后的 Blender 渲染共用。
 
 export type FigureKind = "adult" | "child";
-export type FigurePose = "stand" | "crouch" | "ride" | "sit" | "hold" | "reach" | "point";
+export type FigurePose = "stand" | "crouch" | "ride" | "sit" | "hold" | "reach" | "point" | "carry" | "hug";
 export type P3 = [number, number, number];
 
 export const FIGURE_POSES: { id: FigurePose; label: string }[] = [
@@ -12,7 +12,12 @@ export const FIGURE_POSES: { id: FigurePose; label: string }[] = [
   { id: "hold", label: "扶着（双手向前）" },
   { id: "reach", label: "伸出一只手" },
   { id: "point", label: "指向（一只手指着）" },
+  { id: "carry", label: "单手提起产品" },
+  { id: "hug", label: "双手抱起产品" },
 ];
+/** 拿着产品的姿势：选了它，产品自动挂到这个人手上 */
+export const CARRY_POSES: FigurePose[] = ["carry", "hug"];
+export const isCarry = (p: FigurePose) => CARRY_POSES.includes(p);
 
 /** 姿态目标（人偶本地坐标，+z 朝前，+x 是人偶的左边，米）；自定义时只填要改的，其余用预设 */
 export interface PoseTargets {
@@ -226,6 +231,19 @@ export function presetPose(kind: FigureKind, pose: FigurePose, ride: RideRig = r
     return { hip: [0, 0.06 * H, 0], lean: 0.12, head: 0, handL: [0.12 * H, 0.16 * H, 0.2 * H], handR: [-0.12 * H, 0.16 * H, 0.2 * H], footL: [0.1 * H, d.ankle, 0.4 * H], footR: [-0.1 * H, d.ankle, 0.4 * H] };
   const hipY = d.thigh + d.shin + d.ankle - 0.005 * H;
   const hy = shoulderY(hipY, 0.02) - (d.ua + d.fa) * 0.97;
+  const feet = { footL: [d.hipW * 1.1, d.ankle, 0.02 * H] as P3, footR: [-d.hipW * 1.1, d.ankle, 0.02 * H] as P3 };
+  // 提 / 抱：产品宽度按握把间距估（两种车握把都在约 0.4 × 车宽）
+  const prodW = Math.max(0.25, (ride.gripX * 2) / 0.8);
+  if (pose === "carry") {
+    const arm = (d.ua + d.fa) * 0.97;
+    const out = Math.min(0.45 * arm, prodW * 0.5);
+    const y = shoulderY(hipY, 0.02) - Math.sqrt(Math.max(0.01, arm * arm - out * out));
+    return { hip: [0, hipY, 0], lean: 0.02, head: 0, handL: [d.sh + 0.025 * H, hy, 0.03 * H], handR: [-(d.sh + out), y, 0.03 * H], ...feet };
+  }
+  if (pose === "hug") {
+    const y = hipY + 0.14 * H;
+    return { hip: [0, hipY, 0], lean: -0.04, head: 0, handL: [0.13 * H, y, 0.2 * H], handR: [-0.13 * H, y, 0.2 * H], ...feet };
+  }
   if (pose === "hold") {
     const hands = hipY + 0.06 * H;
     return { hip: [0, hipY, 0], lean: 0.12, head: 0, handL: [0.12 * H, hands, 0.26 * H], handR: [-0.12 * H, hands, 0.26 * H], footL: [d.hipW * 1.1, d.ankle, 0.02 * H], footR: [-d.hipW * 1.1, d.ankle, 0.02 * H] };

@@ -81,6 +81,8 @@ const POSE_EN: Record<string, string> = {
   hold: "standing with both hands reaching forward",
   reach: "reaching one hand forward (an open, empty-handed gesture, not handing anything over)",
   point: "pointing forward and slightly down with one index finger",
+  carry: "standing with one hand holding the product off the ground by its frame, the product hanging at their side",
+  hug: "standing with both arms holding the product up in front of their chest",
 };
 
 /** 这个人在做什么：用户写的动作为准；手脚拖过但没写动作，就照 3D 人偶的样子，不用姿态名 */
