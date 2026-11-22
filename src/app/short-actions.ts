@@ -10,7 +10,7 @@ import { keyFromPath, putFile, readFile, storageKey } from "@/lib/storage";
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { AiError, chatJson } from "@/lib/ai/client";
-import { getVisionKey, reviewShortFrame, reviewShortVideo } from "@/lib/vision-qa";
+import { getVisionKey, reviewShortFrame, reviewShortVideo, checkMoveDirection } from "@/lib/vision-qa";
 import ffmpegPath from "ffmpeg-static";
 import os from "node:os";
 import { execFile } from "node:child_process";
@@ -1249,6 +1249,8 @@ async function runVideoCheck(videoId: string, shotId: string, jobId: string, byt
       const car = s0.hook?.scene === "car";
       const ref = car ? undefined : (await productRefFiles(v0.projectId, v0.colorId))[0];
       const r = await reviewShortVideo({ frames, productRef: ref ? fs.readFileSync(ref.file) : null, productName: getProduct(v0.projectId)?.name ?? "", productFacts: productText(v0.projectId), productAbsent: car });
+      const back = car ? null : await checkMoveDirection(frames).catch(() => null);
+      if (back) Object.assign(r, { pass: false, issues: [...r.issues, back] });
       res = !r.pass && !r.issues.length ? { jobId, pass: false, failed: true, issues: ["没检查成：检查结果说不过关，但没列出问题，请自己逐秒看一遍"], at } : { jobId, pass: r.pass, issues: r.issues, at };
     } catch (e) {
       res = { jobId, pass: false, failed: true, issues: [`没做成：${e instanceof Error ? e.message : "未知错误"}，请自己逐秒看一遍`], at };
@@ -1436,11 +1438,11 @@ function videoPromptOf(v: ShortVideo, s: ShortShot): string {
   const riding = (s.layout ? figuresOf(s.layout) : []).some((f) => f.onProduct);
   // 骑向镜头时车越来越大、角度一直变，模型最容易画错结构：改成横着骑过画面
   const motion0 = dropGlare(s.motionPrompt);
-  const motion = riding ? dropCameraMoves(motion0).replace(/\b(?:straight |directly )?(?:toward|towards|at|into) (?:the )?(?:camera|lens|viewer)\b/gi, "slowly across the frame") : dropCameraMoves(motion0);
+  const motion = riding ? dropCameraMoves(motion0).replace(/\b(?:straight |directly )?(?:toward|towards|at|into) (?:the )?(?:camera|lens|viewer)\b/gi, "slowly forward across the frame, front wheel first") : dropCameraMoves(motion0);
   const moving = !!s.layout?.move && s.layout.move.kind !== "static";
   const stay = still
     ? `The product stands still on the ground for the whole clip: it never rolls, turns, slides or moves by itself, and its wheels do not spin.${moving ? " Only the camera moves." : " Nothing moves except natural ambient motion in the background."}\n`
-    : `The product keeps exactly the structure, parts, colors and proportions of the first frame in every frame: no part disappears, merges, bends or changes size.${(s.layout ? figuresOf(s.layout) : []).some((f) => f.onProduct) ? " The rider pedals slowly and stays at about the same distance from the camera; the product keeps the same size in frame and never rides toward or past the camera." : ""}\n`;
+    : `The product keeps exactly the structure, parts, colors and proportions of the first frame in every frame: no part disappears, merges, bends or changes size.${(s.layout ? figuresOf(s.layout) : []).some((f) => f.onProduct) ? " The rider pedals slowly and stays at about the same distance from the camera; the product keeps the same size in frame and never rides toward or past the camera. It only ever moves forward, front wheel first, in the direction its front end points; it never rolls backward or slides sideways." : ""}\n`;
   return `${motion ? `${motion}\n` : ""}${sp ? `${sp}\n` : ""}${s.hook?.selfie && s.layout?.move?.kind === "handheld" ? "Camera: the phone is held at arm's length by the person taking the selfie; natural slight hand shake and small drifts, not stabilized." : moveText(s.layout)}\n${op ? `${op}${operatorShows(s.operator, s.layout) ? " Keep what shows of them partly visible and moving naturally through the clip." : ""}\n` : ""}${stay}Keep the product's shape, colors and logo exactly as in the first frame. ${still ? "Same place and lighting as the first frame throughout; no people appear." : "Same people, wardrobe, room and lighting as the first frame throughout; no new people appear."} Looks like real phone footage a parent shot for TikTok: natural speed, no slow motion, no smooth cinematic camera glide, casual unposed behavior. No text overlays.${au ? `\n${au}` : ""}`;
 }
 

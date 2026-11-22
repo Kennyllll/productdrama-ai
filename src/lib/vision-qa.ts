@@ -260,6 +260,7 @@ export async function reviewShortVideo(o: { frames: { t: number; img: Buffer }[]
         "2. A part that is only hidden behind a person or cut by the frame edge is fine.",
         "3. People keep the same face, hair and clothes in every frame; nobody appears or vanishes; anatomy is correct.",
         "4. No glowing spots, flashes, garbled text or watermarks.",
+        "5. If the product moves, it only moves forward: front wheel first, in the direction its front end points. Judge it against the ground and background (when the camera follows it, the background slides the opposite way). Report it if it rolls backward (rear wheels leading) or slides sideways.",
       ]
   ).concat('Return JSON only: {"pass": boolean, "issues": string[]}. Each issue is ONE short sentence in Simplified Chinese that starts with the time, e.g. "第 2.5 秒起：右后轮不见了".').join("\n");
   const parts: Part[] = [{ text: prompt }];
@@ -269,3 +270,25 @@ export async function reviewShortVideo(o: { frames: { t: number; img: Buffer }[]
   const issues = Array.isArray(data.issues) ? data.issues.filter((x): x is string => typeof x === "string" && !!x.trim()) : [];
   return { pass: data.pass === true && !issues.length, issues };
 }
+
+type Dir = "left" | "right" | "toward" | "away";
+const OPPOSITE: Record<Dir, Dir> = { left: "right", right: "left", toward: "away", away: "toward" };
+
+/** 车有没有倒着走：分别问车头朝哪、车往哪走（看背景参照物），程序比较；一次问「有没有倒退」模型常看不出来 */
+export async function checkMoveDirection(frames: { t: number; img: Buffer }[]): Promise<string | null> {
+  if (frames.length < 3) return null;
+  const pick = [frames[0], frames[Math.floor(frames.length / 2)], frames[frames.length - 1]];
+  const prompt = [
+    "These are 3 frames of one phone clip in time order (first, middle, last). Answer about the tricycle (or other ride-on product) only.",
+    'facing: which way its FRONT (front wheel and handlebar) points in the image: "left", "right", "toward" (the camera), "away", or "unclear".',
+    'moved: how the tricycle itself moved over the ground from the first to the last frame. Judge it against fixed things (houses, poles, mailboxes, trees, lines and cracks on the ground), not against the frame edges: if the camera pans to follow it, the background slides the opposite way, so the tricycle moved opposite to the background. One of "left", "right", "toward", "away", "none", "unclear".',
+    'Return JSON only: {"facing": string, "moved": string}.',
+  ].join("\n");
+  const parts: Part[] = [{ text: prompt }];
+  for (const f of pick) parts.push({ text: `Frame at ${f.t} s:` }, await jpegPart(f.img, 768));
+  const d = (await generate(parts, 120_000)) as { facing?: unknown; moved?: unknown };
+  const facing = d.facing as Dir, moved = d.moved as Dir;
+  if (!(facing in OPPOSITE) || !(moved in OPPOSITE)) return null;
+  return OPPOSITE[facing] === moved ? `全程：车在倒着走（车头朝${ZH[facing]}，车却往${ZH[moved]}移动），三轮车只能车头在前往前走` : null;
+}
+const ZH: Record<Dir, string> = { left: "左", right: "右", toward: "镜头", away: "远处" };
