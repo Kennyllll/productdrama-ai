@@ -110,7 +110,7 @@ export async function brainStageAction(videoId: string, shotId: string, request:
       `## 整条分镜\n${v.shots.map((x, i) => `#${i + 1} [${x.stage}]${x.hook ? ` 开头「${x.hook.name}」` : ""} ${x.beat} | ${x.description.slice(0, 120)}`).join("\n")}`,
       `## 这一镜 #${shotNo}\n画面：${s.description}\n机位：${s.camera}\n产品状态：${s.productNote}\n特殊要求：${s.special || "无"}\n拍摄者：${s.operator || "站着拍"}${filmer ? `（拿手机的是 ${cast?.members.find((m) => m.id === filmer)?.name ?? filmer}：他在镜头后面，不能出现在画面里，不要给人偶绑定他）` : ""}`,
       `## 摄影机（你不能动）\n位置 ${layout.camPos.map(r2).join(", ")}，看向 ${layout.lookAt.map(r2).join(", ")}，焦段 ${layout.lens}mm。镜头朝向角 ${Math.round(camYaw)}°；画面右边 = 地图方向 ${Math.round(norm(camYaw + 90))}°，画面左边 = ${Math.round(norm(camYaw - 90))}°；人站在产品旁边要面向摄影机，朝向角约 ${toCam(bx, by)}°。`,
-      `## 现在的 3D\n产品：${draft.bike ? `x ${r2(bx)}, y ${r2(by)}，车头朝向 ${Math.round(norm(draft.bikeYaw + 180))}°` : "这一镜没有产品"}\n人偶：${JSON.stringify(draft.figures.map((f) => ({ id: f.id, kind: f.kind, pose: f.pose, onProduct: f.onProduct, dx: r2(f.dx), dy: r2(f.dy), yaw: Math.round(f.yaw), action: f.action ?? "" })))}\n按摄影机算出的画面描述：${blockingText(cur, rig) || "（无）"}`,
+      `## 现在的 3D\n产品：${draft.bike ? `x ${r2(bx)}, y ${r2(by)}，车头朝向 ${Math.round(norm(draft.bikeYaw))}°` : "这一镜没有产品"}\n人偶：${JSON.stringify(draft.figures.map((f) => ({ id: f.id, kind: f.kind, pose: f.pose, onProduct: f.onProduct, dx: r2(f.dx), dy: r2(f.dy), yaw: Math.round(f.yaw), action: f.action ?? "" })))}\n按摄影机算出的画面描述：${blockingText(cur, rig) || "（无）"}`,
       `## 场地里的家具（你不能动；x,y = 占地中心，w 沿朝向 0° 时的东西宽，d 南北深）\n${solid.map((i) => `${label(i)} x ${r2(i.x)} y ${r2(i.y)} w ${i.w} d ${i.d} h ${i.h} 转 ${i.yaw}°`).join("\n") || "（没有挡路的家具）"}${floor ? `\n可走动的地面：${label(floor)} 中心 x ${r2(floor.x)} y ${r2(floor.y)}，${floor.w}×${floor.d} 米` : ""}`,
       cast
         ? `## 这一镜的家庭：${cast.name}（用户说名字时指这些人；人偶写 memberId 就是这个人，身高自动用他的）\n${cast.members.filter((m) => m.id !== filmer).map((m) => `- memberId ${m.id}：${m.name}，${roleOf(m.role).label}，${m.age} 岁，${(m.heightCm / 100).toFixed(2)} 米`).join("\n")}\n现在绑定：${draft.figures.map((f, i) => `人偶${i + 1}（id ${f.id}）= ${cast.members.find((m) => m.id === f.memberId)?.name ?? "未绑定"}`).join("，") || "没有人偶"}`
@@ -146,7 +146,7 @@ export async function brainStageAction(videoId: string, shotId: string, request:
         ny = draft.bike[1];
       }
       bike = [r2(nx), r2(ny)];
-      if (typeof pr.heading === "number" && Number.isFinite(pr.heading)) bikeYaw = Math.round(norm(pr.heading - 180));
+      if (typeof pr.heading === "number" && Number.isFinite(pr.heading)) bikeYaw = Math.round(norm(pr.heading));
     }
     const old = new Map(draft.figures.map((f) => [f.id, f]));
     const raw = cleanFigures(d.figures) ?? draft.figures;

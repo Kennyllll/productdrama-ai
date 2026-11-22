@@ -12,7 +12,7 @@ import type { SceneItem } from "@/lib/shorts-scenes";
 import { itemAt, itemLabel, roomBox, wallBetween } from "@/lib/stage-rules";
 import { buildFigure, buildFreeHand, buildScene } from "@/components/shorts/scene-mesh";
 import { estimateRig, figuresOf, KB002_RIG, rideOf, type FigureSpec, type ProductRig } from "@/lib/figures";
-import { freeHand, OP_HANDS, operatorOrigin, parseOp } from "@/lib/shorts-operator";
+import { freeHand, OP_HANDS, OP_POSES, operatorOrigin, parseOp } from "@/lib/shorts-operator";
 
 export interface SetShot {
   code: string;
@@ -670,7 +670,7 @@ export function Set3D({
                 <button type="button" disabled={pending || (!shot.edited && !dirty) || Boolean(shot.locked)} onClick={() => save(null)} className="rounded-lg border border-white/15 px-3 py-1 text-sm text-neutral-300 disabled:opacity-40">
                   恢复自动机位
                 </button>
-                <button type="button" disabled={pending || Boolean(shot.locked)} onClick={() => update(frameShot(layout))} title="照真实手机广告：车和人占画面一半左右，车轮下面少留地面，机位放低" className="ml-2 rounded-lg border border-amber-400/40 px-3 py-1 text-sm text-amber-200 disabled:opacity-40">
+                <button type="button" disabled={pending || Boolean(shot.locked)} onClick={() => update(frameShot(layout, opRef.current !== null ? (OP_POSES.find((p) => p.id === parseOp(opRef.current ?? undefined).pose)?.lo ?? 0) : 0))} title="照真实手机广告：车和人占画面一半左右，车轮下面少留地面，机位放低" className="ml-2 rounded-lg border border-amber-400/40 px-3 py-1 text-sm text-amber-200 disabled:opacity-40">
                   按构图规则对准
                 </button>
               </div>

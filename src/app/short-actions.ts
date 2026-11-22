@@ -48,7 +48,7 @@ import {
   type ShotHook,
 } from "@/lib/shorts";
 import { lastFrame, renderShort } from "@/lib/shorts-render";
-import { cleanLayout, dropCameraMoves, guessRoom, layoutText, moveText, PRODUCT_REF_VIEWS } from "@/lib/shorts-set";
+import { cleanLayout, dropCameraMoves, guessRoom, layoutText, moveText, PRODUCT_REF_VIEWS, productView } from "@/lib/shorts-set";
 import { findTheme, sceneText } from "@/lib/shorts-scenes";
 import { createScene, ensureScenes, getScene, legacyShotScene, saveScene, themedScene, versionOf } from "@/lib/shorts-scenes-repo";
 import { createTemplate, deleteTemplate, getTemplate, saveTemplate, type TemplateScene, type TemplateShot } from "@/lib/shorts-templates-repo";
@@ -1112,6 +1112,19 @@ const stillOf = async (v: ShortVideo, shot: ShortShot) => {
  * 同场地同家庭：上一镜画面（人和房间）；回到旧场地：该场地最后一个已采用镜头（只看房间）；
  * 同一家人换场地：该家庭最后一个已采用镜头（只看人）；新场地有空场景参考图就用它；另一个家庭不带旧演员。
  */
+/** 和本镜产品朝向最接近的真实产品照（按上传时标的角度），让出图照着实物画零件 */
+function sameSidePhoto(v: ShortVideo, s: ShortShot): string | null {
+  const pv = s.layout?.bike ? productView(s.layout) : null;
+  if (!pv) return null;
+  const keys = pv.kind === "side" ? ["side", "侧"] : pv.kind === "rear" || pv.kind === "rear34" ? ["back", "背"] : ["45", "前", "hero"];
+  const photos = listAssets(v.projectId).filter((a) => (a.kind === "product_photo" || a.kind === "white_photo") && a.angle && fs.existsSync(assetPath(a)));
+  for (const k of keys) {
+    const a = photos.find((x) => x.angle.toLowerCase().includes(k));
+    if (a) return assetPath(a);
+  }
+  return null;
+}
+
 function refPlan(v: ShortVideo, s: ShortShot): RefPart[] {
   const out: RefPart[] = [];
   // 车里自拍：只发出镜的人在别的镜头里的首帧（认脸、发型、衣服），不发 3D 和产品
@@ -1144,9 +1157,15 @@ function refPlan(v: ShortVideo, s: ShortShot): RefPart[] {
       out.push({
         text:
           modelFor(v.projectId, v.colorId)?.source === "fal"
-            ? "is a rough automatic gray model of the product from exactly this shot's camera angle: use it ONLY for where the product stands, how big it is and which side faces the camera, never mirrored or turned. Its shape is approximate: every part, proportion, the handlebar, seat, baskets, colors, logo and stickers come only from the real product photos"
+            ? "is a rough automatic gray model of the product from exactly this shot's camera angle: use it ONLY for where the product stands, how big it is and which side faces the camera, never mirrored or turned. Its shape is approximate: every part, proportion, the handlebar, seat, baskets, colors, logo and stickers come only from the real product photo that follows it and the other product photos"
             : "is the real product rendered from exactly this shot's camera angle: in the photo the product must face exactly this way and show this same side, never mirrored or turned.",
         file: () => angleRef(v, s),
+      });
+    const ph = sameSidePhoto(v, s);
+    if (ph)
+      out.push({
+        text: "is a real photo of the product from about this side: the product in the shot must look exactly like it, part for part (handlebar and the bend of its stem, seat and backrest with any hole, baskets and where they mount, fender, pedals and cranks, frame tube, wheel sizes, logo position). Use the 3D images only for position, size and direction; never mirror the logo",
+        file: async () => ph,
       });
   }
   const me = shotScene(v, s);
@@ -1237,6 +1256,7 @@ async function runFrameCheck(videoId: string, shotId: string, jobId: string, byt
         holiday: th.theme && th.theme !== "none" ? th.themeText || th.theme : "none",
         noBox: s0.hook ? s0.hook.entry !== "unbox" : !/\b(box|packag|unbox)/i.test(s0.framePrompt),
         car: s0.hook?.scene === "car" ? { person: carPersonText(v0, s0) } : undefined,
+        productRefs: (await productRefFiles(v0.projectId, v0.colorId)).filter((f) => !/svg/.test(f.mime)).slice(0, 3).map((f) => fs.readFileSync(f.file)),
       });
       // 说没过却一条问题都没列：当成“没检查成”，让用户自己看，不显示“发现 0 个问题”
       res = !r.pass && !r.issues.length ? { jobId, pass: false, failed: true, issues: ["没检查成：检查结果说不过关，但没列出问题，请自己对照产品照看一遍"], at } : { jobId, pass: r.pass, issues: r.issues, at };
@@ -1383,7 +1403,7 @@ function framePromptOf(v: ShortVideo, s: ShortShot): string {
     s.hook?.selfie ? selfieFrameText(selfieWho(v, s)) : operatorPrompt(s.operator, s.layout, filmerText(v, s)),
     s.hook?.selfie ? "" : "Nobody looks into the lens: each person's eyes are on the product, their hands or another person.",
     s.productNote.trim()
-      ? `Product: ${p?.name || "the product"} — use the product reference photos: keep exact geometry, proportions, colors, materials and logo placement; do not redesign, recolor or add parts. Matte, even light on the product: no glare, sparkle or bright highlight spots.`
+      ? `Product: ${p?.name || "the product"} — use the product reference photos: keep exact geometry, proportions, colors, materials and logo placement; do not redesign, recolor or add parts.${(() => { const st = p?.bible.find((f) => f.key === "structure")?.value.trim(); return st ? ` Exact structure: ${st}.` : ""; })()} Matte, even light on the product: no glare, sparkle or bright highlight spots.`
       : "",
     colorText(v),
     s.compositeNote.trim() ? "Any screen, projection or printed graphic on the product is left plain/blank; it will be composited later." : "",

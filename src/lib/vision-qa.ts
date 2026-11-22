@@ -207,7 +207,7 @@ export async function locateGeometry(o: { plate: Buffer; support: string; width:
 }
 
 /** 短视频首帧：对照提示词和 3D 摆位看图，只报明显看得出的不一致 */
-export async function reviewShortFrame(o: { image: Buffer; productName: string; productFacts: string; framePrompt: string; description: string; facts3d: string; holiday: string; noBox: boolean; car?: { person: string }; groundMax?: number }): Promise<VisionReview> {
+export async function reviewShortFrame(o: { image: Buffer; productName: string; productFacts: string; framePrompt: string; description: string; facts3d: string; holiday: string; noBox: boolean; car?: { person: string }; groundMax?: number; productRefs?: Buffer[] }): Promise<VisionReview> {
   const name = o.productName || "product";
   const prompt = o.car
     ? [
@@ -232,13 +232,21 @@ export async function reviewShortFrame(o: { image: Buffer; productName: string; 
     `2. Poses: anyone riding sits on the saddle with both hands on the handlebar grips${o.facts3d.includes("pedal") ? " and both feet on the pedals" : ""}; standing, crouching or pointing people do what the blocking says.`,
     `3. The ${name} faces the way the blocking says (front toward camera / three-quarter / side) and is plausibly sized next to the people.`,
     `4. Exactly one ${name}, with the correct structure (count the wheels, round wheels on axles, no melted or missing parts).`,
+    ...(o.productRefs?.length
+      ? [
+          `4b. The ${name} must be IDENTICAL to the real product in the reference photos (the images after the still). Compare it part by part and report every part whose shape, size, position or count differs, naming the part: the handlebar and the shape of its stem (straight or bent), the seat and the shape of its backrest including any hole or cut-out, each basket and where it is mounted, fenders, pedals and cranks and where they attach, every frame tube and how it bends, every wheel and its size, the logo position. A part hidden by a person or cut by the frame edge is fine.`,
+        ]
+      : []),
     o.holiday === "none" ? "5. No holiday decorations, trees, gifts, bows or holiday outfits." : `5. The holiday look (${o.holiday}) is present and does not cover the product.`,
     `6. Must not appear: the person filming (only a hand or feet at the frame edge if the prompt says so)${o.noBox ? ", any box, packaging or wrapping" : ""}, garbled text, watermarks, extra logos.`,
     "7. Human anatomy is correct (hands, fingers, limbs, faces).",
     `8. Framing like real phone ads: empty ground or floor below the lowest wheel or foot takes at most about ${o.groundMax ?? 20}% of the frame height; the ${name} (with its rider, if any) is not tiny; an adult next to the product is not shown full-length standing while the ${name} is a small object at their feet.`,
     'Return JSON only: {"pass": boolean, "issues": string[]}. Each issue is ONE short sentence in Simplified Chinese naming who or what and the problem (e.g. "小孩的脚没有踩在脚踏上", "产品下面空地太多，约占画面 40%").',
   ].join("\n");
-  const data = (await generate([{ text: prompt }, await jpegPart(o.image, 1536)], 120_000)) as { pass?: unknown; issues?: unknown };
+  const refs = o.car ? [] : (o.productRefs ?? []).slice(0, 3);
+  const parts = [{ text: prompt }, await jpegPart(o.image, 1536)];
+  for (const [i, r] of refs.entries()) parts.push({ text: `Reference photo ${i + 1} of the real ${name}:` }, await jpegPart(r, 1024));
+  const data = (await generate(parts, 120_000)) as { pass?: unknown; issues?: unknown };
   const issues = Array.isArray(data.issues) ? data.issues.filter((x): x is string => typeof x === "string" && x.trim() !== "").map((x) => x.trim()).slice(0, 8) : [];
   return { pass: data.pass === true && issues.length === 0, issues };
 }

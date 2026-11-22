@@ -231,14 +231,11 @@ const has = (s: string, re: RegExp) => re.test(s.toLowerCase());
 /** 按分镜文字自动摆一个起始机位（之后用户在 3D 布景里拖） */
 const rd = (x: number) => Math.round(x * 100) / 100;
 /** 正文镜头按真实手机广告构图对准主体：摄影机方向不变，拉到产品和旁边的人占画面一半左右、车轮着地点在画面约 85% 高度；机位不高于 0.8 米（拍的人蹲着或弯腰） */
-export function frameShot(l: SetLayout): Pick<SetLayout, "camPos" | "lookAt"> {
+export function frameShot(l: SetLayout, minH = 0): Pick<SetLayout, "camPos" | "lookAt"> {
   const [bx, by] = l.bike ?? [0, 0];
   const figs = l.figures ?? [];
   const tan = 32 / l.lens;
   const h = figs.some((f) => f.onProduct) ? 1 : figs.some((f) => !f.onProduct && f.kind !== "adult") ? 0.95 : 0.6;
-  const half = Math.max(0.45, ...figs.filter((f) => !f.onProduct).map((f) => Math.hypot(f.dx, f.dy)));
-  // 旁边的人中心进画面就行：真实广告里大人常只露半边身子、手和腿
-  const d = Math.max(0.6, h / (0.5 * 2 * tan), half / (18 / l.lens));
   const n = Math.hypot(l.camPos[0] - bx, l.camPos[1] - by);
   let [ux, uy] = n > 1e-6 ? [(l.camPos[0] - bx) / n, (l.camPos[1] - by) / n] : [0, -1];
   // 有人骑车时不拍背影：转到车头斜前方 40°（同一侧），看得到孩子的脸和车头
@@ -251,7 +248,11 @@ export function frameShot(l: SetLayout): Pick<SetLayout, "camPos" | "lookAt"> {
     const si = Math.sin((40 * Math.PI) / 180) * sd;
     [ux, uy] = [head[0] * c + right[0] * si, head[1] * c + right[1] * si];
   }
-  const camH = Math.min(l.camPos[2], 0.8);
+  // 旁边的人中心进画面就行（按横向偏移算，站在车后面的人不用拉远）：真实广告里大人常只露半边身子、手和腿
+  const half = Math.max(0.45, ...figs.filter((f) => !f.onProduct).map((f) => Math.abs(f.dx * uy - f.dy * ux)));
+  const d = Math.max(0.6, h / (0.5 * 2 * tan), half / (18 / l.lens));
+  // 拍的人站着时手机不会低于胸口（minH）
+  const camH = Math.max(minH, Math.min(l.camPos[2], 0.8));
   const off = Math.atan((0.85 - 0.5) * 2 * tan);
   const z = Math.min(camH, Math.max(0.2, camH - d * Math.tan(Math.atan(camH / d) - off)));
   return { camPos: [rd(bx + ux * d), rd(by + uy * d), rd(camH)], lookAt: [bx, by, rd(z)] };
