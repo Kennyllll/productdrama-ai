@@ -12,9 +12,10 @@ import { saveProductRigAction, saveSceneVersionAction, sceneConflictsAction } fr
 import { saveShortLayoutAction } from "@/app/short-actions";
 import { brainStageAction, type StageProposal } from "@/app/brain-stage-actions";
 import { buildFigure, presetPose, shape } from "@/components/shorts/scene-mesh";
-import { estimateRig, figuresOf, FIGURE_POSES, JOINTS, KB002_RIG, RIG_KEYS, rideOf, rigFrom, rigLocal, type FigureKind, type FigureSpec, type JointId, type P3, type ProductRig, type RigKey } from "@/lib/figures";
+import { carryBlock, carrierOf, figName, freeSpot, isStructure, itemLabel, liftOf, normalizeStage, rideBlock, ridersOf, relSpot } from "@/lib/stage-rules";
+import { estimateRig, figuresOf, FIGURE_POSES, isCarry, JOINTS, KB002_RIG, RIG_KEYS, rideOf, rigFrom, rigLocal, type FigureKind, type FigureSpec, type JointId, type P3, type ProductRig, type RigKey } from "@/lib/figures";
 import type { SetLayout } from "@/lib/production-repo";
-import { activeItems, findItemType, ITEM_TYPES, newItem, type SceneItem } from "@/lib/shorts-scenes";
+import { activeItems, ITEM_TYPES, newItem, type SceneItem } from "@/lib/shorts-scenes";
 
 interface Doc {
   figures: FigureSpec[];
@@ -83,7 +84,9 @@ export function StageEditor({
   compact,
   saveSignal = 0,
   members = [],
+  brainReady = true,
 }: {
+  brainReady?: boolean;
   videoId: string;
   /** 这一镜家庭的成员（家庭库）；人偶可以绑定 */
   members?: CastOption[];
@@ -121,16 +124,19 @@ export function StageEditor({
   const [shotView, setShotView] = useState(false);
   const [autoRig, setAutoRig] = useState<ProductRig | null>(null);
   const [msg, setMsg] = useState("");
+  /** 自动纠正（下车、挂到手上）的说明：显示在刚点的按钮旁边 */
+  const [note, setNote] = useState("");
+  const [editSite, setEditSite] = useState(false);
   const [ask, setAsk] = useState("");
   const [brain, setBrain] = useState<StageProposal | null>(null);
   const [brainMsg, setBrainMsg] = useState("");
   const [thinking, setThinking] = useState(false);
   const [pending, start] = useTransition();
   const canvas = useRef<HTMLCanvasElement>(null);
-  const api = useRef<{ sync: () => void } | null>(null);
+  const api = useRef<{ sync: () => void; zoom: (f: number) => void; home: () => void } | null>(null);
   const ro = Boolean(compact && locked);
-  const st = useRef({ doc, sel, mode, rigMode, shotView, autoRig, ro });
-  st.current = { doc, sel, mode, rigMode, shotView, autoRig, ro };
+  const st = useRef({ doc, sel, mode, rigMode, shotView, autoRig, ro, editSite });
+  st.current = { doc, sel, mode, rigMode, shotView, autoRig, ro, editSite };
   const bikeRef = useRef<THREE.Group | null>(null);
   const docRef = useRef(doc);
   docRef.current = doc;
@@ -138,10 +144,12 @@ export function StageEditor({
   const rigUse = doc.rig ?? autoRig ?? KB002_RIG;
   const commit = (next: Doc | ((d: Doc) => Doc)) => {
     const d = docRef.current;
-    const n = typeof next === "function" ? next(d) : next;
+    const raw = typeof next === "function" ? next(d) : next;
+    const fx = normalizeStage(raw, raw.rig ?? autoRig ?? KB002_RIG, activeItems(raw.items, scene.theme), [layout.camPos[0], layout.camPos[1]], members);
     setPast((p) => [...p.slice(-60), d]);
     setFuture([]);
-    setDoc(n);
+    setDoc(fx.doc);
+    setNote(fx.notes.join("；"));
   };
   const undo = () => {
     if (!past.length) return;
@@ -185,6 +193,31 @@ export function StageEditor({
     el.addEventListener("wheel", wheelGate, { capture: true });
     orbit.target.set(b0[0], 0.4, -b0[1]);
     orbit.update();
+    // 滚轮默认滚页面；点过画布（鼠标还在画布上）或按住 Ctrl 才缩放
+    orbit.enableZoom = false;
+    let armed = false;
+    const zoom = (f: number) => {
+      const v = cam.position.clone().sub(orbit.target).multiplyScalar(f);
+      if (v.length() < 0.3 || v.length() > 40) return;
+      cam.position.copy(orbit.target).add(v);
+      orbit.update();
+    };
+    const home = () => {
+      const b = st.current.doc.bike ?? [0, 0];
+      cam.position.set(b[0] + 2.4, 1.8, -b[1] + 2.6);
+      orbit.target.set(b[0], 0.4, -b[1]);
+      orbit.update();
+    };
+    const onWheel = (e: WheelEvent) => {
+      if (st.current.shotView || !(armed || e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      zoom(e.deltaY > 0 ? 1.12 : 1 / 1.12);
+    };
+    const arm = () => (armed = true);
+    const disarm = () => (armed = false);
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("pointerdown", arm);
+    el.addEventListener("pointerleave", disarm);
     const shotCam = new THREE.PerspectiveCamera(40, 9 / 16, 0.03, 200);
     const camHelper = new THREE.CameraHelper(shotCam);
     s3.add(camHelper);
@@ -257,6 +290,7 @@ export function StageEditor({
         o.rotation.y = rad(i.yaw);
         o.add(shape(i));
         o.userData.key = `item:${i.id}`;
+        if (isStructure(i) && !st.current.editSite) o.userData.locked = true;
         byKey.set(o.userData.key, o);
         world.add(o);
       }
@@ -267,19 +301,23 @@ export function StageEditor({
       bike.rotation.set(rad(d.bikeRoll), rad(d.bikeYaw - 90), rad(-d.bikePitch), "YXZ");
       byKey.set("product", bike);
       if (rm && d.bike) for (const r of RIG_KEYS) rigMarks.add(handle(r.color, 0.03, `rig:${r.k}`).translateX(rigLocal(rg, r.k)[0]).translateY(rigLocal(rg, r.k)[1]).translateZ(rigLocal(rg, r.k)[2]));
-      const yawR = rad(d.bikeYaw);
       for (const f of d.figures) {
         const ride = f.onProduct && Boolean(d.bike);
         const root = new THREE.Group();
         root.userData.key = `fig:${f.id}`;
         root.add(buildFigure(f.kind, effPose(f, Boolean(d.bike)), { ride: rideOf(rg), custom: f.custom, h: f.h }));
+        // 骑车的人挂在和产品一样的变换下：车侧倾 / 抬头 / 离地，人一起动
+        const mount = new THREE.Group();
         if (ride) {
-          root.rotation.y = yawR + Math.PI;
-          root.position.set(bx + Math.sin(yawR) * rg.seatBack, 0, -by + Math.cos(yawR) * rg.seatBack);
+          mount.position.copy(bike.position);
+          mount.rotation.copy(bike.rotation);
+          root.rotation.y = -Math.PI / 2;
+          root.position.set(rg.seatBack, 0, 0);
         } else {
           root.rotation.y = Math.PI - rad(f.yaw);
           root.position.set(bx + f.dx, 0, -(by + f.dy));
         }
+        mount.add(root);
         byKey.set(root.userData.key, root);
         if (!rm && (s === root.userData.key || s?.startsWith(`joint:${f.id}:`))) {
           const base = presetPose(f.kind, effPose(f, Boolean(d.bike)), rideOf(rg), f.h);
@@ -288,10 +326,10 @@ export function StageEditor({
             root.add(handle(j.id === "hip" ? "#f472b6" : "#38bdf8", 0.03, `joint:${f.id}:${j.id}`).translateX(p[0]).translateY(p[1]).translateZ(p[2]));
           }
         }
-        world.add(root);
+        world.add(mount);
       }
       const target = s ? byKey.get(s) : null;
-      if (target && !st.current.ro && !(s?.startsWith("fig:") && d.figures.find((f) => `fig:${f.id}` === s)?.onProduct && d.bike)) {
+      if (target && !st.current.ro && !(s?.startsWith("fig:") && d.figures.find((f) => `fig:${f.id}` === s)?.onProduct && d.bike) && !(s === "product" && carrierOf(d))) {
         const point = Boolean(s?.startsWith("joint:") || s?.startsWith("rig:"));
         const m: Mode = point ? "translate" : md === "scale" && !s?.startsWith("item:") ? "translate" : md;
         tc.setMode(m);
@@ -348,7 +386,11 @@ export function StageEditor({
         for (let x = o; x; x = x.parent) if (x.userData.key) return x.userData.key as string;
         return null;
       };
-      const keys = hits.map((h) => keyOf(h.object)).filter((k): k is string => Boolean(k));
+      const lockedHit = (o: THREE.Object3D | null) => {
+        for (let x = o; x; x = x.parent) if (x.userData.locked) return true;
+        return false;
+      };
+      const keys = hits.filter((h) => !lockedHit(h.object)).map((h) => keyOf(h.object)).filter((k): k is string => Boolean(k));
       const pick = keys.find((k) => k.startsWith("joint:") || k.startsWith("rig:")) ?? keys[0] ?? null;
       setSelRef.current(pick);
     };
@@ -386,12 +428,15 @@ export function StageEditor({
       raf = requestAnimationFrame(frame);
     };
     frame();
-    api.current = { sync };
+    api.current = { sync, zoom, home };
     sync();
     return () => {
       cancelAnimationFrame(raf);
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("pointerdown", arm);
+      el.removeEventListener("pointerleave", disarm);
       // three 0.169 的 TransformControls.dispose() 会调用不存在的 this.traverse，这里手动清理
       tc.detach();
       tc.disconnect();
@@ -412,7 +457,7 @@ export function StageEditor({
 
   useEffect(() => {
     api.current?.sync();
-  }, [doc, sel, mode, rigMode, autoRig]);
+  }, [doc, sel, mode, rigMode, autoRig, editSite]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -435,7 +480,7 @@ export function StageEditor({
   const patchFig = (p: Partial<FigureSpec>) => selFig && commit((d) => ({ ...d, figures: d.figures.map((f) => (f.id === selFig.id ? { ...f, ...p } : f)) }));
   const addFig = (kind: FigureKind) => {
     const id = `f${Date.now().toString(36)}`;
-    commit((d) => ({ ...d, figures: [...d.figures, { id, kind, pose: "stand", onProduct: false, dx: kind === "adult" ? 1 : 0.6, dy: -0.4, yaw: 0 }] }));
+    commit((d) => ({ ...d, figures: [...d.figures, { id, kind, pose: "stand", onProduct: false, ...freeSpot(d, activeItems(d.items, scene.theme), [layout.camPos[0], layout.camPos[1]]) }] }));
     setSel(`fig:${id}`);
   };
   const addItem = (type: string) => {
@@ -443,9 +488,13 @@ export function StageEditor({
     commit((d) => ({ ...d, items: [...d.items, it] }));
     setSel(`item:${it.id}`);
   };
-  const del = () => {
+  const del = async () => {
     if (selFig) commit((d) => ({ ...d, figures: d.figures.filter((f) => f.id !== selFig.id) }));
-    else if (selItem) commit((d) => ({ ...d, items: d.items.filter((i) => i.id !== selItem.id) }));
+    else if (selItem) {
+      const name = itemLabel(selItem, doc.items);
+      if (isStructure(selItem) && !(await askConfirm(`删掉「${name}」后保存，会存成「${scene.name}」新版本 v${scene.v + 1}，这一镜改用新版本，画面里就没有${name}了。别的镜头还用旧版本 v${scene.v}，不受影响。\n\n确定删除吗？（保存前可以点「撤销」）`))) return;
+      commit((d) => ({ ...d, items: d.items.filter((i) => i.id !== selItem.id) }));
+    }
     setSel(null);
   };
   const base = selFig ? presetPose(selFig.kind, effPose(selFig, Boolean(doc.bike)), rideOf(rigUse), selFig.h) : null;
@@ -576,7 +625,7 @@ export function StageEditor({
               大小 R（家具）
             </button>
           </div>
-          <p className="text-[11px] text-neutral-500">在 3D 里点物件选中，拖箭头 / 圆环。左键拖空白处转视角，右键平移，滚轮缩放。Ctrl/⌘+Z 撤销。</p>
+          <p className="text-[11px] text-neutral-500">在 3D 里点物件选中，拖箭头 / 圆环。左键拖空白处转视角，右键平移。缩放：先点一下画面再滚轮，或按住 Ctrl 滚轮，或点画面右上角 + / −。Ctrl/⌘+Z 撤销。</p>
             </>
           )}
         </div>
@@ -606,12 +655,26 @@ export function StageEditor({
             </button>
           </div>
           <div className="flex max-h-32 flex-wrap gap-1 overflow-y-auto">
-            {activeItems(doc.items, scene.theme).map((i) => (
-              <button key={i.id} type="button" className={btn(sel === `item:${i.id}`)} onClick={() => setSel(`item:${i.id}`)}>
-                {findItemType(i.type).label}
-              </button>
-            ))}
+            {activeItems(doc.items, scene.theme)
+              .filter((i) => editSite || !isStructure(i))
+              .map((i) => (
+                <button key={i.id} type="button" className={btn(sel === `item:${i.id}`)} onClick={() => setSel(`item:${i.id}`)}>
+                  {itemLabel(i, doc.items)}
+                </button>
+              ))}
           </div>
+          <label className="flex items-center gap-1 text-[11px] text-neutral-400">
+            <input
+              type="checkbox"
+              checked={editSite}
+              onChange={(e) => {
+                setEditSite(e.target.checked);
+                if (!e.target.checked && selItem && isStructure(selItem)) setSel(null);
+              }}
+            />
+            编辑场地（墙 / 地板）
+            <span className="text-neutral-500">· {editSite ? "现在能点中墙和地板，小心误删" : "默认锁住，点不中，防止误删"}</span>
+          </label>
           <select value="" onChange={(e) => e.target.value && addItem(e.target.value)} className="w-full rounded border border-white/10 bg-neutral-950 px-1 py-1 text-white">
             <option value="">+ 加家具…</option>
             {ITEM_TYPES.map((t) => (
@@ -629,12 +692,28 @@ export function StageEditor({
         {selFig && base ? (
           <div className="space-y-2 rounded-xl border border-amber-400/30 bg-neutral-900/70 p-3">
             <div className="flex flex-wrap gap-1">
-              {FIGURE_POSES.filter((p) => p.id !== "ride" || doc.bike).map((p) => (
-                <button key={p.id} type="button" className={btn(effPose(selFig, Boolean(doc.bike)) === p.id)} onClick={() => patchFig({ pose: p.id, onProduct: p.id === "ride" && Boolean(doc.bike), custom: undefined })}>
-                  {p.label}
-                </button>
-              ))}
+              {FIGURE_POSES.filter((p) => (p.id !== "ride" && !isCarry(p.id)) || doc.bike).map((p) => {
+                const why = p.id === "ride" ? rideBlock(doc, selFig, members) : isCarry(p.id) ? carryBlock(doc, selFig, members) : "";
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    title={why || undefined}
+                    disabled={Boolean(why) && effPose(selFig, Boolean(doc.bike)) !== p.id}
+                    className={`${btn(effPose(selFig, Boolean(doc.bike)) === p.id)} disabled:opacity-40`}
+                    onClick={() => patchFig(p.id === "ride" ? { pose: "ride", onProduct: true, custom: undefined } : { pose: p.id, onProduct: false, custom: undefined, ...(isCarry(p.id) || !selFig.onProduct ? {} : freeSpot(doc, activeItems(doc.items, scene.theme), [layout.camPos[0], layout.camPos[1]], selFig.id)) })}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
             </div>
+            {(() => {
+              const whys = [...new Set([rideBlock(doc, selFig, members), carryBlock(doc, selFig, members)].filter((w) => w && w !== "场景里没有产品"))];
+              return !selFig.onProduct && !(isCarry(selFig.pose) && carrierOf(doc)?.id === selFig.id) && whys.length ? <p className="text-[11px] text-neutral-500">灰的点不了：{whys.join("；")}</p> : null;
+            })()}
+            {isCarry(selFig.pose) && carrierOf(doc)?.id === selFig.id ? <p className="text-[11px] text-emerald-300">车已挂到{selFig.pose === "carry" ? "右手" : "双手"}上：挪这个人偶，车跟着走。手离车太远就点「恢复预设姿态」。</p> : null}
+            {note ? <p className="text-[11px] text-amber-200">{note}</p> : null}
             {selFig.custom ? (
               <p className="text-[11px] text-amber-200">手脚拖过：自定义（从「{FIGURE_POSES.find((p) => p.id === effPose(selFig, Boolean(doc.bike)))?.label ?? selFig.pose}」改过来）</p>
             ) : null}
@@ -670,15 +749,45 @@ export function StageEditor({
               </button>
             </div>
             <p className="text-[11px] text-neutral-500">
-              {selFig.onProduct && doc.bike ? "骑在产品上：跟着产品走。" : "拖人偶脚下的箭头挪位置，切到「转向」拖圆环转身。"}拖<span className="text-sky-300">蓝球</span>（手、脚）和<span className="text-pink-300">粉球</span>
+              {selFig.onProduct && doc.bike ? "骑在产品上：跟着产品走；车侧躺、竖起、提起来时会自动下车。" : "拖人偶脚下的箭头挪位置，切到「转向」拖圆环转身。"}拖<span className="text-sky-300">蓝球</span>（手、脚）和<span className="text-pink-300">粉球</span>
               （臀部），膝盖和手肘自动弯。
             </p>
+            {!(selFig.onProduct && doc.bike) && doc.bike ? (
+              <div className="space-y-1 text-neutral-400">
+                <p className="text-[11px]">站在车的哪边（自动面向车）</p>
+                {(
+                  [
+                    ["近", 0.75],
+                    ["中", 1.2],
+                    ["远", 2],
+                  ] as const
+                ).map(([dn, dist]) => (
+                  <div key={dn} className="flex flex-wrap gap-1">
+                    {(
+                      [
+                        ["左", 90],
+                        ["右", -90],
+                        ["前", 0],
+                        ["后", 180],
+                      ] as const
+                    ).map(([sn, side]) => (
+                      <button key={sn} type="button" className={btn(false)} onClick={() => patchFig({ ...relSpot(doc.bikeYaw, side, dist), custom: undefined })}>
+                        {sn}·{dn}
+                      </button>
+                    ))}
+                  </div>
+                ))}
+                <p className="text-[11px] text-neutral-500">左右前后按车头方向算：车头朝前，人站在车的左边就是「左」。</p>
+              </div>
+            ) : null}
             {!(selFig.onProduct && doc.bike) ? (
+              <details className="text-neutral-400">
+              <summary className="cursor-pointer text-[11px]">精确调整（米 / 度）</summary>
               <div className="flex gap-1 text-neutral-400">
                 {(
                   [
-                    ["dx", "离产品往东 米", 0.05],
-                    ["dy", "往北 米", 0.05],
+                    ["dx", "离车往东（地图右）米", 0.05],
+                    ["dy", "往北（地图上）米", 0.05],
                     ["yaw", "面朝 °", 5],
                   ] as const
                 ).map(([k, label, step]) => (
@@ -688,6 +797,7 @@ export function StageEditor({
                   </label>
                 ))}
               </div>
+              </details>
             ) : null}
             {(["lean", "head"] as const).map((k) => (
               <label key={k} className="block text-neutral-400">
@@ -711,7 +821,7 @@ export function StageEditor({
         {selItem ? (
           <div className="flex items-center gap-2 rounded-xl border border-amber-400/30 bg-neutral-900/70 p-3">
             <span>
-              {findItemType(selItem.type).label} {selItem.w}×{selItem.d}×{selItem.h} 米
+              {itemLabel(selItem, doc.items)} {selItem.w}×{selItem.d}×{selItem.h} 米{isStructure(selItem) ? <span className="text-amber-200"> · 场地本身，删了会影响用这个场地新版本的镜头</span> : null}
             </span>
             <button type="button" onClick={del} className="ml-auto text-rose-300">
               删除
@@ -722,10 +832,15 @@ export function StageEditor({
     </>
   );
   const clear = r2(Math.max(0, doc.bikeLift - doc.bikeGround));
+  const carrier = carrierOf(doc);
   const vProduct =
     doc.bike && sel === "product" ? (
       <div className="space-y-2 rounded-xl border border-amber-400/30 bg-neutral-900/70 p-3">
         <p className="text-white">产品 · 姿势</p>
+        {carrier ? (
+          <p className="text-[11px] text-emerald-300">车在{figName(doc.figures, carrier, members)}手上：姿势和位置跟着这个人。要改，先点人偶换成「站」把车放下。</p>
+        ) : (
+          <>
         <div className="flex flex-wrap gap-1">
           {PRODUCT_POSES.map(([n, pitch, roll, extra]) => (
             <button key={n} type="button" className={btn(doc.bikePitch === pitch && doc.bikeRoll === roll && clear === extra)} onClick={() => setBikeAngles(pitch, roll, extra)}>
@@ -733,11 +848,20 @@ export function StageEditor({
             </button>
           ))}
         </div>
+        {ridersOf(doc).length ? <p className="text-[11px] text-neutral-500">{figName(doc.figures, ridersOf(doc)[0], members)}骑在车上：选立着以外的姿势，他会自动下车站到旁边。</p> : null}
+        {liftOf(doc) >= 0.08 ? <p className="text-[11px] text-amber-200">没有人拿着，车会悬空 {liftOf(doc).toFixed(2)} 米。要人提着：点人偶，选「单手提起产品」或「双手抱起产品」，车会自动挂到手上。</p> : null}
+        {note ? <p className="text-[11px] text-amber-200">{note}</p> : null}
+          </>
+        )}
+        {carrier ? null : (
+          <>
         <Range label="朝向" value={Math.round(wrap(doc.bikeYaw))} min={-180} max={180} step={1} unit="°" onChange={(v) => commit((d) => ({ ...d, bikeYaw: v }))} />
         <Range label="离地高度（0 = 贴着地面）" value={clear} min={0} max={1.5} step={0.05} unit="米" onChange={(v) => commit((d) => ({ ...d, bikeLift: r2(d.bikeGround + v) }))} />
         <Range label="俯仰（+ = 车头抬起）" value={doc.bikePitch} min={-90} max={90} step={1} unit="°" onChange={(v) => setBikeAngles(v, doc.bikeRoll)} />
         <Range label="侧倾（+ = 往左倒）" value={doc.bikeRoll} min={-180} max={180} step={1} unit="°" onChange={(v) => setBikeAngles(doc.bikePitch, v)} />
         <p className="text-[11px] text-neutral-500">水平位置：在 3D 里拖箭头。转向：点上方「转向」再拖圆环，或拖上面的「朝向」。</p>
+          </>
+        )}
       </div>
     ) : null;
   const vRig = (
@@ -801,11 +925,12 @@ export function StageEditor({
       <p className="text-white">跟大脑说一句 <span className="text-[11px] text-neutral-400">调人偶和产品（家具在「场地」里改，摄影机在右边「镜头」里调）</span></p>
       <div className="flex gap-2">
         <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="比如：小孩骑在车上，大人站在旁边，其他细节你帮我调" className="min-w-0 flex-1 rounded border border-white/10 bg-neutral-950 px-2 py-1 text-white" />
-        <button type="button" disabled={thinking || askOk || ask.trim().length < 2} onClick={() => setAskOk(true)} className="rounded-lg bg-violet-400 px-3 py-1 font-medium text-black disabled:opacity-40">
+        <button type="button" disabled={!brainReady || thinking || askOk || ask.trim().length < 2} onClick={() => setAskOk(true)} className="rounded-lg bg-violet-400 px-3 py-1 font-medium text-black disabled:opacity-40">
           {thinking ? "想中…" : "让大脑调"}
         </button>
       </div>
-      {askOk ? (
+      {!brainReady ? <p className="text-[11px] text-neutral-400">「让大脑调」点不了：还没填 Kimi Key（到「设置」里填）。不填也能自己在 3D 里摆。</p> : null}
+      {askOk && brainReady ? (
         <div className="flex flex-wrap items-center gap-2 rounded border border-violet-400/40 p-2 text-neutral-200">
           <span>调用大脑（Kimi）1 次，实测约 $0.02–$0.07（按实际用量记），不出图。改完只在 3D 里预览，不会自动保存。</span>
           <button type="button" onClick={askBrain} className="rounded bg-violet-400 px-2 py-0.5 font-medium text-black">
@@ -849,7 +974,23 @@ export function StageEditor({
           {ro ? null : vObjects}
         </div>
         {vBrain}
-        <canvas ref={canvas} className="h-[70vh] w-full touch-none rounded-xl border border-white/10 bg-black" />
+        <div className="relative">
+          <canvas ref={canvas} className="h-[70vh] w-full touch-none rounded-xl border border-white/10 bg-black" />
+          {shotView ? null : (
+            <div className="absolute right-2 top-2 flex gap-1 text-xs">
+              <button type="button" aria-label="放大" className="rounded bg-black/70 px-2 py-1 text-white hover:bg-black" onClick={() => api.current?.zoom(1 / 1.25)}>
+                +
+              </button>
+              <button type="button" aria-label="缩小" className="rounded bg-black/70 px-2 py-1 text-white hover:bg-black" onClick={() => api.current?.zoom(1.25)}>
+                −
+              </button>
+              <button type="button" className="rounded bg-black/70 px-2 py-1 text-white hover:bg-black" onClick={() => api.current?.home()}>
+                回到全景
+              </button>
+            </div>
+          )}
+          <p className="pointer-events-none absolute bottom-2 left-2 rounded bg-black/60 px-2 py-0.5 text-[11px] text-neutral-300">按住 Ctrl 滚轮缩放；不按就滚动页面</p>
+        </div>
         <fieldset disabled={ro} className={`grid min-w-0 gap-2 md:grid-cols-2 ${ro ? "opacity-60" : ""}`}>
           {vProduct}
           {vSel}
@@ -871,7 +1012,23 @@ export function StageEditor({
         {vRig}
         {vSave}
       </aside>
-      <canvas ref={canvas} className="h-[78vh] w-full touch-none rounded-xl border border-white/10 bg-black" />
+      <div className="relative">
+          <canvas ref={canvas} className="h-[78vh] w-full touch-none rounded-xl border border-white/10 bg-black" />
+          {shotView ? null : (
+            <div className="absolute right-2 top-2 flex gap-1 text-xs">
+              <button type="button" aria-label="放大" className="rounded bg-black/70 px-2 py-1 text-white hover:bg-black" onClick={() => api.current?.zoom(1 / 1.25)}>
+                +
+              </button>
+              <button type="button" aria-label="缩小" className="rounded bg-black/70 px-2 py-1 text-white hover:bg-black" onClick={() => api.current?.zoom(1.25)}>
+                −
+              </button>
+              <button type="button" className="rounded bg-black/70 px-2 py-1 text-white hover:bg-black" onClick={() => api.current?.home()}>
+                回到全景
+              </button>
+            </div>
+          )}
+          <p className="pointer-events-none absolute bottom-2 left-2 rounded bg-black/60 px-2 py-0.5 text-[11px] text-neutral-300">按住 Ctrl 滚轮缩放；不按就滚动页面</p>
+        </div>
     </div>
   );
 }

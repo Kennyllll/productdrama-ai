@@ -9,6 +9,7 @@ import { saveSetLayoutAction } from "@/app/production-actions";
 import type { SetLayout, SetMove, SetProp } from "@/lib/production-repo";
 import { lerpLayout, moveEnd, MOVES, shakeLayout } from "@/lib/shorts-set";
 import type { SceneItem } from "@/lib/shorts-scenes";
+import { itemAt, itemLabel, roomBox, wallBetween } from "@/lib/stage-rules";
 import { buildFigure, buildFreeHand, buildScene } from "@/components/shorts/scene-mesh";
 import { estimateRig, figuresOf, KB002_RIG, rideOf, type FigureSpec, type ProductRig } from "@/lib/figures";
 import { freeHand, OP_HANDS, operatorOrigin, parseOp } from "@/lib/shorts-operator";
@@ -149,12 +150,26 @@ export function Set3D({
     opRef.current = operators ? (operators[code] ?? "") : null;
   }, [operators, code]);
 
-  const recenter = (l: SetLayout) => {
+  /** 地图自动缩放：机位、看向点和房间（地板 / 墙）都框进来 */
+  const recenter = (l: SetLayout, items: SceneItem[] | null = shotItems) => {
     const c = toV(l.camPos);
     const t = toV(l.lookAt);
+    const room = items?.length ? roomBox(items) : null;
+    if (room) {
+      const x0 = Math.min(room.x0, c.x, t.x);
+      const x1 = Math.max(room.x1, c.x, t.x);
+      const z0 = Math.min(-room.y1, c.z, t.z);
+      const z1 = Math.max(-room.y0, c.z, t.z);
+      viewRef.current = { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, span: Math.min(60, Math.max(6, (z1 - z0) * 1.2, ((x1 - x0) * 1.2) / 2.33)) };
+      return;
+    }
     const dist = Math.min(c.distanceTo(t), 40);
     viewRef.current = { cx: (c.x + t.x) / 2, cz: (c.z + t.z) / 2, span: Math.max(12, dist * 2.2) };
   };
+
+  const outside = shotItems?.length ? wallBetween([layout.camPos[0], layout.camPos[1]], layout.camPos[2], shotItems) : null;
+  const camIn = shotItems ? itemAt([layout.camPos[0], layout.camPos[1]], layout.camPos[2], shotItems) : undefined;
+  const camOut = outside ? `机位在「${itemLabel(outside.wall, shotItems ?? [])}」外面：拍出来会被墙挡住` : camIn ? `机位在「${itemLabel(camIn, shotItems ?? [])}」里面：拍出来会被挡住，挪开一点` : "";
 
   const pick = async (s: SetShot, force = false) => {
     if (!force && (dirty || otherDirty) && s.code !== code && !await askConfirm("这个镜头的修改还没保存，切换会丢掉。确定切换？")) return;
@@ -164,7 +179,7 @@ export function Set3D({
     setLayout(l);
     setDirty(false);
     setMsg("");
-    recenter(l);
+    recenter(l, sceneItems?.[s.code] ?? null);
     const url = new URL(window.location.href);
     url.searchParams.set("shot", s.code);
     router.replace(url.pathname + url.search, { scroll: false });
@@ -175,8 +190,10 @@ export function Set3D({
     setDirty(true);
   };
 
+  const recenterRef = useRef(recenter);
+  recenterRef.current = recenter;
   useEffect(() => {
-    recenter(layoutRef.current);
+    recenterRef.current(layoutRef.current);
     const camEl = camCanvas.current;
     const mapEl = mapCanvas.current;
     if (!camEl || !mapEl) return;
@@ -314,28 +331,31 @@ export function Set3D({
       }
       const figs = figuresOf(l);
       const rg = rigRef.current;
-      const key = JSON.stringify([figs, rg, l.bike, l.bikeYaw]);
+      const key = JSON.stringify([figs, rg, l.bike, l.bikeYaw, l.bikeLift, l.bikePitch, l.bikeRoll]);
       if (key !== figKey) {
         figKey = key;
         for (const c of [...figGroup.children]) {
           figGroup.remove(c);
           c.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
         }
-        // 车头方向 = (-sin yaw, 0, -cos yaw)；人偶本地 +z 朝前；骑乘时原点放在座椅中心
-        const yawR = ((l.bikeYaw ?? 0) * Math.PI) / 180;
+        // 人偶本地 +z 朝前；骑乘时挂在和产品一样的变换下（车侧倾 / 抬头 / 离地，人一起动），原点放在座椅中心
         const bx = l.bike?.[0] ?? 0;
         const by = l.bike?.[1] ?? 0;
         for (const f of figs) {
           const ride = f.onProduct && Boolean(l.bike);
           const g = buildFigure(f.kind, ride ? "ride" : f.pose === "ride" ? "stand" : f.pose, { ride: rideOf(rg), custom: f.custom, h: f.h });
+          const mount = new THREE.Group();
           if (ride) {
-            g.rotation.y = yawR + Math.PI;
-            g.position.set(bx + Math.sin(yawR) * rg.seatBack, 0, -by + Math.cos(yawR) * rg.seatBack);
+            mount.position.copy(bike.position);
+            mount.rotation.copy(bike.rotation);
+            g.rotation.y = -Math.PI / 2;
+            g.position.set(rg.seatBack, 0, 0);
           } else {
             g.rotation.y = Math.PI - (f.yaw * Math.PI) / 180;
             g.position.set(bx + f.dx, 0, -(by + f.dy));
           }
-          figGroup.add(g);
+          mount.add(g);
+          figGroup.add(mount);
         }
       }
 
@@ -438,7 +458,12 @@ export function Set3D({
     const up = () => {
       drag = null;
     };
+    // 滚轮默认滚页面；点过地图（鼠标还在地图上）或按住 Ctrl 才缩放
+    let armed = false;
+    const arm = () => (armed = true);
+    const disarm = () => (armed = false);
     const wheel = (e: WheelEvent) => {
+      if (!(armed || e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
       viewRef.current.span = Math.min(400, Math.max(3, viewRef.current.span * (e.deltaY > 0 ? 1.15 : 1 / 1.15)));
     };
@@ -446,12 +471,16 @@ export function Set3D({
     mapEl.addEventListener("pointermove", move);
     mapEl.addEventListener("pointerup", up);
     mapEl.addEventListener("wheel", wheel, { passive: false });
+    mapEl.addEventListener("pointerdown", arm);
+    mapEl.addEventListener("pointerleave", disarm);
     return () => {
       cancelAnimationFrame(raf);
       mapEl.removeEventListener("pointerdown", down);
       mapEl.removeEventListener("pointermove", move);
       mapEl.removeEventListener("pointerup", up);
       mapEl.removeEventListener("wheel", wheel);
+      mapEl.removeEventListener("pointerdown", arm);
+      mapEl.removeEventListener("pointerleave", disarm);
       camR.dispose();
       mapR.dispose();
       propsRef.current = null;
@@ -601,9 +630,32 @@ export function Set3D({
         <figure>
           <figcaption className="mb-1 text-xs text-neutral-400">
             俯视地图：拖<span className="text-amber-300">黄点</span>挪机位，拖<span className="text-sky-300">蓝点</span>改看向哪里
-            {layout.bike ? <>，拖<span className="text-rose-300">红点</span>挪车</> : null}；拖空白处平移，滚轮缩放。上方是北
+            {layout.bike ? <>，拖<span className="text-rose-300">红点</span>挪车</> : null}；拖空白处平移。缩放：按住 Ctrl 滚轮，或点右上角 + / −。上方是北
           </figcaption>
-          <canvas ref={mapCanvas} className="aspect-[2.33] w-full cursor-crosshair touch-none rounded-lg border border-white/10 bg-black" />
+          <div className="relative">
+            <canvas ref={mapCanvas} className={`aspect-[2.33] w-full cursor-crosshair touch-none rounded-lg border bg-black ${camOut ? "border-rose-500" : "border-white/10"}`} />
+            <div className="absolute right-2 top-2 flex gap-1 text-xs">
+              <button type="button" aria-label="放大地图" className="rounded bg-black/70 px-2 py-1 text-white hover:bg-black" onClick={() => (viewRef.current.span = Math.max(3, viewRef.current.span / 1.25))}>
+                +
+              </button>
+              <button type="button" aria-label="缩小地图" className="rounded bg-black/70 px-2 py-1 text-white hover:bg-black" onClick={() => (viewRef.current.span = Math.min(400, viewRef.current.span * 1.25))}>
+                −
+              </button>
+              <button type="button" className="rounded bg-black/70 px-2 py-1 text-white hover:bg-black" onClick={() => recenter(layout)}>
+                回到全景
+              </button>
+            </div>
+          </div>
+          {camOut ? (
+            <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-rose-300">
+              {camOut}
+              {outside && !(compact && shot.locked) ? (
+                <button type="button" className="rounded border border-rose-400/50 px-2 py-0.5 text-rose-200" onClick={() => update({ camPos: [outside.inside[0], outside.inside[1], layout.camPos[2]] })}>
+                  放回房间里
+                </button>
+              ) : null}
+            </p>
+          ) : null}
         </figure>
       </div>
 
