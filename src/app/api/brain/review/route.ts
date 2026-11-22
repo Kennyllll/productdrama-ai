@@ -10,7 +10,7 @@ const off = () => process.env.NODE_ENV === "production";
 
 export async function GET() {
   if (off()) return NextResponse.json({ error: "not found" }, { status: 404 });
-  const rows = getDb().prepare("SELECT id, project_id, title FROM short_videos ORDER BY updated_at DESC").all();
+  const rows = getDb().prepare("SELECT id, project_id, title FROM short_videos WHERE deleted_at IS NULL ORDER BY updated_at DESC").all();
   return NextResponse.json(rows);
 }
 
