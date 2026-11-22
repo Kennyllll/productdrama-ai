@@ -125,6 +125,27 @@ export function cleanHookPeople(raw: unknown, members: FamilyMember[] | undefine
   return { people, dropped, renames };
 }
 
+/** 剧本文字里写了名字、却没列进出镜名单的家庭成员（AI 常漏）：补进名单站在车旁，免得文字和 3D 对不上 */
+export function addNamedPeople(people: HookPerson[], members: FamilyMember[] | undefined, text: string, filmer?: string): { people: HookPerson[]; added: string[] } {
+  const out = [...people];
+  const added: string[] = [];
+  const used = new Set(out.map((p) => p.memberId));
+  const sides = new Set(out.map((p) => p.side).filter(Boolean));
+  const clean = stripNeg(text);
+  for (const m of members ?? []) {
+    if (out.length >= 3) break;
+    if (!m.name || used.has(m.id) || m.id === filmer) continue;
+    const name = m.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const hit = clean.match(new RegExp(`[^.。;；]*\\b${name}\\b[^.。;；]*`, "i"));
+    if (!hit) continue;
+    const side = SIDES.find((x) => !sides.has(x)) ?? "right";
+    sides.add(side);
+    out.push({ kind: memberKind(m), pose: /crouch|kneel|squat|蹲|跪/i.test(hit[0]) ? "crouch" : "stand", side, dist: 0.6, memberId: m.id, h: m.heightCm / 100 });
+    added.push(m.name);
+  }
+  return { people: out, added };
+}
+
 /** 换了人之后，剧本文字里的旧名字和“爸爸 / dad”也跟着换，否则出图提示词前后打架 */
 export function renameText(text: string, renames: [string, string][]): string {
   let t = text;
@@ -154,7 +175,7 @@ const vHalfTan = (lens: number) => 32 / lens;
 /** 主体占画面 fill 高度时摄影机该多远：有孩子骑车按 1 米高算，只有产品按车把高度 */
 function camDist(st: HookStage, k: number): number {
   const h = (st.people.some((p) => p.onProduct) ? 1 : 0.6) * k;
-  const fit = h / ((st.fill ?? 0.5) * 2 * Math.atan(vHalfTan(st.lens)));
+  const fit = h / ((st.fill ?? 0.5) * 2 * vHalfTan(st.lens));
   return Math.max(0.5 * k, Math.min(st.dist * k, fit));
 }
 /** 让产品着地点落在画面 groundY 高度：反算摄影机看向哪个高度 */

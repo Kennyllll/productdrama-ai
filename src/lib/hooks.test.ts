@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cleanHookData, cleanHookValues, fillCaption, PRESET_HOOKS } from "@/lib/hooks";
-import { buildHookLayout } from "@/lib/hook-stage";
+import { addNamedPeople, buildHookLayout } from "@/lib/hook-stage";
 
 test("预置 6 个 hook，清洗后不变", () => {
   assert.deepEqual(PRESET_HOOKS.map((h) => h.name), ["价格开场", "大胆主张", "先给结果", "紧迫感", "社会认同", "对比", "车里自拍"]);
@@ -42,4 +42,22 @@ test("Hook 3D 构图照真实案例：主体占画面一半时摄影机拉近，
   const pitch = Math.atan((l.camPos[2] - l.lookAt[2]) / d);
   const ground = Math.tan(Math.atan(l.camPos[2] / d) - pitch) / (32 / 35);
   assert.ok(Math.abs(ground - 0.7) < 0.02, `ground ${ground}`);
+});
+
+test("剧本里写了名字却没列进出镜名单的家庭成员：补进 3D，蹲着写蹲；拍摄者和已在名单的不重复加", () => {
+  const members = [
+    { id: "zoe", name: "Zoe", role: "daughter", age: 3, heightCm: 95 },
+    { id: "marcus", name: "Marcus", role: "dad", age: 36, heightCm: 182 },
+    { id: "maya", name: "Maya", role: "mom", age: 34, heightCm: 168 },
+  ] as unknown as Parameters<typeof addNamedPeople>[1];
+  const r = addNamedPeople([{ kind: "child", pose: "ride", onProduct: true, memberId: "zoe" }], members, "Zoe rides. Marcus crouches at the right edge, waist-down.", "maya");
+  assert.deepEqual(r.added, ["Marcus"]);
+  assert.equal(r.people[1].pose, "crouch");
+  assert.equal(r.people[1].kind, "adult");
+  assert.equal(addNamedPeople(r.people, members, "No Maya here. Marcus crouches.", "x").added.length, 0);
+});
+
+test("开头字幕里的产品名只留英文：中文产品名不会让 Hook 字体显示成方框", () => {
+  assert.equal(fillCaption("{vs} vs {product}", { vs: "an old trike" }, "TC003 儿童三轮车"), "an old trike vs TC003");
+  assert.equal(fillCaption("{vs} vs {product}", { vs: "an old trike" }, "儿童三轮车"), "an old trike vs this one");
 });

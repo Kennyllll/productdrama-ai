@@ -113,9 +113,12 @@ export function cleanHookData(x: unknown): HookData | null {
 export const cleanHookValues = (lib: Pick<HookData, "fields">, values: Record<string, string> | undefined): Record<string, string> =>
   Object.fromEntries(lib.fields.map((f) => [f.key, (typeof values?.[f.key] === "string" ? values[f.key] : "").trim().slice(0, 200)]));
 
+/** 开头字幕只能放英文（Hook 字体没有中文）：中文产品名只留里面的英文型号，没有就写 this one */
+export const captionProduct = (name: string) => name.replace(/[^\x20-\x7E]+/g, " ").replace(/\s{2,}/g, " ").trim() || "this one";
+
 export function fillCaption(tpl: string, values: Record<string, string>, product: string): string {
   return tpl
-    .replace(/\{(\w+)\}/g, (_, k: string) => (k === "product" ? product : (values[k] ?? "")))
+    .replace(/\{(\w+)\}/g, (_, k: string) => (k === "product" ? captionProduct(product) : (values[k] ?? "")))
     .replace(/\s*(—|-|\||·)\s*$/g, "")
     .replace(/\(\s*\)|（\s*）/g, "")
     .replace(/\s{2,}/g, " ")

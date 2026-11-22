@@ -1859,7 +1859,7 @@ export function ShortStudio({
           run={(preview) =>
             new Promise<string>((done) =>
               start(async () => {
-                const r = await renderShortAction(v.id, preview);
+                const r = await renderShortAction(v.id, preview, focus);
                 apply(r, preview ? "预览已更新（不完整）" : "成片已更新");
                 if (!r.error && !preview) setFinalAt(new Date().toISOString());
                 done(r.error ?? "");

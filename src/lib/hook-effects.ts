@@ -198,8 +198,10 @@ export function hookAss(effect: HookEffectId, caption: string, seconds: number, 
     case "vsWords": {
       const words = text.split(/\s+/).map((w) => w.toUpperCase());
       words.forEach((w, i) => {
-        const a = i * 0.5;
-        const b = i === words.length - 1 ? end : a + 0.5;
+        // 词多时间短就加快，保证最后的产品名一定出现（案例每词 0.5 秒，最快 0.3 秒）
+        const step = Math.max(0.3, Math.min(0.5, end / words.length));
+        const a = i * step;
+        const b = i === words.length - 1 ? end : a + step;
         if (a < end) at(a, b, "Pop", `{\\an5\\pos(${W / 2},${H * 0.6})\\fscx130\\fscy130\\t(0,90,\\fscx100\\fscy100)}${w}`);
       });
       break;

@@ -19,7 +19,7 @@ import { createHook, getHook } from "@/lib/hooks-repo";
 import { cleanHookValues, fillCaption, HOOK_ENTRIES } from "@/lib/hooks";
 import { isHookEffect } from "@/lib/hook-effects";
 import { hookParts, hooksOf, isExtraHook, shotSound } from "@/lib/shorts";
-import { applySelfie, buildHookLayout, cleanHookPeople, DEFAULT_STAGE, peopleText, renameText, VIEW_LABEL, type HookPerson } from "@/lib/hook-stage";
+import { applySelfie, buildHookLayout, cleanHookPeople, DEFAULT_STAGE, peopleText, renameText, VIEW_LABEL, type HookPerson, addNamedPeople } from "@/lib/hook-stage";
 import { shortConceptPrompt, shortShotsPrompt } from "@/lib/ai/short-prompts";
 import { deleteRequest, estimate, getStatus, HiggsfieldError, submit, uploadFile, type HfRequest } from "@/lib/higgsfield";
 import { arkFindTask, arkGetTask, arkSubmitVideo, arkUsd, isArkModel, type ArkVideoInput } from "@/lib/ark";
@@ -361,7 +361,10 @@ export async function draftHookAction(videoId: string, libId: string, values: Re
       if (r.length) for (const k of Object.keys(t) as TextField[]) if (typeof t[k] === "string") t[k] = renameText(t[k]!, r);
     };
     fixNames(draft, renames);
-    const people = car ? [] : selfiePerson ? rawPeople.filter((x) => x.memberId !== selfiePerson.id) : rawPeople;
+    const listed = car ? [] : selfiePerson ? rawPeople.filter((x) => x.memberId !== selfiePerson.id) : rawPeople;
+    const named = car ? { people: listed, added: [] as string[] } : addNamedPeople(listed, cast?.members?.filter((m) => m.id !== selfiePerson?.id), `${draft.description}\n${draft.framePrompt}`, filmer);
+    const people = named.people;
+    if (named.added.length) dropped.push(`剧本里写了 ${named.added.join("、")}，出镜名单漏了：已按剧本补进 3D`);
     let second: HookDraftPart | undefined;
     if (lib.second) {
       const d2 = (d.second && typeof d.second === "object" ? d.second : {}) as Record<string, unknown>;
@@ -558,7 +561,15 @@ export async function setHookValuesAction(videoId: string, shotId: string, value
     if (!s || !h?.libId) throw new Error("这个开头不是从 Hook 库来的");
     const vals = Object.fromEntries(Object.keys(h.values ?? {}).map((k) => [k, str(values[k] ?? h.values?.[k], 200).trim()]));
     const changed = Object.keys(vals).filter((k) => vals[k] !== h.values?.[k]);
-    if (!changed.length) return { result: { state: state(videoId) } };
+    if (!changed.length) {
+      // 没改属性也按最新规则重算一次字幕（比如产品名只留英文），旧开头点“保存属性”就能修好
+      const cap = h.captionTpl ? fillCaption(h.captionTpl, vals, getProduct(v.projectId)?.name ?? "") : s.caption;
+      if (cap !== s.caption) {
+        s.caption = cap;
+        saveShortVideo(v);
+      }
+      return { result: { state: state(videoId) } };
+    }
     if (listJobs(videoId).some((j) => j.shotId === s.id && (j.status === "submitting" || j.status === "submitted"))) throw new Error("这个开头正在生成，等生成完再改");
     const visual = changed.filter((k) => h.visualKeys?.includes(k));
     const made = s.stage !== "draft" || !!s.frameJobId || !!s.videoJobId;
@@ -1997,7 +2008,7 @@ async function drive(job: JobRecord): Promise<void> {
 }
 
 /** 导出：每个勾选的开头各出一条「开头 + 正文」；第一条同时存成 final.mp4 */
-export async function renderShortAction(videoId: string, preview = false): Promise<Result<StudioState>> {
+export async function renderShortAction(videoId: string, preview = false, focusId?: string | null): Promise<Result<StudioState>> {
   try {
     const v = load(videoId);
     const hooks = hooksOf(v);
@@ -2006,7 +2017,10 @@ export async function renderShortAction(videoId: string, preview = false): Promi
     const badCap = picked.flatMap((h) => captionIssues(h).map((m) => `「${h.hook?.name}」${m}`));
     if (badCap.length) throw new Error(badCap.join("；"));
     if (preview) {
-      const h = picked.find((x) => !notReady.includes(x));
+      // 预览先看用户正在看的那个开头，没打开开头才用勾选里第一个做好的
+      const ready = (x: ShortShot) => hookParts(v, x).every((p) => p.stage === "accepted");
+      const open = focusId ? hooks.find((x) => ready(x) && hookParts(v, x).some((p) => p.id === focusId)) : undefined;
+      const h = open ?? picked.find((x) => !notReady.includes(x));
       await renderShort(v, previewPath(v), h?.id);
       return { result: state(videoId) };
     }

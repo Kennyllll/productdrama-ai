@@ -1,6 +1,6 @@
 // 出图提示词里「补充文字」和其它来源打架时，程序直接删掉打架的那几句（免费、确定性）
 
-const WARDROBE = /\b(wearing|dressed|outfit|t-?shirts?|tees?|jeans|cardigans?|sweaters?|hoodies?|jackets?|pajamas|dress(es)?|shirts?|coats?|sneakers|shoes|boots|leggings|scarf|beanie|overalls)\b/i;
+const WARDROBE = /\b(wearing|dressed|outfit|t-?shirts?|tees?|jeans|cardigans?|sweaters?|hoodies?|jackets?|pajamas|dress(es)?|shirts?|coats?|sneakers|shoes|boots|leggings|scarf|beanie|overalls|shorts|sandals|sleeves?|pants|skirts?|socks|onesie)\b/i;
 const CINEMA = /\b(cinematic|cinema camera|film grain|film still|shallow depth of field|out of focus|bokeh|anamorphic|35mm film)\b/i;
 
 // 反光、闪光：模型会画成产品上的发光点
@@ -8,7 +8,7 @@ const GLARE = /\b(glint\w*|gleam\w*|sparkl\w*|shimmer\w*|glow(?:s|ing)?|lens fla
 // 括号里的人物外貌（年龄、族裔、头发、衣服）：外貌以家庭库为准
 const LOOKS = /\s*\((?=[^()]*\b(?:\d{1,2}|white|black|caucasian|asian|hispanic|latin[oa]|blond\w*|brunette|hair|jeans|shirt|t-shirt|tee|shoes|sneakers|dress)\b)[^()]*\)/gi;
 const AGE = /\b\d{1,2}(?:\.\d)?[- ]?(?:years?|yrs?)[- ]old\s*/gi;
-const HAIR = /\s*with\s+(?:[\w-]+,?\s+){0,3}hair\b/gi;
+const HAIR = /\s*with\s+(?:[\w-]+,?\s+){0,3}(?:hair|curls|ponytails?|braids|pigtails|puffs|buns?)\b/gi;
 const ETHNIC = /\b(?:white|black|caucasian|asian|hispanic|latin[oa]|african[- ]american)\s+(?=(?:woman|man|girl|boy|mom|dad|mother|father|toddler|child|kid|lady|guy)\b)/gi;
 
 // AI 编的产品细节（Logo 位置、颜色、材质）：以产品照为准
