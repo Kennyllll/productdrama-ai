@@ -9,3 +9,13 @@ body {
   color: #e5e5e5;
   font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, -apple-system, sans-serif;
 }
+
+/* 顶部换页进度条 */
+@keyframes pd-nav {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+.pd-nav-bar { animation: pd-nav 1.1s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .pd-nav-bar { animation: none; width: 100%; opacity: 0.6; }
+}

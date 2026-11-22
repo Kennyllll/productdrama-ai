@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { AppShell } from "@/components/AppShell";
 import { ConfirmHost } from "@/components/ConfirmHost";
+import { NavProgress } from "@/components/NavProgress";
+import { Suspense } from "react";
 import { listLocalProjects } from "@/lib/repo";
 import { currentActor } from "@/lib/admin";
 import { AdminProvider } from "@/components/admin/AdminContext";
@@ -23,6 +25,9 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           <AppShell projects={projects}>{children}</AppShell>
         </AdminProvider>
         <ConfirmHost />
+        <Suspense fallback={null}>
+          <NavProgress />
+        </Suspense>
       </body>
     </html>
   );

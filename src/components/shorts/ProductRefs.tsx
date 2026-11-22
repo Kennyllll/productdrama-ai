@@ -2,13 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { saveProductRefAction } from "@/app/short-actions";
 import { PRODUCT_REF_VIEWS } from "@/lib/shorts-set";
 
 /** 在浏览器里用 3D 模型拍 3 张白底参考图（不用 Blender） */
 async function renderRefs(modelUrl: string): Promise<{ name: string; png: string }[]> {
+  // 点按钮才加载 3D 库：短视频列表页打开不再带上 Three.js（约 600 KB）
+  const [THREE, { GLTFLoader }] = await Promise.all([import("three"), import("three/examples/jsm/loaders/GLTFLoader.js")]);
   const g = await new GLTFLoader().loadAsync(modelUrl);
   const obj = g.scene;
   const box = new THREE.Box3().setFromObject(obj);
