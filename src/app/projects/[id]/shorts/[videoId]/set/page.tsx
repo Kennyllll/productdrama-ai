@@ -71,7 +71,7 @@ export default async function ShortSetPage({ params, searchParams }: { params: P
     v.shots.map((s) => {
       const ms = castOf(v.families, s.family ?? 1)?.members ?? [];
       const id = filmerId(v, s);
-      return [s.id, { value: s.filmer ?? "", h: ms.find((m) => m.id === id)?.heightCm, dflt: ms.find((m) => m.id === v.filmer)?.name ?? "不指定", options: ms.map((m) => ({ id: m.id, label: `${m.name}（${roleOf(m.role).label}，${(m.heightCm / 100).toFixed(2)} 米）` })) }];
+      return [s.id, { value: s.filmer ?? "", video: v.filmer ?? "", h: ms.find((m) => m.id === id)?.heightCm, dflt: ms.find((m) => m.id === v.filmer)?.name ?? "不指定", options: ms.map((m) => ({ id: m.id, label: `${m.name}（${roleOf(m.role).label}，${(m.heightCm / 100).toFixed(2)} 米）` })) }];
     }),
   );
   return (

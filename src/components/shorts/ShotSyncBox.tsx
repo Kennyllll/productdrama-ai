@@ -26,7 +26,10 @@ export function ShotSyncBox({
   live,
   members = [],
   rig,
+  filmerId,
 }: {
+  /** 这一镜谁拿手机（家庭成员 id） */
+  filmerId?: string;
   videoId: string;
   shotId: string;
   label: string;
@@ -64,15 +67,15 @@ export function ShotSyncBox({
     const text = Object.values(texts0).join("\n");
     const s = { ...texts0, layout: l } as unknown as ShortShot;
     const full = [...shotChecks(s, basisOf(s, null)), ...promptConflicts(s, rig ?? KB002_RIG).map((c) => c.msg)];
-    const extra = [...stageRuleIssues(d, members), ...castTextIssues(text, members, d.figures)];
-    return { stale: changed || !saved, figs: d.figures.length, full: [...new Set([...full, ...extra])], extra, notes: stageTextNotes(text, d) };
-  }, [layout, texts0, live, saved, members, rig]);
+    const extra = [...stageRuleIssues(d, members, filmerId), ...castTextIssues(text, members, d.figures)];
+    return { moved: changed, stale: changed || !saved, figs: d.figures.length, full: [...new Set([...full, ...extra])], extra, notes: stageTextNotes(text, d) };
+  }, [layout, texts0, live, saved, members, rig, filmerId]);
   if (!st) return null;
   const { sync, draft, texts } = st;
   const liveBox = now ? (
     <div className={`space-y-1 rounded-lg border p-3 ${now.stale && now.full.length ? "border-amber-400/40 bg-amber-400/5 text-amber-100" : "border-white/10 bg-neutral-900/60 text-neutral-300"}`}>
       {now.stale ? (
-        <p className="font-medium">{saved ? "按你现在的摆法检查（还没保存）" : `这一镜还没在 3D 里保存过：按现在的自动摆位查（3D 里 ${now.figs} 个人）`}</p>
+        <p className="font-medium">{now.moved ? `按你现在的摆法检查（还没保存，3D 里 ${now.figs} 个人）` : `这一镜还没在 3D 里摆过：按自动摆位查（3D 里 ${now.figs} 个人）`}</p>
       ) : null}
       {(now.stale ? now.full : now.extra).map((t) => (
         <p key={t}>· {t}</p>

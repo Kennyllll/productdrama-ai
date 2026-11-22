@@ -621,9 +621,10 @@ export function StageEditor({
             <button type="button" className={btn(mode === "rotate")} onClick={() => setMode("rotate")}>
               转向 E
             </button>
-            <button type="button" className={btn(mode === "scale")} onClick={() => setMode("scale")}>
+            <button type="button" disabled={!sel?.startsWith("item:")} className={`${btn(mode === "scale")} disabled:opacity-40`} onClick={() => setMode("scale")}>
               大小 R（家具）
             </button>
+            {sel && !sel.startsWith("item:") ? <span className="self-center text-[11px] text-neutral-500">人和车不能改大小</span> : null}
           </div>
           <p className="text-[11px] text-neutral-500">在 3D 里点物件选中，拖箭头 / 圆环。左键拖空白处转视角，右键平移。缩放：先点一下画面再滚轮，或按住 Ctrl 滚轮，或点画面右上角 + / −。Ctrl/⌘+Z 撤销。</p>
             </>

@@ -58,7 +58,7 @@ export function ShortSet({
   /** 每镜拍摄者入镜设置（空 = 不入镜） */
   operators: Record<string, string>;
   /** 每镜谁拿手机：value = 镜头自己设的；h = 现在拿手机的人身高（厘米）；dflt = 视频设定里的人 */
-  filmers?: Record<string, { value: string; h?: number; dflt: string; options: { id: string; label: string }[] }>;
+  filmers?: Record<string, { value: string; video?: string; h?: number; dflt: string; options: { id: string; label: string }[] }>;
   autoCapture?: boolean;
   /** 自动保存完这一镜后接着自动保存哪一镜（开头切镜后的第二段） */
   nextCode?: string;
@@ -317,7 +317,7 @@ export function ShortSet({
             onDirty={setCamDirty}
             otherDirty={stageDirty}
           />
-          {code ? <ShotSyncBox videoId={videoId} shotId={code} label={b?.label ?? ""} figIds={(st?.layout.figures ?? []).map((f) => f.id)} layout={st?.layout} saved={Boolean(cur?.edited)} live={live} members={st?.members} rig={rig} /> : null}
+          {code ? <ShotSyncBox videoId={videoId} shotId={code} label={b?.label ?? ""} figIds={(st?.layout.figures ?? []).map((f) => f.id)} layout={st?.layout} saved={Boolean(cur?.edited)} live={live} members={st?.members} rig={rig} filmerId={fv[code] === "none" ? undefined : fv[code] || filmers[code]?.video || undefined} /> : null}
           {cur ? (
             <details className="rounded-xl border border-white/10 bg-neutral-900/60 px-3 py-2 text-xs text-neutral-400">
               <summary className="cursor-pointer select-none">镜头描述</summary>
