@@ -35,10 +35,17 @@ function toVideo(r: VideoRow): ShortVideo {
 
 export function listShortVideos(projectId: string): ShortVideo[] {
   if (!ID_RE.test(projectId)) return [];
-  return (getDb().prepare("SELECT * FROM short_videos WHERE project_id = ? ORDER BY updated_at DESC").all(projectId) as VideoRow[]).map(toVideo);
+  return (getDb().prepare("SELECT * FROM short_videos WHERE project_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC").all(projectId) as VideoRow[]).map(toVideo);
 }
 
 export function getShortVideo(id: string): ShortVideo | null {
+  if (!ID_RE.test(id)) return null;
+  const r = getDb().prepare("SELECT * FROM short_videos WHERE id = ? AND deleted_at IS NULL").get(id) as VideoRow | undefined;
+  return r ? toVideo(r) : null;
+}
+
+/** 在回收站里的也能读（恢复 / 永久删除用） */
+export function getShortVideoAny(id: string): ShortVideo | null {
   if (!ID_RE.test(id)) return null;
   const r = getDb().prepare("SELECT * FROM short_videos WHERE id = ?").get(id) as VideoRow | undefined;
   return r ? toVideo(r) : null;
@@ -60,8 +67,18 @@ export function saveShortVideo(v: ShortVideo) {
   getDb().prepare("UPDATE short_videos SET title = ?, data = ?, updated_at = ? WHERE id = ? AND project_id = ?").run(title, JSON.stringify(data), now(), id, projectId);
 }
 
+/** 删除 = 放进回收站（数据、生成记录、文件都留着，能恢复） */
 export function deleteShortVideo(id: string) {
-  const v = getShortVideo(id);
+  getDb().prepare("UPDATE short_videos SET deleted_at = ? WHERE id = ?").run(now(), id);
+}
+
+export function restoreShortVideo(id: string): boolean {
+  return getDb().prepare("UPDATE short_videos SET deleted_at = NULL WHERE id = ?").run(id).changes > 0;
+}
+
+/** 永久删除（只在回收站里由管理员确认）：费用账本和操作日志不删 */
+export function purgeShortVideo(id: string) {
+  const v = getShortVideoAny(id);
   if (!v) return;
   const db = getDb();
   db.transaction(() => {

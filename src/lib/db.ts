@@ -275,6 +275,76 @@ CREATE TABLE IF NOT EXISTS set_layouts (
   updated_at TEXT NOT NULL,
   PRIMARY KEY (project_id, episode, shot_code)
 );
+CREATE TABLE IF NOT EXISTS audit_log (
+  id TEXT PRIMARY KEY,
+  at TEXT NOT NULL,
+  role TEXT NOT NULL,
+  actor TEXT NOT NULL DEFAULT '',
+  project_id TEXT,
+  video_id TEXT,
+  shot_id TEXT,
+  shot_label TEXT NOT NULL DEFAULT '',
+  action TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  usd REAL,
+  provider TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL DEFAULT '',
+  ref_id TEXT
+);
+CREATE INDEX IF NOT EXISTS audit_log_at ON audit_log(at);
+CREATE INDEX IF NOT EXISTS audit_log_video ON audit_log(video_id, at);
+CREATE TABLE IF NOT EXISTS approvals (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  video_id TEXT NOT NULL,
+  shot_id TEXT NOT NULL DEFAULT '',
+  job_kind TEXT NOT NULL DEFAULT '',
+  usd REAL NOT NULL DEFAULT 0,
+  reason TEXT NOT NULL DEFAULT '',
+  actor TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT
+);
+CREATE TABLE IF NOT EXISTS trash (
+  id TEXT PRIMARY KEY,
+  project_id TEXT,
+  video_id TEXT,
+  kind TEXT NOT NULL,
+  label TEXT NOT NULL DEFAULT '',
+  usd REAL NOT NULL DEFAULT 0,
+  payload TEXT NOT NULL,
+  actor TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  restored_at TEXT,
+  purged_at TEXT
+);
+CREATE INDEX IF NOT EXISTS trash_video ON trash(video_id, created_at);
+CREATE TABLE IF NOT EXISTS revisions (
+  id TEXT PRIMARY KEY,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  project_id TEXT,
+  label TEXT NOT NULL DEFAULT '',
+  data TEXT,
+  op TEXT NOT NULL,
+  actor TEXT NOT NULL DEFAULT '',
+  reason TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS revisions_entity ON revisions(entity_type, entity_id, created_at);
+CREATE TABLE IF NOT EXISTS export_versions (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  video_id TEXT NOT NULL,
+  n INTEGER NOT NULL,
+  hook_id TEXT,
+  file TEXT NOT NULL,
+  snapshot TEXT NOT NULL,
+  actor TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS export_versions_video ON export_versions(video_id, n);
 `;
 
 const globalForDb = globalThis as unknown as { __productDramaDb?: Database.Database; __productDramaSchema?: string };
@@ -331,6 +401,8 @@ function migrate(db: Database.Database) {
   add("note", "TEXT NOT NULL DEFAULT ''");
   add("length_cm", "REAL");
   add("remote_url", "TEXT");
+  const vcols = db.prepare("PRAGMA table_info(short_videos)").all() as { name: string }[];
+  if (!vcols.some((c) => c.name === "deleted_at")) db.exec("ALTER TABLE short_videos ADD COLUMN deleted_at TEXT");
   db.exec("CREATE INDEX IF NOT EXISTS product_models_scope ON product_models(project_id, color_id, status)");
 }
 
