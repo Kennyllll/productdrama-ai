@@ -22,14 +22,24 @@ test("字幕按属性填，空值不留残渣", () => {
 
 test("Hook 3D 预设：产品不动，摄影机在车头前方，人面朝产品，按产品大小缩放", () => {
   const base = { lens: 26, camPos: [3, 3, 1.5] as [number, number, number], lookAt: [0, 0, 0.4] as [number, number, number], bike: [1, 2] as [number, number], bikeYaw: 0, aspect: 9 / 16, source: "x" };
-  const head = buildHookLayout({ dist: 2, camH: 1, lens: 28, view: "head", people: [{ kind: "child", pose: "ride", onProduct: true }, { kind: "adult", pose: "stand", side: "right", dist: 1 }] }, base, 0.51);
+  const head = buildHookLayout({ dist: 2, camH: 1, lens: 28, view: "head", fill: 0.1, people: [{ kind: "child", pose: "ride", onProduct: true }, { kind: "adult", pose: "stand", side: "right", dist: 1 }] }, base, 0.51);
   assert.deepEqual(head.bike, [1, 2]);
   assert.deepEqual(head.camPos, [1, 4, 1]);
   assert.equal(head.figures?.[0].onProduct, true);
   const adult = head.figures![1];
   assert.deepEqual([adult.dx, adult.dy], [1, 0]);
   assert.equal(adult.yaw, -90);
-  const big = buildHookLayout({ dist: 2, camH: 1, lens: 28, view: "head", people: [] }, base, 1.02);
+  const big = buildHookLayout({ dist: 2, camH: 1, lens: 28, view: "head", fill: 0.1, people: [] }, base, 1.02);
   assert.deepEqual(big.camPos, [1, 6, 1]);
   for (const h of PRESET_HOOKS) assert.ok(h.stage, h.name);
+});
+
+test("Hook 3D 构图照真实案例：主体占画面一半时摄影机拉近，产品着地点落在画面下部 85%，地面不留大片空地", () => {
+  const base = { lens: 26, camPos: [3, 3, 1.5] as [number, number, number], lookAt: [0, 0, 0.4] as [number, number, number], bike: [0, 0] as [number, number], bikeYaw: 0, aspect: 9 / 16, source: "x" };
+  const l = buildHookLayout({ dist: 3, camH: 0.5, lens: 35, view: "head", people: [] }, base, 0.51);
+  const d = Math.hypot(l.camPos[0], l.camPos[1]);
+  assert.ok(d < 1 && d > 0.5, `distance ${d}`);
+  const pitch = Math.atan((l.camPos[2] - l.lookAt[2]) / d);
+  const ground = Math.tan(Math.atan(l.camPos[2] / d) - pitch) / (32 / 35);
+  assert.ok(Math.abs(ground - 0.7) < 0.02, `ground ${ground}`);
 });

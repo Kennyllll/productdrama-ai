@@ -72,7 +72,7 @@ export async function renderShort(v: ShortVideo, dest = finalPath(v), hookId?: s
       const out = path.join(work, `seg${i}-${k}.mp4`);
       await run(
         ffmpegPath,
-        ["-y", "-ss", String(c.start), "-t", String(c.len), "-i", src, "-f", "lavfi", "-t", String(c.len), "-i", "anullsrc=r=48000:cl=stereo", "-vf", vf.join(","), "-map", "0:v:0", "-map", sound ? "0:a:0" : "1:a:0", "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000", "-ac", "2", "-b:a", "160k", "-shortest", out],
+        ["-y", "-ss", String(c.start), "-t", String(c.len), "-i", src, "-f", "lavfi", "-t", String(c.len), "-i", "anullsrc=r=48000:cl=stereo", "-vf", vf.join(","), "-map", "0:v:0", "-map", sound ? "0:a:0" : "1:a:0", ...(sound ? ["-af", `afade=t=out:st=${Math.max(0, c.len - 0.2).toFixed(2)}:d=0.2`] : []), "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000", "-ac", "2", "-b:a", "160k", "-shortest", out],
         { maxBuffer: 1 << 24 },
       );
       segs.push(out);

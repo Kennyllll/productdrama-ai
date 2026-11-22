@@ -99,7 +99,7 @@ const THEME_WORDS: Record<string, RegExp> = {
 const INDOOR = /living room|bedroom|\brug\b|carpet|couch|sofa|客厅|卧室|地毯|沙发/i;
 const OUTDOOR = /driveway|garage|lawn|sidewalk|\bpark\b|backyard|车道|车库|草坪|公园|人行道|后院/i;
 const DAD = /\b(dad|daddy|father)\b|爸爸/i;
-const ADULT = /\b(dad|daddy|father|mom|mommy|mother|parent|grandma|grandpa|adult|uncle|aunt)\b|爸爸|妈妈|大人|爷爷|奶奶|家长/i;
+const ADULT = /\b(dad|daddy|father|mom|mommy|mother|parent|grandma|grandpa|adult|uncle|aunt|woman|man|lady|guy)\b|爸爸|妈妈|大人|爷爷|奶奶|家长|女人|男人/i;
 const KID = /\b(boy|girl|kid|child|toddler|son|daughter)\b|男孩|女孩|孩子|小孩|儿子|女儿/i;
 
 /** 去掉否定说法（no dad / 不要爸爸），免得“画面里不要爸爸”被当成提到了爸爸 */
@@ -117,7 +117,9 @@ export function shotChecks(s: ShortShot, b: ShotBasis): string[] {
   const adults = figs.filter((f) => f.kind === "adult").length;
   const kids = figs.length - adults;
   if (DAD.test(text) && adults === 0) out.push("文字里有爸爸，3D 里没有大人人偶：要么删掉爸爸，要么在摆放界面加一个大人");
-  if (adults > 0 && !ADULT.test(text)) out.push(`3D 里有 ${adults} 个大人人偶，文字里没写是谁、在做什么`);
+  // 按名字写的大人（Maya crouches…）也算写了
+  const named = figs.some((f) => f.kind === "adult" && !!f.memberId && /^[a-z][a-z-]{1,20}$/i.test(f.memberId) && new RegExp(`\\b${f.memberId}\\b`, "i").test(text));
+  if (adults > 0 && !ADULT.test(text) && !named) out.push(`3D 里有 ${adults} 个大人人偶，文字里没写是谁、在做什么`);
   if (kids === 0 && KID.test(text)) out.push("文字里有孩子，3D 里没有小孩人偶");
   if (b.scene) {
     const m = b.outdoor ? text.match(INDOOR) : text.match(OUTDOOR);
@@ -141,7 +143,8 @@ export function shotChecks(s: ShortShot, b: ShotBasis): string[] {
   const pv = productView(l);
   if (pv) {
     if ((pv.kind === "head" || pv.kind === "rear") && /three-quarter|3\/4|side profile|侧前方|左前方|右前方/i.test(stripNeg(cam + "\n" + s.productNote))) out.push(`文字写侧面 / 3/4 角度，3D 是${VIEW_LABEL[pv.kind]}`);
-    if (pv.kind !== "head" && /head-on|正对镜头/i.test(text)) out.push(`文字写车头正对镜头，3D 是${VIEW_LABEL[pv.kind]}`);
+    // “正对镜头斜前方”这类写法同时写了 3/4，按 3/4 算，不报
+    if (pv.kind !== "head" && /head-on|正对镜头/i.test(text) && !(pv.kind === "front34" && /three-quarter|3\/4|斜前方|侧前方/i.test(text))) out.push(`文字写车头正对镜头，3D 是${VIEW_LABEL[pv.kind]}`);
     if ((pv.kind === "head" || pv.kind === "rear") && /(KRIDDO|字标|logo)[^。.;；]{0,16}(可见|看得到|看得见|visible)/i.test(text)) out.push(`文字写能看到车架侧面的 KRIDDO 字标，3D 是${VIEW_LABEL[pv.kind]}，看不到侧面`);
   }
   const op = parseOp(b.operator);

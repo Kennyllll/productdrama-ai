@@ -59,7 +59,7 @@ export const ITEM_TYPES: ItemType[] = [
   { id: "balloon", label: "气球", size: [0.35, 0.35, 0.45], rgb: [0.9, 0.4, 0.6], en: "balloons", z: 1.2 },
   { id: "cake", label: "蛋糕", size: [0.3, 0.3, 0.2], rgb: [0.95, 0.9, 0.85], en: "birthday cake", z: 0.75 },
   { id: "egg", label: "彩蛋篮", size: [0.35, 0.3, 0.25], rgb: [0.6, 0.8, 0.95], en: "Easter egg basket" },
-  { id: "box", label: "灰盒（旧版）", size: [1, 1, 1], rgb: [0.6, 0.6, 0.6], en: "furniture" },
+  { id: "box", label: "方块（占位家具）", size: [1, 1, 1], rgb: [0.6, 0.6, 0.6], en: "furniture" },
 ];
 
 export const findItemType = (id: string) => ITEM_TYPES.find((t) => t.id === id) ?? ITEM_TYPES[ITEM_TYPES.length - 1];

@@ -180,6 +180,11 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
           {car ? "第一段在车里自拍，不用 3D，三轮车不入镜；第二段的 3D 自动摆好。" : selfie ? "3D 自动摆成自拍：人在右边，车完整在左边。" : `3D 会自动摆成：产品${VIEW_LABEL[def.stage.view]}；摄影机约 ${def.stage.dist} 米、高 ${def.stage.camH} 米。`}画面里放谁、做什么，生成剧本时 AI 按这条视频的剧情定。采用后 3D 构图在后台自动保存，你只要微调。
         </p>
       ) : null}
+      {def?.stage && !car ? (
+        <p className="text-xs text-zinc-400">
+          构图照真实广告：机位在孩子胸口 / 车把高度、离得近，产品和孩子占画面一半以上，车轮下面的空地不超过画面 1/5；旁边的大人只拍到腰以下，或者蹲着和车一样高。首帧检查会按这条查。
+        </p>
+      ) : null}
       <div className="grid gap-2 md:grid-cols-2">
         {fields.map((f) => (
           <label key={f.key} className="block">

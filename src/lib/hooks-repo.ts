@@ -56,6 +56,41 @@ function db() {
       }
       d.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('hooks_preset_v', '5')").run();
     }
+    // 第 6 版：预置 Hook 带默认运镜（紧迫感从特写往后拉开，机位跟着拉近）：只补还没设运镜的
+    const v6 = d.prepare("SELECT value FROM settings WHERE key = 'hooks_preset_v'").get() as { value: string } | undefined;
+    if (Number(v6?.value ?? 0) < 6) {
+      for (const r of d.prepare("SELECT id, data FROM hooks").all() as { id: string; data: string }[]) {
+        const x = JSON.parse(r.data) as HookData;
+        const p = PRESET_HOOKS.find((q) => q.name === x.name);
+        if (p?.stage?.move && x.stage && !x.stage.move) d.prepare("UPDATE hooks SET data = ? WHERE id = ?").run(JSON.stringify({ ...x, stage: { ...x.stage, move: p.stage.move, dist: p.stage.dist, camH: p.stage.camH } }), r.id);
+      }
+      d.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('hooks_preset_v', '6')").run();
+    }
+    // 第 7 版：照真实广告开头的构图（机位低、主体大、地面少）：预置 Hook 还是旧机位的才换，你调过的不动
+    const v7 = d.prepare("SELECT value FROM settings WHERE key = 'hooks_preset_v'").get() as { value: string } | undefined;
+    if (Number(v7?.value ?? 0) < 7) {
+      const OLD_CAM_H: Record<string, [number, number | null]> = { 价格开场: [1.4, 0.9], 大胆主张: [1.2, 1], 先给结果: [0.9, null], 社会认同: [0.8, 0.7], 对比: [1, null], 车里自拍: [1.4, 0.8] };
+      for (const r of d.prepare("SELECT id, data FROM hooks").all() as { id: string; data: string }[]) {
+        const x = JSON.parse(r.data) as HookData;
+        const p = PRESET_HOOKS.find((q) => q.name === x.name);
+        const o = OLD_CAM_H[x.name];
+        if (!p || !o || !x.stage) continue;
+        const stage = x.stage.camH === o[0] ? { ...p.stage, ...(x.stage.move ? { move: x.stage.move } : {}) } : x.stage;
+        const second = x.second && p.second && o[1] !== null && x.second.stage?.camH === o[1] ? { ...x.second, stage: p.second.stage } : x.second;
+        if (stage !== x.stage || second !== x.second) d.prepare("UPDATE hooks SET data = ? WHERE id = ?").run(JSON.stringify({ ...x, stage, second, ...(stage !== x.stage ? { about: p.about } : {}) }), r.id);
+      }
+      d.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('hooks_preset_v', '7')").run();
+    }
+    // 第 8 版：紧迫感从特写起拉远（第 6 版只补了运镜，机位还是旧的 1.2 米 / 0.8 米）
+    const v8 = d.prepare("SELECT value FROM settings WHERE key = 'hooks_preset_v'").get() as { value: string } | undefined;
+    if (Number(v8?.value ?? 0) < 8) {
+      for (const r of d.prepare("SELECT id, data FROM hooks").all() as { id: string; data: string }[]) {
+        const x = JSON.parse(r.data) as HookData;
+        const p = PRESET_HOOKS.find((q) => q.name === x.name && q.stage?.move);
+        if (p?.stage && x.stage && x.stage.dist === 1.2 && x.stage.camH === 0.8) d.prepare("UPDATE hooks SET data = ? WHERE id = ?").run(JSON.stringify({ ...x, stage: { ...x.stage, dist: p.stage.dist, camH: p.stage.camH } }), r.id);
+      }
+      d.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('hooks_preset_v', '8')").run();
+    }
     ready = true;
   }
   return d;

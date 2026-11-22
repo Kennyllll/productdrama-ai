@@ -21,8 +21,14 @@ export interface HookPerson {
 }
 
 export interface HookStage {
+  /** 默认运镜（照案例），例如紧迫感往后拉开；不写 = 按镜头文字定 */
+  move?: "push" | "pull";
   /** 摄影机离产品多远（米，按 KB002 尺寸） */
   dist: number;
+  /** 主体（产品 + 骑车的孩子）占画面高度的比例；按它把摄影机拉近（dist 是上限）。照真实案例默认 0.5 */
+  fill?: number;
+  /** 产品着地点在画面多高（0 顶 – 1 底）；照真实案例默认 0.85，下面不留大片空地 */
+  groundY?: number;
   camH: number;
   lens: number;
   /** 产品在画面里的朝向：车头正对 / 斜前方 / 侧面 */
@@ -46,9 +52,10 @@ const SIDES: NonNullable<HookPerson["side"]>[] = ["right", "left", "behind"];
 const str = (v: unknown, n: number) => (typeof v === "string" ? v.trim().slice(0, n) : "");
 
 /** AI 按剧情定的出镜人员：只认这条视频家庭里的人、拍摄者不入镜、只有小孩能骑且只能一个、最多 3 人、站位不重叠 */
-export function cleanHookPeople(raw: unknown, members: FamilyMember[] | undefined, filmer?: string): { people: HookPerson[]; dropped: string[] } {
+export function cleanHookPeople(raw: unknown, members: FamilyMember[] | undefined, filmer?: string): { people: HookPerson[]; dropped: string[]; renames: [string, string][] } {
   const people: HookPerson[] = [];
   const dropped: string[] = [];
+  const renames: [string, string][] = [];
   const used = new Set<string>();
   const sides = new Set<string>();
   let rider = false;
@@ -111,8 +118,26 @@ export function cleanHookPeople(raw: unknown, members: FamilyMember[] | undefine
     adults[0].memberId = mom.id;
     adults[0].h = mom.heightCm / 100;
     dropped.push(`只有一个大人出镜，按规则换成妈妈 ${mom.name}（原来是 ${was}）`);
+    renames.push([was, mom.name]);
+    if (adults[0].action) adults[0].action = renameText(adults[0].action, renames);
+    if (adults[0].actionEn) adults[0].actionEn = renameText(adults[0].actionEn, renames);
   }
-  return { people, dropped };
+  return { people, dropped, renames };
+}
+
+/** 换了人之后，剧本文字里的旧名字和“爸爸 / dad”也跟着换，否则出图提示词前后打架 */
+export function renameText(text: string, renames: [string, string][]): string {
+  let t = text;
+  for (const [from, to] of renames) {
+    if (from && from !== "大人") t = t.split(from).join(to);
+    t = t
+      .replace(/父亲|爸爸/g, "妈妈")
+      .replace(/\bdad\b/g, "mom")
+      .replace(/\bDad\b/g, "Mom")
+      .replace(/\bfather\b/g, "mother")
+      .replace(/\bFather\b/g, "Mother");
+  }
+  return t;
 }
 
 const POSE_ZH: Record<HookPerson["pose"], string> = { stand: "站着", crouch: "蹲着", ride: "骑在车上", point: "指着车", reach: "伸手", hold: "扶着车" };
@@ -123,6 +148,21 @@ export const peopleText = (people: HookPerson[], members?: FamilyMember[]) =>
     const n = members?.find((m) => m.id === p.memberId)?.name ?? (p.kind === "adult" ? "大人" : "小孩");
     return `${n}：${p.onProduct ? POSE_ZH.ride : `${SIDE_ZH[p.side ?? "right"]}${POSE_ZH[p.pose]}`}${p.action ? `（${p.action}）` : ""}`;
   });
+
+// 照真实广告开头量出来的构图（见 HOOK_FRAMING_RULES）：竖屏 9:16，镜头焦距按画面横向 36mm 算，竖向半视角 tan = 32 / lens
+const vHalfTan = (lens: number) => 32 / lens;
+/** 主体占画面 fill 高度时摄影机该多远：有孩子骑车按 1 米高算，只有产品按车把高度 */
+function camDist(st: HookStage, k: number): number {
+  const h = (st.people.some((p) => p.onProduct) ? 1 : 0.6) * k;
+  const fit = h / ((st.fill ?? 0.5) * 2 * Math.atan(vHalfTan(st.lens)));
+  return Math.max(0.5 * k, Math.min(st.dist * k, fit));
+}
+/** 让产品着地点落在画面 groundY 高度：反算摄影机看向哪个高度 */
+function aimZ(st: HookStage, d: number, k: number): number {
+  const off = Math.atan(((st.groundY ?? 0.85) - 0.5) * 2 * vHalfTan(st.lens));
+  const pitch = Math.atan(st.camH / d) - off;
+  return r2(Math.max(0.2 * k, st.camH - d * Math.tan(pitch)));
+}
 
 /** 按 Hook 预设摆 3D：产品留在原来的位置和朝向（和场地接得上），摄影机和人围着产品摆 */
 export function buildHookLayout(st: HookStage, base: SetLayout | null | undefined, gripY: number): SetLayout {
@@ -136,7 +176,8 @@ export function buildHookLayout(st: HookStage, base: SetLayout | null | undefine
     return [v[0] * Math.cos(a) - v[1] * Math.sin(a), v[0] * Math.sin(a) + v[1] * Math.cos(a)];
   };
   const cd = rot(head, VIEW_DEG[st.view]);
-  const camPos: [number, number, number] = [r2(bike[0] + cd[0] * st.dist * k), r2(bike[1] + cd[1] * st.dist * k), r2(st.camH)];
+  const d = camDist(st, k);
+  const camPos: [number, number, number] = [r2(bike[0] + cd[0] * d), r2(bike[1] + cd[1] * d), r2(st.camH)];
   const right = [head[1], -head[0]];
   const figures: FigureSpec[] = st.people.map((p, i) => {
     const id = `h${i + 1}`;
@@ -151,14 +192,14 @@ export function buildHookLayout(st: HookStage, base: SetLayout | null | undefine
   return {
     lens: st.lens,
     camPos,
-    lookAt: [bike[0], bike[1], r2(0.35 * k)],
+    lookAt: [bike[0], bike[1], aimZ(st, d, k)],
     bike,
     bikeYaw: yaw,
     figures,
     figure: figures.length > 0,
     aspect: base?.aspect ?? 9 / 16,
     source: "按 Hook 预设自动摆",
-    move: base?.move,
+    move: st.move ? { kind: st.move, amount: 0.5 } : base?.move,
   };
 }
 

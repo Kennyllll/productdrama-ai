@@ -30,7 +30,7 @@ export async function chatJson(opts: {
   timeoutMs?: number;
 }): Promise<{ data: unknown; usage: AiUsage }> {
   const s = getAiSettings();
-  if (!s.apiKey) throw new AiError("尚未配置 API Key，请先到「模型设置」填写");
+  if (!s.apiKey) throw new AiError("还没填 DeepSeek Key（AI 写创意、剧本用它）：到「模型设置」→ DeepSeek 填好再点");
   const model = opts.model ?? (opts.purpose === "story" ? s.storyModel : s.model);
 
   let res: Response;

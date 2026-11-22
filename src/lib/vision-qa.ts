@@ -207,7 +207,7 @@ export async function locateGeometry(o: { plate: Buffer; support: string; width:
 }
 
 /** 短视频首帧：对照提示词和 3D 摆位看图，只报明显看得出的不一致 */
-export async function reviewShortFrame(o: { image: Buffer; productName: string; productFacts: string; framePrompt: string; description: string; facts3d: string; holiday: string; noBox: boolean; car?: { person: string } }): Promise<VisionReview> {
+export async function reviewShortFrame(o: { image: Buffer; productName: string; productFacts: string; framePrompt: string; description: string; facts3d: string; holiday: string; noBox: boolean; car?: { person: string }; groundMax?: number }): Promise<VisionReview> {
   const name = o.productName || "product";
   const prompt = o.car
     ? [
@@ -235,9 +235,37 @@ export async function reviewShortFrame(o: { image: Buffer; productName: string; 
     o.holiday === "none" ? "5. No holiday decorations, trees, gifts, bows or holiday outfits." : `5. The holiday look (${o.holiday}) is present and does not cover the product.`,
     `6. Must not appear: the person filming (only a hand or feet at the frame edge if the prompt says so)${o.noBox ? ", any box, packaging or wrapping" : ""}, garbled text, watermarks, extra logos.`,
     "7. Human anatomy is correct (hands, fingers, limbs, faces).",
-    'Return JSON only: {"pass": boolean, "issues": string[]}. Each issue is ONE short sentence in Simplified Chinese naming who or what and the problem (e.g. "小孩的脚没有踩在脚踏上").',
+    `8. Framing like real phone ads: empty ground or floor below the lowest wheel or foot takes at most about ${o.groundMax ?? 20}% of the frame height; the ${name} (with its rider, if any) is not tiny; an adult next to the product is not shown full-length standing while the ${name} is a small object at their feet.`,
+    'Return JSON only: {"pass": boolean, "issues": string[]}. Each issue is ONE short sentence in Simplified Chinese naming who or what and the problem (e.g. "小孩的脚没有踩在脚踏上", "产品下面空地太多，约占画面 40%").',
   ].join("\n");
   const data = (await generate([{ text: prompt }, await jpegPart(o.image, 1536)], 120_000)) as { pass?: unknown; issues?: unknown };
   const issues = Array.isArray(data.issues) ? data.issues.filter((x): x is string => typeof x === "string" && x.trim() !== "").map((x) => x.trim()).slice(0, 8) : [];
   return { pass: data.pass === true && issues.length === 0, issues };
+}
+
+/** 短视频成片：按时间截的帧 + 真实产品照，查产品有没有变形、零件消失，人有没有变脸 */
+export async function reviewShortVideo(o: { frames: { t: number; img: Buffer }[]; productRef: Buffer | null; productName: string; productFacts: string; productAbsent: boolean }): Promise<VisionReview> {
+  const name = o.productName || "product";
+  const prompt = (o.productAbsent
+    ? [
+        "You check a generated TikTok selfie clip, given frames sampled every 0.5 s. Only report real, clearly visible problems; no style opinions.",
+        `1. The ${name}, any tricycle, bike, stroller or ride-on toy must never appear in any frame.`,
+        "2. It is the same person in every frame: face, hair and clothes do not change; nobody else appears.",
+        "3. Human anatomy is correct (hands, fingers, limbs, faces); no garbled text or watermarks.",
+      ]
+    : [
+        "You check a generated TikTok product clip, given frames sampled every 0.5 s and a reference photo of the real product. Only report real, clearly visible problems; no style opinions.",
+        `Product: ${name} (${o.productFacts}).`,
+        "1. In EVERY frame where the product is visible, compare it with the reference photo and with the first frame: count the wheels and how many are at the back; every part in the reference (baskets, seat and backrest, fender, pedals, handlebar) is still there; nothing melts, merges, bends, duplicates, disappears or changes size relative to the rest of the product; colors and logo stay the same.",
+        "2. A part that is only hidden behind a person or cut by the frame edge is fine.",
+        "3. People keep the same face, hair and clothes in every frame; nobody appears or vanishes; anatomy is correct.",
+        "4. No glowing spots, flashes, garbled text or watermarks.",
+      ]
+  ).concat('Return JSON only: {"pass": boolean, "issues": string[]}. Each issue is ONE short sentence in Simplified Chinese that starts with the time, e.g. "第 2.5 秒起：右后轮不见了".').join("\n");
+  const parts: Part[] = [{ text: prompt }];
+  if (o.productRef && !o.productAbsent) parts.push({ text: "Reference photo of the real product:" }, await jpegPart(o.productRef, 1024));
+  for (const fr of o.frames) parts.push({ text: `Frame at ${fr.t.toFixed(1)} s:` }, await jpegPart(fr.img, 768));
+  const data = (await generate(parts, 180_000)) as { pass?: unknown; issues?: unknown };
+  const issues = Array.isArray(data.issues) ? data.issues.filter((x): x is string => typeof x === "string" && !!x.trim()) : [];
+  return { pass: data.pass === true && !issues.length, issues };
 }

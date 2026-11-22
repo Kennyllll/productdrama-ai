@@ -65,6 +65,9 @@ function cleanStage(x: unknown): HookStage {
     camH: n(d.camH, 0.3, 2.2, DEFAULT_STAGE.camH),
     lens: n(d.lens, 16, 85, DEFAULT_STAGE.lens),
     view: d.view === "head" || d.view === "side" || d.view === "front34" ? d.view : DEFAULT_STAGE.view,
+    ...(d.move === "push" || d.move === "pull" ? { move: d.move } : {}),
+    ...(typeof d.fill === "number" && Number.isFinite(d.fill) ? { fill: Math.min(0.9, Math.max(0.2, d.fill)) } : {}),
+    ...(typeof d.groundY === "number" && Number.isFinite(d.groundY) ? { groundY: Math.min(0.95, Math.max(0.5, d.groundY)) } : {}),
     people: (Array.isArray(d.people) ? d.people : DEFAULT_STAGE.people)
       .slice(0, 3)
       .map((p) => ({
@@ -131,7 +134,7 @@ export const PRESET_HOOKS: HookData[] = [
     caption: "{deal}: {price} (was {was})",
     selfie: true,
     stage: { dist: 1.8, camH: 1.4, lens: 24, view: "front34", people: [] },
-    second: { seconds: 1.5, about: "切到产品：产品斜前方摆在画面中央，完整清楚，画面里没有人", stage: { dist: 1.4, camH: 0.9, lens: 35, view: "front34", people: [] } },
+    second: { seconds: 1.5, about: "切到产品：产品斜前方摆在画面中央，完整清楚，画面里没有人", stage: { dist: 1.4, camH: 0.5, lens: 35, view: "front34", people: [] } },
     fields: [
       { key: "price", label: "现价", example: "$59.99", visual: false },
       { key: "was", label: "原价", example: "$89.99", visual: false },
@@ -143,13 +146,13 @@ export const PRESET_HOOKS: HookData[] = [
     name: "大胆主张",
     effect: "claimWords",
     selfie: false,
-    about: "照案例：一句强主张用大字压在画面中间；第一段家长站在车旁指着车，第 2 秒切到孩子骑车的画面作证据，不能只是空喊。",
+    about: "照案例：一句强主张用大字压在画面中间；第一段家长蹲在车旁、和车一样高，看着车跟拍的人说话，第 2 秒切到孩子骑车的画面作证据，不能只是空喊。",
     use: "产品有一个明显、能拍出来的卖点",
     seconds: 2,
     entry: "assembled",
     caption: "{claim}",
-    stage: { dist: 2, camH: 1.2, lens: 28, view: "front34", people: [{ kind: "adult", pose: "point", side: "right", dist: 0.7 }] },
-    second: { seconds: 2, about: "切到证据：孩子骑着车，开心、很稳，正好证明那句主张", stage: { dist: 2, camH: 1, lens: 28, view: "front34", people: [{ kind: "child", pose: "ride", onProduct: true }] } },
+    stage: { dist: 2, camH: 0.7, lens: 28, view: "front34", fill: 0.55, people: [{ kind: "adult", pose: "crouch", side: "right", dist: 0.6 }] },
+    second: { seconds: 2, about: "切到证据：孩子骑着车，开心、很稳，正好证明那句主张", stage: { dist: 2, camH: 0.6, lens: 28, view: "front34", fill: 0.55, people: [{ kind: "child", pose: "ride", onProduct: true }] } },
     fields: [
       { key: "claim", label: "主张", example: "The only trike my 2-year-old actually rides", visual: false },
       { key: "proof", label: "画面证据", example: "孩子自己踩着脚踏骑过来，很稳", visual: true },
@@ -165,7 +168,7 @@ export const PRESET_HOOKS: HookData[] = [
     seconds: 3,
     entry: "riding",
     caption: "{line}",
-    stage: { dist: 2.4, camH: 0.9, lens: 28, view: "side", people: [{ kind: "child", pose: "ride", onProduct: true }] },
+    stage: { dist: 2.4, camH: 0.6, lens: 28, view: "side", fill: 0.4, groundY: 0.75, people: [{ kind: "child", pose: "ride", onProduct: true }] },
     fields: [
       { key: "result", label: "结果画面", example: "孩子在前院自己骑了一圈，家长在旁边拍手", visual: true },
       { key: "line", label: "字幕说法", example: "Day 3 with this trike", visual: false },
@@ -181,7 +184,7 @@ export const PRESET_HOOKS: HookData[] = [
     seconds: 3,
     entry: "assembled",
     caption: "{deadline} · {stock}",
-    stage: { dist: 1.2, camH: 0.8, lens: 35, view: "front34", people: [] },
+    stage: { dist: 0.7, camH: 0.6, lens: 35, view: "front34", people: [], move: "pull" },
     fields: [
       { key: "deadline", label: "截止时间", example: "Sale ends tonight", visual: false },
       { key: "stock", label: "库存", example: "Only 50 left", visual: false },
@@ -196,8 +199,8 @@ export const PRESET_HOOKS: HookData[] = [
     seconds: 1.5,
     entry: "assembled",
     caption: "{proof}",
-    stage: { dist: 1.8, camH: 0.8, lens: 28, view: "front34", people: [{ kind: "adult", pose: "crouch", side: "left", dist: 0.5 }] },
-    second: { seconds: 2, about: "切到产品特写：从侧面近拍，产品完整清楚，画面里没有人", stage: { dist: 1, camH: 0.7, lens: 35, view: "side", people: [] } },
+    stage: { dist: 1.8, camH: 0.6, lens: 28, view: "front34", fill: 0.55, people: [{ kind: "adult", pose: "crouch", side: "left", dist: 0.5 }] },
+    second: { seconds: 2, about: "切到产品特写：从侧面近拍，产品完整清楚，画面里没有人", stage: { dist: 1, camH: 0.45, lens: 35, view: "side", people: [] } },
     fields: [{ key: "proof", label: "数字或评价", example: "10,000+ parents gave it 5 stars", visual: false }],
   },
   {
@@ -210,7 +213,7 @@ export const PRESET_HOOKS: HookData[] = [
     seconds: 3,
     entry: "assembled",
     caption: "{vs} vs {product}",
-    stage: { dist: 1.8, camH: 1, lens: 28, view: "side", people: [{ kind: "adult", pose: "stand", side: "right", dist: 0.7 }] },
+    stage: { dist: 1.8, camH: 0.7, lens: 28, view: "side", fill: 0.5, people: [{ kind: "adult", pose: "stand", side: "right", dist: 0.7 }] },
     fields: [
       { key: "vs", label: "和什么比", example: "a heavy metal trike", visual: true },
       { key: "diff", label: "差别（画面里怎么看出来）", example: "妈妈一只手就能拎起这台车", visual: true },
@@ -227,7 +230,7 @@ export const PRESET_HOOKS: HookData[] = [
     selfie: true,
     scene: "car",
     stage: { dist: 1.8, camH: 1.4, lens: 24, view: "front34", people: [] },
-    second: { seconds: 2, about: "切到产品特写：产品斜前方近拍，完整清楚，画面里没有人", stage: { dist: 1.2, camH: 0.8, lens: 35, view: "front34", people: [] } },
+    second: { seconds: 2, about: "切到产品特写：产品斜前方近拍，完整清楚，画面里没有人", stage: { dist: 1.2, camH: 0.5, lens: 35, view: "front34", people: [] } },
     fields: [{ key: "point", label: "切镜后顶部的卖点（必填，只写真有的）", example: "", visual: false }],
   },
 ];

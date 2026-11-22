@@ -125,9 +125,9 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Box,TikTok Sans,66,&H00000000,&H00000000,&H00FFFFFF,&H00FFFFFF,-1,0,0,0,100,100,0,0,3,14,0,8,60,60,0,1
-Style: Serif,Playfair Display,124,&H00FFFFFF,&H00FFFFFF,&H64000000,&H96000000,0,0,0,0,100,100,0,0,1,0,6,5,60,60,0,1
-Style: SerifB,Playfair Display,88,&H00FFFFFF,&H00FFFFFF,&H64000000,&H96000000,-1,0,0,0,100,100,0,0,1,0,5,5,60,60,0,1
+Style: Box,TikTok Sans,96,&H00000000,&H00000000,&H00FFFFFF,&H00FFFFFF,-1,0,0,0,100,100,0,0,3,14,0,8,60,60,0,1
+Style: Serif,Playfair Display,124,&H00FFFFFF,&H00FFFFFF,&H64000000,&H96000000,0,0,0,0,100,100,0,0,1,3,4,5,60,60,0,1
+Style: SerifB,Playfair Display,100,&H00FFFFFF,&H00FFFFFF,&H64000000,&H96000000,-1,0,0,0,100,100,0,0,1,3,4,5,60,60,0,1
 Style: Ticker,TikTok Sans,56,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,4,0,0,0,1
 Style: Bar,TikTok Sans,10,&H00000000,&H00000000,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
 Style: Bubble,TikTok Sans,60,&H00000000,&H00000000,&H00FFFFFF,&H00FFFFFF,-1,0,0,0,100,100,0,0,3,18,0,7,0,0,0,1
@@ -158,7 +158,7 @@ export function hookAss(effect: HookEffectId, caption: string, seconds: number, 
   };
   switch (effect) {
     case "priceBox": {
-      at(0, end, "Box", `{\\an8\\pos(${W / 2},230)}${wrap(text, 26).join("\\N")}`);
+      at(0, end, "Box", `{\\an8\\pos(${W / 2},230)}${wrap(text, 20).join("\\N")}`);
       break;
     }
     case "claimWords": {
@@ -169,14 +169,14 @@ export function hookAss(effect: HookEffectId, caption: string, seconds: number, 
         // 所有词先排好位置，没出现的透明：逐词出现时字不会跳位
         let k = 0;
         const shown = rows.map((r) => r.split(" ").map((w) => (k++ <= i ? w : `{\\alpha&HFF&}${w}{\\alpha&H00&}`)).join(" ")).join("\\N");
-        at(i * step, i === words.length - 1 ? end : (i + 1) * step, "Serif", `{\\an5\\pos(${W / 2},${H * 0.42})}${shown}`);
+        at(i * step, i === words.length - 1 ? end : (i + 1) * step, "Serif", `{\\an5\\pos(${W / 2},${H * 0.2})}${shown}`);
       });
       break;
     }
     case "resultLines": {
       const [top, ...rest] = text.split(/\s*\/\s*/);
-      at(0, end, "SerifB", `{\\an5\\pos(${W / 2},${H * 0.3})}${wrap(top, 20).join("\\N")}`);
-      if (rest.length) at(0, end, "SerifB", `{\\an5\\pos(${W / 2},${H * 0.74})}${wrap(rest.join(" "), 20).join("\\N")}`);
+      at(0, end, "SerifB", `{\\an5\\pos(${W / 2},${H * 0.1})}${wrap(top, 20).join("\\N")}`);
+      if (rest.length) at(0, end, "SerifB", `{\\an5\\pos(${W / 2},${H * 0.88})}${wrap(rest.join(" "), 20).join("\\N")}`);
       break;
     }
     case "ticker": {

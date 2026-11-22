@@ -100,7 +100,8 @@ export function createProject(name: string, brand: string, kind: ProjectKind = "
   const db = getDb();
   db.transaction(() => {
     db.prepare("INSERT INTO projects (id, name, brand, kind, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(id, name, brand, kind, t, t);
-    db.prepare("INSERT INTO products (project_id, bible) VALUES (?, ?)").run(id, JSON.stringify(emptyBible));
+    // 新建时填的产品名称直接带进产品资料，免得再填一遍
+    db.prepare("INSERT INTO products (project_id, name, bible) VALUES (?, ?, ?)").run(id, name.trim(), JSON.stringify(emptyBible));
   })();
   return id;
 }

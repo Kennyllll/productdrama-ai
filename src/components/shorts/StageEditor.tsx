@@ -178,6 +178,11 @@ export function StageEditor({
     const b0 = st.current.doc.bike ?? [0, 0];
     cam.position.set(b0[0] + 2.4, 1.8, -b0[1] + 2.6);
     const orbit = new OrbitControls(cam, el);
+    // 普通滚轮留给页面滚动；按住 Ctrl / ⌘ / Alt 再滚才缩放 3D（触控板双指捏合也带 Ctrl）
+    const wheelGate = (e: WheelEvent) => {
+      orbit.enableZoom = e.ctrlKey || e.metaKey || e.altKey;
+    };
+    el.addEventListener("wheel", wheelGate, { capture: true });
     orbit.target.set(b0[0], 0.4, -b0[1]);
     orbit.update();
     const shotCam = new THREE.PerspectiveCamera(40, 9 / 16, 0.03, 200);
@@ -392,6 +397,7 @@ export function StageEditor({
       tc.disconnect();
       s3.remove(helper);
       helper.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+      el.removeEventListener("wheel", wheelGate, { capture: true });
       orbit.dispose();
       renderer.dispose();
     };

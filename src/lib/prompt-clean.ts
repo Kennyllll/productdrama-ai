@@ -3,15 +3,32 @@
 const WARDROBE = /\b(wearing|dressed|outfit|t-?shirts?|tees?|jeans|cardigans?|sweaters?|hoodies?|jackets?|pajamas|dress(es)?|shirts?|coats?|sneakers|shoes|boots|leggings|scarf|beanie|overalls)\b/i;
 const CINEMA = /\b(cinematic|cinema camera|film grain|film still|shallow depth of field|out of focus|bokeh|anamorphic|35mm film)\b/i;
 
+// 反光、闪光：模型会画成产品上的发光点
+const GLARE = /\b(glint\w*|gleam\w*|sparkl\w*|shimmer\w*|glow(?:s|ing)?|lens flares?|sun flares?|shin(?:e|es|ing|y))\b/i;
+// 括号里的人物外貌（年龄、族裔、头发、衣服）：外貌以家庭库为准
+const LOOKS = /\s*\((?=[^()]*\b(?:\d{1,2}|white|black|caucasian|asian|hispanic|latin[oa]|blond\w*|brunette|hair|jeans|shirt|t-shirt|tee|shoes|sneakers|dress)\b)[^()]*\)/gi;
+const AGE = /\b\d{1,2}(?:\.\d)?[- ]?(?:years?|yrs?)[- ]old\s*/gi;
+const HAIR = /\s*with\s+(?:[\w-]+,?\s+){0,3}hair\b/gi;
+const ETHNIC = /\b(?:white|black|caucasian|asian|hispanic|latin[oa]|african[- ]american)\s+(?=(?:woman|man|girl|boy|mom|dad|mother|father|toddler|child|kid|lady|guy)\b)/gi;
+
+// AI 编的产品细节（Logo 位置、颜色、材质）：以产品照为准
+const PRODUCT_DETAIL = /\b(logo|wordmark|decal|lettering)\b/i;
+
 const clauses = (t: string) => t.split(/(?<=[.;])\s+|;\s*|,\s+/).map((x) => x.trim()).filter(Boolean);
 
 /** 删掉衣服（家庭库里每个人的衣服才算数）和自拍时的电影画风；返回剩下的文字和删掉的句子 */
 export function cleanShotNotes(notes: string, opts: { wardrobe: boolean; selfie: boolean }): { text: string; dropped: string[] } {
   const dropped: string[] = [];
-  const kept = clauses(notes).filter((c) => {
-    const bad = (opts.wardrobe && WARDROBE.test(c)) || (opts.selfie && CINEMA.test(c));
+  const src = opts.wardrobe ? notes.replace(LOOKS, "").replace(AGE, "").replace(HAIR, "").replace(ETHNIC, "") : notes;
+  const kept = clauses(src).filter((c) => {
+    const bad = (opts.wardrobe && WARDROBE.test(c)) || (opts.selfie && CINEMA.test(c)) || GLARE.test(c) || PRODUCT_DETAIL.test(c);
     if (bad) dropped.push(c);
     return !bad;
   });
   return { text: kept.join(", ").replace(/\.,/g, ".").replace(/,\s*$/, ""), dropped };
+}
+
+/** 动作提示词里删掉反光、闪光的句子 */
+export function dropGlare(t: string): string {
+  return clauses(t).filter((c) => !GLARE.test(c)).join(", ").replace(/\.,/g, ".").replace(/,\s*$/, "");
 }

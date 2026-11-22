@@ -162,6 +162,8 @@ export interface ShortShot {
   checkNote: string;
   /** 首帧出图后的看图检查（对照提示词和 3D）；jobId 不是当前首帧就作废 */
   frameCheck?: { jobId: string; pass: boolean; issues: string[]; at: string; failed?: boolean };
+  /** 视频出来后自动看：每 0.5 秒一帧对照产品照查变形 */
+  videoCheck?: { jobId: string; pass: boolean; issues: string[]; at: string; failed?: boolean };
   /** 本镜场地（场地库 id + 版本 + 节日主题）；确认构图后锁定版本。旧数据没有时按 video.room 迁移 */
   scene?: ShotScene;
   /** 第几个家庭（1 起）：同一家庭沿用演员和服装；换家庭时旧演员不当参考 */
@@ -304,7 +306,8 @@ export function waitingFor(v: Pick<ShortVideoData, "shots">, shotId: string): nu
 
 /** scene = 场地空场景参考图（Sunburst，挂在场地版本上，记在当前视频预算里） */
 export type JobKind = "frame" | "video" | "scene";
-export type JobStatus = "submitting" | "submitted" | "completed" | "failed";
+/** unknown = 提交时断线，不知道供应商有没有收到（按可能已扣费记账，挡住本镜重提）；abandoned = 用户放弃等待，按已扣费记账 */
+export type JobStatus = "submitting" | "submitted" | "completed" | "failed" | "unknown" | "abandoned";
 
 export interface GenJob {
   id: string;
@@ -356,6 +359,8 @@ export interface Quote {
   costUsd: number;
   shotSpent: number;
   videoSpent: number;
+  /** 额外开头：费用和预算只算这个开头 */
+  extraHook: boolean;
   budget: number;
   remainingAfter: number;
   perSecondAfter: number;
@@ -380,8 +385,14 @@ export function quoteJob(q: QuoteInput): Quote {
   const extraHook = isExtraHook(video, shot);
   const extraIds = new Set(video.shots.filter((s) => isExtraHook(video, s)).map((s) => s.id));
   const shotSpent = r2(mine.reduce((s, j) => s + jobCost(j), 0));
-  const videoSpent = extraHook ? shotSpent : r2(jobs.filter((j) => !j.isTest && !extraIds.has(j.shotId)).reduce((s, j) => s + jobCost(j), 0));
-  const budget = extraHook ? hookBudget(shot) : budgetOf(video);
+  // 额外开头可能有两段（切镜前 / 后）：费用和预算按整个开头算
+  const hookKey = shot.hook?.partOf ?? shot.id;
+  const hookShots = extraHook ? video.shots.filter((s) => s.hook && (s.hook.partOf ?? s.id) === hookKey) : [];
+  const hookIds = new Set(hookShots.map((s) => s.id));
+  const videoSpent = extraHook
+    ? r2(jobs.filter((j) => !j.isTest && hookIds.has(j.shotId)).reduce((s, j) => s + jobCost(j), 0))
+    : r2(jobs.filter((j) => !j.isTest && !extraIds.has(j.shotId)).reduce((s, j) => s + jobCost(j), 0));
+  const budget = extraHook ? r2(hookShots.reduce((a, s) => a + hookBudget(s), 0)) : budgetOf(video);
   const overHook = extraHook && videoSpent + costUsd > budget + 1e-9;
   const secs = Math.max(1, finalSeconds(video));
   const attempt = charged.length + 1;
@@ -396,6 +407,7 @@ export function quoteJob(q: QuoteInput): Quote {
     if (q.seconds < VIDEO_MIN_SEC || q.seconds > VIDEO_MAX_SEC) blocked.push(`生成时长必须在 ${VIDEO_MIN_SEC}–${VIDEO_MAX_SEC} 秒之间`);
   }
   if (shot.stage === "accepted" && kind !== "scene") blocked.push("本镜已采用；要重做先点“退回返工”");
+  if (mine.some((j) => j.status === "unknown")) blocked.push("上次提交结果不确定，可能已经扣费：先在页面上方点「重新查一次」，查清了再重做");
   if (mine.some((j) => j.status === "submitting" || j.status === "submitted")) blocked.push("本镜还有任务在生成中：只能继续等待结果，不能重复提交");
   // 出图 / 视频每次都是随机的：参数相同也可能这次变形、下次正常，所以只提示不拦
   if (sameKind.some((j) => j.paramsHash === q.paramsHash && j.status !== "failed")) warnings.push("参数和上次完全相同：这次只是重新随机生成一次，结果可能好也可能还一样");
@@ -406,7 +418,11 @@ export function quoteJob(q: QuoteInput): Quote {
   } else if (videoSpent + costUsd > budget + 1e-9) blocked.push(`超出本条视频预算 $${budget.toFixed(2)}：已花 $${videoSpent.toFixed(2)}，本次 $${costUsd.toFixed(2)}。需要你主动提高预算`);
   else if (videoSpent + costUsd >= budget * BUDGET_WARN_RATIO) warnings.push(`花完这次将用掉预算的 ${Math.round(((videoSpent + costUsd) / budget) * 100)}%`);
   const perSecondAfter = r2((videoSpent + costUsd) / secs);
-  if (!extraHook && perSecondAfter > MAX_USD_PER_SECOND) warnings.push(`成片每秒成本将到 $${perSecondAfter.toFixed(2)}，超过 $${MAX_USD_PER_SECOND} 上限`);
+  if (!extraHook && perSecondAfter > MAX_USD_PER_SECOND) {
+    const msg = `成片每秒成本将到 $${perSecondAfter.toFixed(2)}，超过 $${MAX_USD_PER_SECOND} 上限`;
+    if (q.overLimit) warnings.push(msg);
+    else blocked.push(`${msg}：先考虑剪辑或少重做；确实要做请勾选“超限重新审批”`);
+  }
   if (kind === "video" && q.seconds > shot.useSeconds + 1) warnings.push(`生成 ${q.seconds} 秒只用 ${shot.useSeconds} 秒，浪费 ${(q.seconds - shot.useSeconds).toFixed(1)} 秒`);
 
   return {
@@ -418,6 +434,7 @@ export function quoteJob(q: QuoteInput): Quote {
     costUsd,
     shotSpent,
     videoSpent,
+    extraHook,
     budget,
     remainingAfter: r2(budget - videoSpent - costUsd),
     perSecondAfter,

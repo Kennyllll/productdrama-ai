@@ -19,6 +19,7 @@ import {
   studioStateAction,
   clearRunErrorAction,
   resumeJobAction,
+  settleJobAction,
   retargetTextAction,
   runJobAction,
   saveShortVideoAction,
@@ -239,6 +240,7 @@ export function ShortStudio({
       .map((r) => r.jobId),
   );
   const stuck = inflight.filter((j) => !activeJobs.has(j.id));
+  const unsure = st.jobs.filter((j) => j.status === "unknown");
   const [now, setNow] = useState(() => Date.now());
   const [done, setDone] = useState<{ shotId: string; kind: JobKind } | null>(
     null,
@@ -249,6 +251,13 @@ export function ShortStudio({
     dirtyRef.current = dirty;
     stRef.current = st;
   });
+  // 改了没保存就关页面 / 刷新：浏览器先问一句
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
   // 后台结果回来：只更新状态类字段，别冲掉其他镜头还没保存的文字
   const merge = (next: StudioState | null) => {
     if (!next) return;
@@ -639,6 +648,24 @@ export function ShortStudio({
           模型渲染参考图（免费）。没有参考图不能生成首帧。
         </p>
       ) : null}
+      {unsure.map((j) => (
+        <div key={j.id} className="rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+          #{shots.findIndex((x) => x.id === j.shotId) + 1} {j.kind === "video" ? "视频" : "首帧"}：{j.error ?? "提交结果不确定，可能已经扣费"}
+          <span className="mt-1 flex flex-wrap gap-2">
+            {/^doubao-/.test(j.model) ? (
+              <button className={btn} disabled={busy} onClick={() => act(() => resumeJobAction(j.id), "查好了")}>
+                重新查一次
+              </button>
+            ) : null}
+            <button className={btn} disabled={busy} onClick={() => act(() => settleJobAction(j.id, false), "记成不收费，可以重做了")}>
+              我在控制台确认过：没扣费
+            </button>
+            <button className={btn} disabled={busy} onClick={() => act(() => settleJobAction(j.id, true), "已放弃，按已扣费记账")}>
+              放弃，按已扣费记账
+            </button>
+          </span>
+        </div>
+      ))}
       {stuck.length ? (
         <div className="rounded-md bg-sky-500/10 px-3 py-2 text-sm text-sky-200">
           有 {stuck.length} 个任务连接中断。只能继续等待，不会重复扣费。
@@ -657,6 +684,18 @@ export function ShortStudio({
                   : "首帧"}
             </button>
           ))}
+          {stuck.map((j) =>
+            Date.now() - Date.parse(j.createdAt) > 30 * 60_000 ? (
+              <button
+                key={`x${j.id}`}
+                className={`${btn} ml-2`}
+                disabled={busy}
+                onClick={() => act(() => settleJobAction(j.id, true), "已放弃，按已扣费记账")}
+              >
+                等了 30 分钟还没好：放弃，按已扣费记账
+              </button>
+            ) : null,
+          )}
         </div>
       ) : null}
 
@@ -697,6 +736,9 @@ export function ShortStudio({
             {busy ? "…" : v.concepts.length ? "重新出创意" : "AI 出 4 个创意"}
           </button>
         </div>
+        {shots.length > 0 && st.jobs.some((j) => j.status !== "failed") ? (
+          <p className="mt-1 text-xs text-neutral-400">已经开始出图，不能再换创意：要换创意，新建一条短视频</p>
+        ) : null}
         {v.concepts.length ? (
           <div className="mt-3 grid gap-2 md:grid-cols-2">
             {v.concepts.map((c) => (
@@ -1442,9 +1484,11 @@ export function ShortStudio({
                       {(() => {
                         const fc = s.frameCheck?.jobId === s.frameJobId ? s.frameCheck : undefined;
                         const bad = !!fc && !fc.pass && !fc.failed;
+                        // 没做自动检查（没填 Gemini Key / 检查出错）：要用户自己对照产品照看过再通过
+                        const unchecked = !fc || !!fc.failed;
                         return (
                           <>
-                            {gate(bad ? "frame_ok_force" : "frame_ok", bad ? "我看过了，仍然通过" : "首帧通过", s.stage === "frame_ready")}
+                            {gate(bad ? "frame_ok_force" : "frame_ok", bad ? "我看过了，仍然通过" : unchecked ? "没自动检查：我对照产品照看过了，通过" : "首帧通过", s.stage === "frame_ready")}
                             {fc && (s.stage === "frame_ready" || s.stage === "frame_ok") ? (
                               fc.pass ? (
                                 <span className="self-center text-xs text-emerald-300">看图检查通过：图和提示词、3D 对得上</span>
@@ -1505,7 +1549,8 @@ export function ShortStudio({
                       </div>
                     ) : null}
                     {s.hook?.selfie ? (
-                      <label className="flex items-center gap-2 text-xs text-neutral-400">
+                      <>
+<label className="flex items-center gap-2 text-xs text-neutral-400">
                       自拍台词
                       <input
                         key={`line-${s.id}-${s.hook.line ?? ""}`}
@@ -1519,6 +1564,17 @@ export function ShortStudio({
                         }}
                       />
                       </label>
+                      {(() => {
+                        // 按约 2.6 个英文词 / 秒估算：台词比这一段用的秒数长，切镜时会被切断
+                        const words = (s.hook?.line ?? "").trim().split(/\s+/).filter(Boolean).length;
+                        const need = Math.round((words / 2.6) * 10) / 10;
+                        return words && need > s.useSeconds + 0.2 ? (
+                          <p className="text-xs text-amber-300">
+                            台词说完约 {need} 秒，这一段只用 {s.useSeconds} 秒，切镜时会被切断：缩短台词，或把「用几秒」改长（最多到生成的 {s.genSeconds} 秒）
+                          </p>
+                        ) : null;
+                      })()}
+                      </>
                     ) : null}
                     <div className="flex flex-wrap gap-1">
                       {s.stage === "frame_ok" || s.stage === "video_ready" ? (
@@ -1537,7 +1593,27 @@ export function ShortStudio({
                         {s.stage === "video_ready" ? "重做视频…" : "生成视频…"}
                       </button>
                       ) : null}
-                      {gate("accept", "采用", s.stage === "video_ready")}
+                      {(() => {
+                        const vc = s.videoCheck?.jobId === s.videoJobId ? s.videoCheck : undefined;
+                        const bad = !!vc && !vc.pass && !vc.failed;
+                        return (
+                          <>
+                            {gate(bad ? "accept_force" : "accept", bad ? "我看过了，仍然采用" : vc && !vc.failed ? "采用" : "没自动检查：我逐秒看过了，采用", s.stage === "video_ready")}
+                            {vc && s.stage === "video_ready" ? (
+                              vc.pass ? (
+                                <span className="self-center text-xs text-emerald-300">视频检查通过：每 0.5 秒对照产品照，没看到变形</span>
+                              ) : (
+                                <div className={`w-full rounded border p-2 text-xs ${vc.failed ? "border-amber-400/40 text-amber-200" : "border-rose-400/50 bg-rose-400/5 text-rose-200"}`}>
+                                  <p className="font-medium">{vc.failed ? "视频检查" : `视频检查发现 ${vc.issues.length} 个问题，先看视频再决定`}</p>
+                                  {vc.issues.map((x, i) => (
+                                    <p key={i}>· {x}</p>
+                                  ))}
+                                </div>
+                              )
+                            ) : null}
+                          </>
+                        );
+                      })()}
                       {s.stage === "video_ready" && (s.issues ?? []).some((x) => x.status === "open") ? (
                         <span className="text-xs text-amber-300">先在下面逐条点「已解决」或「仍存在」，才能采用</span>
                       ) : null}
@@ -1553,7 +1629,11 @@ export function ShortStudio({
                           const note = await askPrompt(
                             "这一版哪里不对？多条用分号隔开。新版出来后会逐条对照",
                           );
-                          if (!note || !note.trim()) return;
+                          if (note === null) return;
+                          if (!note.trim()) {
+                            setMsg({ tone: "err", text: "没写哪里不对，所以没退回：再点「退回返工」写一句问题" });
+                            return;
+                          }
                           const all = await askConfirm(
                             "这些问题整条视频都要注意吗？\n\n确定 = 整条视频都要注意（后面的镜头审片时也提醒，并记进规则库）\n取消 = 只管这一镜",
                           );
@@ -1746,6 +1826,21 @@ export function ShortStudio({
             ))}
           </p>
         ) : null}
+        {shots.some((s) => !s.hook && s.stage !== "accepted") ? (
+          <p className="mb-2 flex flex-wrap items-center gap-2 text-xs text-amber-300">
+            正文还没采用的镜头不会进成片，这次导出的不是完整版：
+            {shots
+              .filter((s) => !s.hook && s.stage !== "accepted")
+              .map((s) => (
+                <button key={s.id} className="underline hover:text-amber-100" onClick={() => setFocus(s.id)}>
+                  #{shots.indexOf(s) + 1}
+                </button>
+              ))}
+          </p>
+        ) : null}
+        {!v.shots.some((s) => s.stage === "accepted") ? (
+          <p className="mb-2 text-xs text-neutral-400">还没有采用的镜头：先在镜头里点「采用」，才能导出</p>
+        ) : null}
         <button
           className={primary}
           disabled={busy || !v.shots.some((s) => s.stage === "accepted")}
@@ -1899,7 +1994,7 @@ function JobThumb({ job, current }: { job: GenJob; current: boolean }) {
         )
       ) : (
         <div className="flex aspect-[9/16] items-center justify-center rounded bg-white/5 text-center">
-          {job.status === "failed" ? "失败·不收费" : "生成中"}
+          {job.status === "failed" ? "失败·不收费" : job.status === "unknown" ? "结果不确定·可能已扣费" : job.status === "abandoned" ? "已放弃·按已扣费记账" : "生成中"}
         </div>
       )}
       <p className="mt-1">
@@ -1985,9 +2080,9 @@ function Approval({
               : null}
             {row("这是本镜第几次", `第 ${q.attempt} 次`)}
             {row("本镜累计（含本次）", usd(q.shotSpent + q.costUsd))}
-            {row("本条视频累计（含本次）", usd(q.videoSpent + q.costUsd))}
+            {row(q.extraHook ? "这个开头累计（含本次）" : "本条视频累计（含本次）", usd(q.videoSpent + q.costUsd))}
             {row(
-              "预算 / 余量",
+              q.extraHook ? "这个开头的预算 / 余量" : "预算 / 余量",
               `${usd(q.budget)} / ${usd(q.remainingAfter)}`,
               q.remainingAfter < 0 ? "text-rose-300" : "",
             )}

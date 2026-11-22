@@ -115,6 +115,9 @@ async function findSubmitted(sinceSec: number): Promise<string | "none" | null> 
   }
 }
 
+/** 提交时断线后补查：最近有没有新任务（"none" = 确定没收到；null = 查不清） */
+export const arkFindTask = (sinceSec: number) => findSubmitted(sinceSec);
+
 export async function arkSubmitVideo(model: string, input: ArkVideoInput): Promise<{ request_id: string }> {
   if (!fs.existsSync(input.first_frame_file)) throw new ArkError("首帧文件不存在", 400);
   const url = await firstFrameDataUrl(input.first_frame_file);

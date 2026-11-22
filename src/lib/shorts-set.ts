@@ -235,7 +235,7 @@ export function autoLayout(shot: { camera: string; description: string }, index:
   const camH = has(t, /低机位|低角度|地面|low angle|floor|蹲/) ? 0.35 : has(t, /俯|top|high angle|overhead/) ? 2 : has(t, /pov|主观/) ? 1.4 : 1.1;
   // 相邻镜头换角度，避免直接切像跳帧（≥ 30°）
   const az = ([-35, 25, -65, 50, -10, 75, -45, 15][index % 8] * Math.PI) / 180;
-  const move: SetMove = has(t, /推|push/) ? { kind: "push", amount: 0.5 } : has(t, /拉|pull/) ? { kind: "pull", amount: 0.5 } : has(t, /环绕|orbit/) ? { kind: "orbitR", amount: 0.5 } : has(t, /手持|handheld|手机/) ? { kind: "handheld", amount: 0.3 } : { kind: "static", amount: 0 };
+  const move: SetMove = has(t, /推|push/) ? { kind: "push", amount: 0.5 } : has(t, /拉|pull/) ? { kind: "pull", amount: 0.5 } : has(t, /环绕|orbit/) ? { kind: "orbitR", amount: 0.5 } : has(t, /固定|三脚架|static|locked|tripod/) ? { kind: "static", amount: 0 } : { kind: "handheld", amount: 0.3 };
   return {
     lens,
     camPos: [Math.round(dist * Math.sin(az) * 100) / 100, Math.round(-dist * Math.cos(az) * 100) / 100, camH],

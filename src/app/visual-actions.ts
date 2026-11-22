@@ -49,6 +49,9 @@ export async function testHfAction(): Promise<FormState & { checks?: { label: st
       checks.push({ label: c.label, result: e instanceof Error ? e.message : "检测失败" });
     }
   }
+  // 任何一项不可用（余额不足、断网、模型下线）都不能显示绿色“成功”
+  const bad = checks.filter((c) => !c.result.startsWith("可用"));
+  if (bad.length) return { error: `连接有问题：${bad.map((c) => `${c.label}：${c.result}`).join("；")}`, checks };
   return { ok: "连接成功（估价接口，不产生费用）", checks };
 }
 
