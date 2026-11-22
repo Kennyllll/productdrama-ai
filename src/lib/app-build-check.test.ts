@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-// @ts-expect-error 纯 JS 启动脚本，没有类型声明
 import { needsBuild } from "../../scripts/app-build-check.mjs";
 
 function tmpProject() {
