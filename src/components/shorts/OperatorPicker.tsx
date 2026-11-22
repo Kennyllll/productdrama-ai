@@ -27,6 +27,7 @@ export function OperatorPicker({
   const v = layout && !o.custom ? operatorView(o.pose, layout) : null;
   const camH = layout?.camPos[2];
   const off = camH !== undefined && !o.custom && (camH < p.lo * scale || camH > p.hi * scale);
+  const fit = off ? OP_POSES.find((x) => camH! >= x.lo * scale && camH! <= x.hi * scale) : undefined;
   const box = "rounded border border-white/10 bg-neutral-950 px-2 py-1 text-sm text-white disabled:opacity-50";
   return (
     <div className="space-y-1 text-xs text-neutral-300">
@@ -85,8 +86,18 @@ export function OperatorPicker({
         </p>
       ) : null}
       {off ? (
-        <p className="text-amber-300">
+        <p className="flex flex-wrap items-center gap-2 text-amber-300">
           机位离地 {camH!.toFixed(2)} 米，不像{p.label}拍（一般 {p.lo}–{p.hi} 米）
+          {fit && !disabled ? (
+            <button type="button" className="rounded border border-amber-400/50 px-2 py-0.5 text-amber-200" onClick={() => set({ pose: fit.id })}>
+              改成{fit.label}拍
+            </button>
+          ) : null}
+          {onPose && !disabled ? (
+            <button type="button" className="rounded border border-amber-400/50 px-2 py-0.5 text-amber-200" onClick={() => onPose(Math.round(p.camH * scale * 100) / 100)}>
+              机位调到 {(p.camH * scale).toFixed(2)} 米
+            </button>
+          ) : null}
         </p>
       ) : null}
     </div>
