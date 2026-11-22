@@ -1157,14 +1157,14 @@ function refPlan(v: ShortVideo, s: ShortShot): RefPart[] {
       out.push({
         text:
           modelFor(v.projectId, v.colorId)?.source === "fal"
-            ? "is a rough automatic gray model of the product from exactly this shot's camera angle: use it ONLY for where the product stands, how big it is and which side faces the camera, never mirrored or turned. Its shape is approximate: every part, proportion, the handlebar, seat, baskets, colors, logo and stickers come only from the real product photo that follows it and the other product photos"
+            ? "is a rough gray 3D model of the product from this shot's camera angle: use it ONLY for where it stands, its size and which side faces the camera, never mirrored or turned; its shape is approximate, parts come from the real photos"
             : "is the real product rendered from exactly this shot's camera angle: in the photo the product must face exactly this way and show this same side, never mirrored or turned.",
         file: () => angleRef(v, s),
       });
     const ph = sameSidePhoto(v, s);
     if (ph)
       out.push({
-        text: "is a real photo of the product from about this side: the product in the shot must look exactly like it, part for part (handlebar and the bend of its stem, seat and backrest with any hole, baskets and where they mount, fender, pedals and cranks, frame tube, wheel sizes, logo position). Use the 3D images only for position, size and direction; never mirror the logo",
+        text: "is a real photo of the product from about this side: draw every part exactly like it (stem bend, backrest hole, baskets, cranks, frame tube, wheel sizes, logo spot); 3D images give only position, size and direction",
         file: async () => ph,
       });
   }
@@ -1420,10 +1420,27 @@ function framePromptOf(v: ShortVideo, s: ShortShot): string {
     // 手机随手拍的模板也不要电影画风（胶片颗粒、浅景深）
     selfie: Boolean(s.hook?.selfie) || findTemplate(v.templateId).look !== "cinematic",
   }).text;
-  const rest = parts.filter((x) => x !== NOTES).join("\n").length + 1;
-  const room = FRAME_PROMPT_MAX - rest - lead.length;
-  const fit = notes.length <= room ? notes : room > 80 ? `${notes.slice(0, room - 1).replace(/\s+\S*$/, "")}…` : "";
-  return parts.map((x) => (x === NOTES ? (fit ? lead + fit : "") : x)).filter(Boolean).join("\n");
+  const build = () => {
+    const rest = parts.filter((x) => x !== NOTES).join("\n").length + 1;
+    const room = FRAME_PROMPT_MAX - rest - lead.length;
+    const fit = notes.length <= room ? notes : room > 80 ? `${notes.slice(0, room - 1).replace(/\s+\S*$/, "")}…` : "";
+    return parts.map((x) => (x === NOTES ? (fit ? lead + fit : "") : x)).filter(Boolean).join("\n");
+  };
+  let out = build();
+  // 还超：先去掉场景随机细节，再截短场地描述；产品、人物、3D 的句子不删，新手不用自己删字
+  if (out.length > FRAME_PROMPT_MAX && me) {
+    const i = parts.indexOf(sceneVariation(v, s, me.sc.outdoor));
+    if (i >= 0) parts.splice(i, 1);
+    out = build();
+  }
+  if (out.length > FRAME_PROMPT_MAX && me) {
+    const sc = sceneText(me.sc, me.ver, me.sh, s.layout ? itemSight(s.layout) : undefined);
+    const i = parts.indexOf(sc);
+    const keep = sc.length - (out.length - FRAME_PROMPT_MAX) - 2;
+    if (i >= 0 && keep > 200) parts[i] = `${sc.slice(0, keep).replace(/\s+\S*$/, "")}…`;
+    out = build();
+  }
+  return out;
 }
 
 /** 拿手机的家庭成员：“Ryan, a 34-year-old man, …”（衣服跟视频节日）；没指定 = 空 */
