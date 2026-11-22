@@ -7,7 +7,13 @@
 - Node.js 20 以上（已在 v24 验证）、npm
 - macOS / Windows / Linux 均可
 
-## 安装与启动
+## 每天打开平台（新手看这里）
+
+- **Mac**：双击 `启动平台.command`；**Windows**：双击 `启动平台.bat`；或在终端运行 `npm run app`。
+- 第一次会自动安装、打包（约 2–4 分钟），之后约 10 秒。好了会自动打开 http://localhost:3000 。
+- 详见 [docs/新手启动说明.md](docs/新手启动说明.md)。这是生产模式：比 `npm run dev` 快得多，没有调试图标。
+
+## 安装与启动（开发人员）
 
 ```bash
 cd productdrama-ai

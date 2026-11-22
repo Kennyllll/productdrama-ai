@@ -6,6 +6,7 @@
     "dev": "next dev -H 127.0.0.1",
     "build": "next build",
     "start": "next start -H 127.0.0.1",
+    "app": "node scripts/app.mjs",
     "lint": "eslint",
     "test": "tsx --test 'src/**/*.test.ts'"
   },
