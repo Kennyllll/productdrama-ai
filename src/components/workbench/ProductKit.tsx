@@ -55,6 +55,7 @@ export function PhotoSlots({
   assets,
   required,
   library = [],
+  warnings = {},
 }: {
   projectId: string;
   kind: "white_photo" | "color_photo";
@@ -62,6 +63,8 @@ export function PhotoSlots({
   assets: KitAsset[];
   required: string[];
   library?: KitAsset[];
+  /** 照片 id → 太小 / 太暗 / 太糊 */
+  warnings?: Record<string, string[]>;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -131,6 +134,11 @@ export function PhotoSlots({
                   </button>
                 ) : null}
               </p>
+              {f ? warnings[f.id]?.map((w) => (
+                <p key={w} className="text-left text-[11px] leading-tight text-amber-300">
+                  {w}
+                </p>
+              )) : null}
             </li>
           );
         })}

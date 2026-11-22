@@ -6,12 +6,13 @@ import { Card, DemoNotice, LaterButton, MockBadge, PageHeader, PlaceholderFrame,
 import { DEMO_PROJECT_ID, demoProduct } from "@/lib/mock/demo";
 import { WHITE_REQUIRED } from "@/lib/fal-catalog";
 import { getProductModel } from "@/lib/model-repo";
-import { findLocalProject, getProduct, listAssets } from "@/lib/repo";
+import { assetPath, findLocalProject, getProduct, listAssets } from "@/lib/repo";
 import type { AssetRecord } from "@/lib/types";
+import { photoWarningsFor } from "@/lib/photo-quality-server";
 
 const toView = (a: AssetRecord) => ({ id: a.id, angle: a.angle, originalName: a.originalName, size: a.size });
 
-function LocalProductPage({ id }: { id: string }) {
+async function LocalProductPage({ id }: { id: string }) {
   const product = findLocalProject(id) ? getProduct(id) : null;
   if (!product) notFound();
   const assets = listAssets(id);
@@ -22,6 +23,7 @@ function LocalProductPage({ id }: { id: string }) {
   const missing = WHITE_REQUIRED.filter((a) => !kit.white.some((w) => w.angle === a));
   const reviewing = kit.models.filter((m) => m.colorId === null && m.status === "review").length;
   const pending = product.bible.filter((f) => f.needsConfirmation).length;
+  const photoWarnings = await photoWarningsFor(assets.filter((a) => a.kind === "white_photo" || a.kind === "product_photo" || a.kind === "color_photo").map((a) => ({ id: a.id, file: assetPath(a) })));
   const todo: TodoItem[] = [];
   if (!product.name.trim()) todo.push({ step: 1, text: "产品名称" });
   if (!product.sellingPoints.length) todo.push({ step: 1, text: "卖点" });
@@ -42,6 +44,7 @@ function LocalProductPage({ id }: { id: string }) {
         model={model ? { id: model.id, originalName: model.originalName, size: model.size } : null}
         kit={kit}
         todo={todo}
+        photoWarnings={photoWarnings}
       />
     </>
   );

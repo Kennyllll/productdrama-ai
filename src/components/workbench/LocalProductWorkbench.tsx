@@ -7,6 +7,7 @@ import { useActionState, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { saveProductAction } from "@/app/actions";
 import { Tag } from "@/components/ui";
+import { BibleRow } from "@/components/workbench/BibleRow";
 import { ColorKits, ModelBuilder, PhotoSlots, StickersBody } from "@/components/workbench/ProductKit";
 import { WHITE_REQUIRED } from "@/lib/fal-catalog";
 import { RIDE_KINDS, rideKindOf } from "@/lib/figures";
@@ -74,7 +75,7 @@ function Part({ title, hint, aside, children }: { title: string; hint?: string; 
   );
 }
 
-function Thumbs({ items, busy, onRemove, label }: { items: AssetView[]; busy: boolean; onRemove: (id: string) => void; label?: (a: AssetView) => string }) {
+function Thumbs({ items, busy, onRemove, label, warnings = {} }: { items: AssetView[]; busy: boolean; onRemove: (id: string) => void; label?: (a: AssetView) => string; warnings?: Record<string, string[]> }) {
   if (!items.length) return null;
   return (
     <ul className="mt-3 grid grid-cols-5 gap-2 sm:grid-cols-8 lg:grid-cols-10">
@@ -90,6 +91,11 @@ function Thumbs({ items, busy, onRemove, label }: { items: AssetView[]; busy: bo
               ×
             </button>
           </p>
+          {warnings[p.id]?.map((w) => (
+            <p key={w} className="text-[11px] leading-tight text-amber-300">
+              {w}
+            </p>
+          ))}
         </li>
       ))}
     </ul>
@@ -105,6 +111,7 @@ export function LocalProductWorkbench({
   model,
   kit,
   todo,
+  photoWarnings = {},
 }: {
   projectId: string;
   product: LocalProduct;
@@ -115,6 +122,8 @@ export function LocalProductWorkbench({
   model: { id: string; originalName: string; size: number } | null;
   kit: KitData;
   todo: TodoItem[];
+  /** 照片 id → 太小 / 太暗 / 太糊 */
+  photoWarnings?: Record<string, string[]>;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -216,18 +225,7 @@ export function LocalProductWorkbench({
     </div>
   );
 
-  const bibleRow = (f: LocalProduct["bible"][number]) => (
-    <li key={f.key} className="grid items-center gap-2 rounded-lg bg-white/5 p-2 sm:grid-cols-[6rem_1fr_auto]">
-      <label htmlFor={`bible-${f.key}`} className="text-sm text-neutral-300">
-        {f.label}
-      </label>
-      <input id={`bible-${f.key}`} form={FORM_ID} name={`bible.${f.key}.value`} defaultValue={f.value} maxLength={200} placeholder="待填写" className={inputClass} />
-      <label className="flex items-center gap-1 text-xs text-neutral-300">
-        <input type="checkbox" form={FORM_ID} name={`bible.${f.key}.confirmed`} defaultChecked={!f.needsConfirmation} />
-        已确认
-      </label>
-    </li>
-  );
+  const bibleRow = (f: LocalProduct["bible"][number]) => <BibleRow key={f.key} f={f} form={FORM_ID} />;
 
   return (
     <div className="space-y-4">
@@ -290,18 +288,18 @@ export function LocalProductWorkbench({
         done={done2}
         summary={`角度照 ${kit.white.length}/10 · 细节照 ${details.length} · Logo ${logo ? "有" : "缺"} · 贴纸 ${kit.stickers.length}`}
       >
-        <Part title="角度照" hint="白色背景，产品占满画面，不要手和阴影。建 3D 模型和出首帧都用这几张。点格子上传。">
-          <PhotoSlots projectId={projectId} kind="white_photo" assets={kit.white} required={model ? [] : WHITE_REQUIRED} library={kit.library.filter((a) => detailIds.has(a.id))} />
+        <Part title="角度照" hint="至少 4 张：正面、左侧、背面、右侧（★）。再加左前 45°、右前 45° 更准。白色背景，产品占满画面，不要手和阴影；用手机原图，短边至少 1000 像素。点格子上传。">
+          <PhotoSlots projectId={projectId} kind="white_photo" assets={kit.white} required={model ? [] : WHITE_REQUIRED} library={kit.library.filter((a) => detailIds.has(a.id))} warnings={photoWarnings} />
         </Part>
 
-        <Part title="细节照（可选）" hint="座椅、车轮、Logo 特写、使用场景等，出首帧时一起参考。">
+        <Part title="细节照（建议 2–4 张）" hint="座椅、车轮、把手、Logo 特写，出首帧时一起参考。">
           <div className="flex flex-wrap items-center gap-2">
             <input ref={detailInput} type="file" multiple accept="image/png,image/jpeg,image/webp" className="text-xs text-neutral-300" aria-label="细节照" />
             <button type="button" disabled={busy} onClick={() => upload("product_photo", detailInput.current)} className={ghost}>
               {busy ? "处理中…" : "上传"}
             </button>
           </div>
-          <Thumbs items={details} busy={busy} onRemove={remove} />
+          <Thumbs items={details} busy={busy} onRemove={remove} warnings={photoWarnings} />
         </Part>
 
         <Part title="Logo" hint="成片里的 Logo 用原文件合成，不让 AI 重画。最好是透明背景的 PNG 或 SVG。" aside={<Tag tone={logo ? "emerald" : "amber"}>{logo ? "已上传" : "未上传"}</Tag>}>

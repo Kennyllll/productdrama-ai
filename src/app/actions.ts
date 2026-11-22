@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { checkAgeRange, formatAge } from "@/lib/age-range";
 import { emptyBible } from "@/lib/mock/demo";
 import { createProject, deleteProject, findLocalProject, saveProduct } from "@/lib/repo";
 import type { FormState } from "@/lib/types";
@@ -33,11 +34,15 @@ export async function saveProductAction(_prev: FormState, fd: FormData): Promise
     .filter(Boolean)
     .slice(0, 10);
 
+  const age = checkAgeRange(text(fd, "age.min", 8), text(fd, "age.max", 8), text(fd, "age.unit", 4));
+  if ("error" in age) return { error: age.error };
   const bible = emptyBible.map((field) => ({
     ...field,
-    value: text(fd, `bible.${field.key}.value`, 200),
+    value: field.key === "age" ? (age.range ? formatAge(age.range) : "") : text(fd, `bible.${field.key}.value`, 200),
     needsConfirmation: fd.get(`bible.${field.key}.confirmed`) !== "on",
   }));
+  const empty = bible.filter((f) => !f.needsConfirmation && !f.value);
+  if (empty.length) return { error: `${empty.map((f) => f.label).join("、")}还没填，不能勾「已确认」` };
 
   saveProduct(projectId, {
     name: text(fd, "name", 80),
