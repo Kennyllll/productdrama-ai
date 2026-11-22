@@ -1,5 +1,6 @@
 // OpenAI 兼容的 Chat Completions 适配器（当前接 DeepSeek）。仅服务端调用，错误转为中文提示，不记录 Key。
 import type { AiModel, AiUsage } from "@/lib/ai/models";
+import { deepseekBalance } from "@/lib/ai/balance";
 import { getAiSettings } from "@/lib/ai/settings";
 
 export class AiError extends Error {}
@@ -31,6 +32,10 @@ export async function chatJson(opts: {
 }): Promise<{ data: unknown; usage: AiUsage }> {
   const s = getAiSettings();
   if (!s.apiKey) throw new AiError("还没填 DeepSeek Key（AI 写创意、剧本用它）：到「模型设置」→ DeepSeek 填好再点");
+  if (s.baseUrl.includes("deepseek.com")) {
+    const bal = await deepseekBalance(s.baseUrl, s.apiKey);
+    if (bal && !bal.ok) throw new AiError(`DeepSeek 余额不够（剩 ${bal.text}），先充值再点。这次没扣钱`);
+  }
   const model = opts.model ?? (opts.purpose === "story" ? s.storyModel : s.model);
 
   let res: Response;

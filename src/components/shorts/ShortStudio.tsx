@@ -70,6 +70,7 @@ import { DraftView, SyncNotice } from "@/components/shorts/RewriteUI";
 import type { Conflict } from "@/lib/shorts";
 import { PromptPreview } from "@/components/shorts/PromptPreview";
 import { ColorKits } from "@/components/workbench/ProductKit";
+import { NeedKey } from "@/components/shorts/NeedKey";
 import type { KitData } from "@/lib/product-kit";
 
 const input =
@@ -96,6 +97,7 @@ export function ShortStudio({
   templates,
   hfReady,
   arkReady = false,
+  aiReady = true,
   productPhotos,
   finalAt: initialFinalAt,
   initialShot = null,
@@ -109,6 +111,8 @@ export function ShortStudio({
   templates: { id: string; label: string; look: string }[];
   hfReady: boolean;
   arkReady?: boolean;
+  /** DeepSeek Key 填了没 */
+  aiReady?: boolean;
   productPhotos: number;
   finalAt: string | null;
   initialShot?: string | null;
@@ -724,6 +728,7 @@ export function ShortStudio({
             className={primary}
             disabled={
               busy ||
+              !aiReady ||
               (shots.length > 0 && st.jobs.some((j) => j.status !== "failed"))
             }
             onClick={() =>
@@ -735,6 +740,7 @@ export function ShortStudio({
           >
             {busy ? "…" : v.concepts.length ? "重新出创意" : "AI 出 4 个创意"}
           </button>
+          {!aiReady ? <NeedKey name="DeepSeek" anchor="deepseek" /> : null}
         </div>
         {shots.length > 0 && st.jobs.some((j) => j.status !== "failed") ? (
           <p className="mt-1 text-xs text-neutral-400">已经开始出图，不能再换创意：要换创意，新建一条短视频</p>
@@ -781,6 +787,7 @@ export function ShortStudio({
               className={btn}
               disabled={
                 busy ||
+                !aiReady ||
                 !v.conceptId ||
                 st.jobs.some((j) => j.status !== "failed")
               }
@@ -788,6 +795,7 @@ export function ShortStudio({
             >
               {shots.length ? "按选中创意重出分镜" : "按选中创意出分镜"}
             </button>
+            {!aiReady ? <NeedKey name="DeepSeek" anchor="deepseek" /> : null}
             <button
               className={btn}
               disabled={busy}
@@ -1476,6 +1484,7 @@ export function ShortStudio({
                         {s.stage === "frame_ready" ? "重做首帧…" : "生成首帧…"}
                       </button>
                       ) : null}
+                      {!hfReady && (s.stage === "comp_ok" || s.stage === "frame_ready") ? <NeedKey name="Higgsfield" anchor="higgsfield" /> : null}
                       {s.stage === "frame_ready" ? (
                         <span className="self-center text-xs text-amber-300">
                           {s.hook?.scene === "car" ? "对照选的人：是 TA、坐在车里、画面里没有三轮车才算通过" : "对照 3D 构图：机位、产品朝向、大小一致才算通过"}
@@ -1584,6 +1593,7 @@ export function ShortStudio({
                           busy ||
                           dirty ||
                           (!arkReady && !shotHasPeople(s)) ||
+                          (!hfReady && shotHasPeople(s)) ||
                           wait > 0 ||
                           runBusy ||
                           (s.hook?.selfie && !s.hook.line?.trim())
@@ -1592,6 +1602,9 @@ export function ShortStudio({
                       >
                         {s.stage === "video_ready" ? "重做视频…" : "生成视频…"}
                       </button>
+                      ) : null}
+                      {(s.stage === "frame_ok" || s.stage === "video_ready") && (shotHasPeople(s) ? !hfReady : !arkReady) ? (
+                        shotHasPeople(s) ? <NeedKey name="Higgsfield" anchor="higgsfield" /> : <NeedKey name="火山方舟" anchor="ark" />
                       ) : null}
                       {(() => {
                         const vc = s.videoCheck?.jobId === s.videoJobId ? s.videoCheck : undefined;
