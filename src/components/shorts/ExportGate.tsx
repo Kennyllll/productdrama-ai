@@ -40,7 +40,7 @@ export function ExportGate({
     <div className="space-y-2">
       {report.gaps.length ? (
         <p className="rounded-md bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
-          只有开头，正文还没采用：{report.gaps.map((g) => `第 ${g.n} 镜${g.why}`).join("；")}。
+          正文还有 {report.gaps.length} 镜没好：{report.gaps.map((g) => `「${g.beat}」${g.why}`).join("；")}。
         </p>
       ) : null}
       {report.blocks.length ? (

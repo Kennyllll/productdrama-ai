@@ -50,7 +50,7 @@ export function exportReport(v: Pick<ShortVideoData, "shots">, facts: AdFacts, f
 
 /** 正式导出被拦的原因（一句话）；空 = 可以正式导出 */
 export function formalExportError(r: ExportReport): string {
-  if (r.gaps.length) return `正文还有 ${r.gaps.length} 镜没好（${r.gaps.map((g) => `第 ${g.n} 镜${g.why}`).join("；")}）。先做完再正式导出，或点「导出预览」看看效果。`;
+  if (r.gaps.length) return `正文还有 ${r.gaps.length} 镜没好（${r.gaps.map((g) => `「${g.beat}」${g.why}`).join("；")}）。先做完再正式导出，或点「导出预览」看看效果。`;
   if (r.blocks.length) return `有 ${r.blocks.length} 处数字没有依据：${r.blocks.map((b) => `${b.where}「${b.hit}」`).join("、")}。先到产品资料第 5 步填依据，或改掉这句。`;
   return "";
 }

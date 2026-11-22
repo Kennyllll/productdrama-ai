@@ -10,8 +10,8 @@ import { getProductModel } from "@/lib/model-repo";
 import { getRig } from "@/lib/product-rig-repo";
 import { figuresOf, KB002_RIG } from "@/lib/figures";
 import { castOf } from "@/lib/families-repo";
-import { roleOf, type MemberRole } from "@/lib/families";
-import { stripNeg } from "@/lib/shorts-sync";
+import { filmerId, roleOf, type MemberRole } from "@/lib/families";
+import { stripFilmer, stripNeg } from "@/lib/shorts-sync";
 
 const ROLE_RX: [MemberRole, RegExp][] = [
   ["dad", /\b(dad|daddy|father)\b|爸爸|父亲/i],
@@ -26,16 +26,17 @@ export function castConflicts(v: ShortVideo, s: ShortShot): string[] {
   const l = s.layout;
   const cast = castOf(v.families, s.family ?? 1);
   if (!l || !cast) return [];
-  const text = stripNeg([s.description, s.camera, s.framePrompt, s.motionPrompt].join("\n"));
+  const text = stripFilmer(stripNeg([s.description, s.camera, s.framePrompt, s.motionPrompt].join("\n")));
   const figs = figuresOf(l);
+  const fid = filmerId(v, s);
   const inFrame = cast.members.filter((m) => figs.some((f) => f.memberId === m.id));
   const unbound = figs.some((f) => !f.memberId && f.kind === "adult");
   const now = inFrame.map((m) => m.name).join("、") || "没有家庭成员";
   const out: string[] = [...captionIssues(s)];
   for (const m of cast.members)
-    if (!inFrame.includes(m) && new RegExp(`\\b${esc(m.name)}\\b`, "i").test(text)) out.push(`文字写了 ${m.name}，3D 里没有 ${m.name}（3D 里是：${now}）`);
+    if (m.id !== fid && !inFrame.includes(m) && new RegExp(`\\b${esc(m.name)}\\b`, "i").test(text)) out.push(`文字写了 ${m.name}，3D 里没有 ${m.name}（3D 里是：${now}）`);
   for (const [role, rx] of ROLE_RX)
-    if (rx.test(text) && !unbound && !inFrame.some((m) => m.role === role)) out.push(`文字写了${roleOf(role).label}，3D 里没有${roleOf(role).label}（3D 里是：${now}）`);
+    if (rx.test(text) && !unbound && !cast.members.some((m) => m.id === fid && m.role === role) && !inFrame.some((m) => m.role === role)) out.push(`文字写了${roleOf(role).label}，3D 里没有${roleOf(role).label}（3D 里是：${now}）`);
   if (s.hook?.selfie) {
     const me = figs.find((f) => f.id === "self");
     if (!me) out.push("勾了自拍，3D 里没有自拍的人：在 Hook 面板里取消再勾一次自拍，3D 会自动摆好");

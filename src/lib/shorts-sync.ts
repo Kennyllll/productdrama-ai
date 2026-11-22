@@ -103,6 +103,10 @@ const ADULT = /\b(dad|daddy|father|mom|mommy|mother|parent|grandma|grandpa|adult
 const KID = /\b(boy|girl|kid|child|toddler|son|daughter)\b|男孩|女孩|孩子|小孩|儿子|女儿/i;
 
 /** 去掉否定说法（no dad / 不要爸爸），免得“画面里不要爸爸”被当成提到了爸爸 */
+/** 去掉写拿手机的人的句子（爸爸蹲着用手机拍 / Dad filming）：拍摄者不是 3D 里的人偶 */
+export const stripFilmer = (t: string) =>
+  t.split(/(?<=[。；;.!?！？])|[，,]/).filter((c) => !/用手机拍|拿着?手机|手机拍|在拍|拍摄者|拿手机的人|\bfilm(?:s|ing)\b|holding the phone|behind the (?:phone|camera)|person filming/i.test(c)).join("，");
+
 export const stripNeg = (t: string) => t.replace(/\b(no|without|never|not)\b[^.;!?]*/gi, " ").replace(/(不要|没有|不出现|不能有|别让|看不到|看不见)[^，。；,.;]*/g, " ");
 
 /** 文字和 3D 对不上的地方（只查明确的冲突，免费，不调 AI） */
@@ -110,7 +114,7 @@ export function shotChecks(s: ShortShot, b: ShotBasis): string[] {
   const l: SetLayout | null = s.layout;
   if (!l) return [];
   const all = [s.description, s.camera, s.productNote, s.framePrompt, s.motionPrompt].join("\n");
-  const text = stripNeg(all);
+  const text = stripFilmer(stripNeg(all));
   const cam = [s.camera, s.framePrompt.split(/[.。]/)[0] ?? ""].join("\n");
   const out: string[] = [];
   const figs = figuresOf(l);

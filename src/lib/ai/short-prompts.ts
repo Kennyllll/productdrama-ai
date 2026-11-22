@@ -24,11 +24,11 @@ ${product}
 节奏：${t.beats.map((b) => `${b.label}（约 ${b.seconds} 秒）`).join(" → ")}
 ${brief.trim() ? `用户要求：${brief.trim()}\n` : ""}${existing.length ? `这个产品已经做过的视频（不要重复同样的钩子和场景）：${existing.join("；")}\n` : ""}
 给出 4 个明显不同的创意（不同受众 / 节日 / 钩子 / 场景），每个都能在 15–20 秒内讲完。
-输出 json：{"concepts":[{"title":"中文短标题","hookCaption":"POV: ...（英文字幕钩子）","ctaCaption":"英文 CTA","audience":"送礼人和收礼人，中文","setting":"具体场景，中文","people":"出场人物（年龄、外貌、穿着），中文","why":"为什么这个钩子会让人停下来，中文一句"}]}`;
+输出 json：{"concepts":[{"title":"中文短标题","hookCaption":"POV: ...（英文字幕钩子）","ctaCaption":"英文 CTA","audience":"送礼人和收礼人，中文","setting":"具体场景，中文","people":"出场人物：只写是谁和关系（不写年龄、外貌、穿着，外貌由家庭库决定），中文","why":"为什么这个钩子会让人停下来，中文一句"}]}`;
   return { system, user };
 }
 
-export function shortShotsPrompt(t: ShortTemplate, product: string, c: ShortConcept, resolution: VideoResolution, look: string) {
+export function shortShotsPrompt(t: ShortTemplate, product: string, c: ShortConcept, resolution: VideoResolution, look: string, cast = "") {
   const unit = VIDEO_USD_PER_SEC[resolution];
   const system = `你是短视频导演兼剪辑师，按镜头生成竖版 9:16 产品短视频分镜。你只输出 json。\n${RULES}\n${packagingRule(t)}
 成本硬约束：成片每秒全部花费不超过 $${MAX_USD_PER_SECOND}。视频模型 ${resolution} 每生成 1 秒 $${unit}，每次最少生成 ${VIDEO_MIN_SEC} 秒，每镜首帧另需约 $0.10。
@@ -38,10 +38,11 @@ export function shortShotsPrompt(t: ShortTemplate, product: string, c: ShortConc
 - genSeconds 为整数，最少 ${VIDEO_MIN_SEC}；useSeconds ≤ genSeconds，尽量接近，避免浪费。
 - 每个镜头要能单独由“首帧图 + 运动描述”生成，动作简单清楚，一个镜头只发生一件事。
 要像真实的 TikTok 短视频，不要像 AI 生成的：
-- 同一组人、同一个家、同一件产品贯穿全片：每个 framePrompt 都写出同样的年龄、发型、服装、房间陈设和光线；产品配饰（如蝴蝶结）不变。
+- 同一组人、同一个家、同一件产品贯穿全片：每个 framePrompt 都写出同样的房间陈设和光线；产品配饰（如蝴蝶结）不变。
+- 人物外貌（年龄、族裔、发型、衣服）由家庭库定妆照决定，description 和 framePrompt 里都不写，只写是谁（用家庭成员名字或爸爸/妈妈/孩子）、在做什么、什么表情。
 - 镜头之间要有关联，但不必逐帧接戏：像家长用手机拍了几段再剪在一起，可以跳剪、换角度、切反应镜头、跳过一段时间；每镜是这件事的下一个有意思的瞬间，不重复上一镜已经拍到的动作。
 - 去掉 AI 感：手机拍摄、构图不完美、自然晃动、真实的生活杂物和普通室内光；动作自然、不慢动作、不电影运镜；人物表情和姿势随意，不摆拍、不对着镜头表演。
-- 如果需要另一个家庭/另一个场景，在 description 里写明是切到新场景。`;
+- 只用这一家人：不要编另一个家庭、邻居或陌生人（家庭库里没有的人画不准、前后对不上）。需要换场景时，写明是同一家人换到哪里。`;
   const user = `产品资料：
 ${product}
 
@@ -52,7 +53,7 @@ ${product}
 - CTA：${c.ctaCaption}
 - 人物：${c.people}
 - 场景：${c.setting}
-
+${cast ? `- 家庭：${cast}\n` : ""}
 输出 json：{"shots":[{"beat":"节拍名","useSeconds":3,"genSeconds":4,"description":"中文：画面里发生什么","camera":"中文：机位和运动","caption":"本镜顶部英文字幕（钩子段落重复钩子字幕；最后一镜用 CTA）","productNote":"中文：产品在画面里的状态、哪一面朝镜头","compositeNote":"中文：需要后期用真实素材合成的显示内容，没有就留空","framePrompt":"English: detailed first-frame image prompt, 9:16 vertical, describe people, setting, lighting, camera, and where the product sits in frame","motionPrompt":"English: what moves during the clip, camera motion, one clear action"}]}`;
   return { system, user };
 }

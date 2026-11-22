@@ -247,6 +247,21 @@ function cleanShot(s: Partial<ShortShot>, prev?: ShortShot): ShortShot {
   };
 }
 
+async function englishFromChinese(s: ShortShot): Promise<{ framePrompt?: string; motionPrompt?: string }> {
+  const { data } = await chatJson({
+    system: "The user edited the Chinese description and camera of one shot of a phone-filmed TikTok product video. Rewrite the two English prompts to match them. framePrompt: only facial expression and gaze, light, mood and small details of the first frame; no positions, poses, shot size, close-ups, camera, clothes, age, hair or ethnicity. Only say what IS there: never write negatives (no \"no film grain\", \"not cinematic\") and never use the words sparkle, glow, shine, film grain, cinematic or bokeh. motionPrompt: what happens during the clip in one or two plain sentences (people's actions and reactions, handheld phone movement); people never look straight into the lens. Use the people's names as written. Output json: {\"framePrompt\":\"\",\"motionPrompt\":\"\"}",
+    user: JSON.stringify({ description: s.description, camera: s.camera, oldFramePrompt: s.framePrompt, oldMotionPrompt: s.motionPrompt }),
+    maxTokens: 800,
+    thinking: false,
+    timeoutMs: 60_000,
+  });
+  const d = data as { framePrompt?: unknown; motionPrompt?: unknown };
+  return {
+    ...(typeof d.framePrompt === "string" && d.framePrompt.trim() ? { framePrompt: d.framePrompt.trim().slice(0, 2000) } : {}),
+    ...(typeof d.motionPrompt === "string" && d.motionPrompt.trim() ? { motionPrompt: d.motionPrompt.trim().slice(0, 2000) } : {}),
+  };
+}
+
 export async function saveShortVideoAction(
   videoId: string,
   patch: { title?: string; brief?: string; templateId?: string; resolution?: VideoResolution; sound?: boolean; conceptId?: string | null; shots?: Partial<ShortShot>[]; exportHooks?: string[]; captions?: boolean; colorId?: string | null },
@@ -277,6 +292,12 @@ export async function saveShortVideoAction(
       await trashShots(v, v.shots.filter((s) => !kept.some((k) => k.id === s.id)), "删除镜头");
       v.shots = [...kept.filter((s) => s.hook), ...kept.filter((s) => !s.hook)];
       v.hooksReady = true;
+      // 只改了中文画面 / 机位：英文出图和动作提示词跟着改，否则生成时还用旧的
+      for (const s of v.shots) {
+        const p = old.find((x) => x.id === s.id);
+        if (p && (p.description !== s.description || p.camera !== s.camera) && p.framePrompt === s.framePrompt && p.motionPrompt === s.motionPrompt)
+          Object.assign(s, await englishFromChinese(s).catch(() => ({})));
+      }
       // 文字改过（或第一次保存）：记下这份文字对应的 3D
       for (const s of v.shots) {
         const p = old.find((x) => x.id === s.id);
@@ -916,7 +937,9 @@ export async function aiShotsAction(videoId: string): Promise<Result<StudioState
     const jobs = listJobs(videoId);
     if (jobs.some((j) => j.status !== "failed")) throw new Error("这条视频已经花过钱，重新生成分镜会让已生成素材作废；请新建一条视频");
     const t = findTemplate(v.templateId);
-    const { system, user } = shortShotsPrompt(t, productText(v.projectId), c, v.resolution, t.look);
+    const fam = castOf(v.families, 1);
+    const cast = fam ? `${fam.name}：${fam.members.map((m) => `${m.name}（${m.role}）`).join("、")}` : "";
+    const { system, user } = shortShotsPrompt(t, productText(v.projectId), c, v.resolution, t.look, cast);
     const { data } = await chatJson({ system, user, maxTokens: 12_000, thinking: false, timeoutMs: 240_000 });
     const list = (data as { shots?: Partial<ShortShot>[] })?.shots;
     if (!Array.isArray(list) || !list.length) throw new AiError("AI 没有返回分镜，请重试");
@@ -1373,7 +1396,8 @@ function framePromptOf(v: ShortVideo, s: ShortShot): string {
   // 衣服以家庭库为准、自拍画风以手机前置为准：补充文字里打架的句子直接删掉
   const notes = cleanShotNotes(s.framePrompt.trim().replace(/^English:\s*/i, ""), {
     wardrobe: (s.layout?.figures ?? []).some((f) => f.memberId),
-    selfie: Boolean(s.hook?.selfie),
+    // 手机随手拍的模板也不要电影画风（胶片颗粒、浅景深）
+    selfie: Boolean(s.hook?.selfie) || findTemplate(v.templateId).look !== "cinematic",
   }).text;
   const rest = parts.filter((x) => x !== NOTES).join("\n").length + 1;
   const room = FRAME_PROMPT_MAX - rest - lead.length;
@@ -1691,7 +1715,7 @@ export async function rewriteShotAction(
       ? " The user also wrote feedback in plain Chinese (userFeedback); start from currentDraft and apply it. For details the 3D cannot show (hand gestures such as pointing instead of reaching, what a hand grips or holds, facial expression, gaze, wardrobe, mood, light, small props, the motion), follow the user. For things the 3D fixes (who is in frame and how many, where each person and the product are, product orientation and pose, location, camera position and lens), do NOT apply them: every field must still state the 3D facts exactly (e.g. if the 3D puts the adult to the right of the product, the text says right even when the user asked for left), and add one short Simplified Chinese line to needs3d per such request, saying what to change in the 3D. Also add one notes line per request you actually applied; requests you could not apply go only to needs3d."
       : "";
     const { data } = await chatJson({
-      system: "You keep one shot of a TikTok-style product video in sync with its 3D blocking. The 3D facts are the truth: location, people, camera lens and height, product orientation and the person filming. Check EVERY sentence of every field against the 3D facts: who is in frame, where each person and the product sit in the frame (left / center / right, near / far), poses and actions, product orientation and pose, location, background and holiday decorations, camera. The listed changes and conflicts come from a simple keyword check and are often incomplete, so also fix sentences that were not listed. A 3D pose name only describes the body position: never invent props or intentions from it (a reaching hand is not handing something over). Mention background or holiday decorations only if the location facts list them. Rewrite whatever does not match; keep all continuity details (same people, wardrobe, props, product details), the casual phone-footage style and roughly the same length. Never add a person who is not in the 3D people list; if the text mentions someone who is not there, remove them and make clear the remaining people are the only ones in frame. The person filming holds the phone and is never the subject: never call it a selfie (no 'selfie', no 自拍). Never mention the 3D blocking itself (no mannequins, gray boxes or markers). Keep the camera field consistent with the lens and camera height. Where people are and what they do come only from the 3D facts (positions plus each person's written action); the image prompt adds those automatically. So framePrompt holds only what the 3D cannot carry: wardrobe, facial expression and gaze, light, mood and small details of the people and the product; it must not describe positions, left / right, distances, poses, hand or body actions, camera or background layout. description and motionPrompt may describe actions, but only as the 3D facts give them. If a person has no written action, describe them only by the pose preset and add a needs3d line asking the user to write that person's action in the 3D figure's 动作 field (e.g. '人偶1·小孩：在 3D 的「动作」栏写这个人在做什么'). Fields description, camera and productNote are in Simplified Chinese; framePrompt and motionPrompt are in English. Output json: {\"description\":\"\",\"camera\":\"\",\"productNote\":\"\",\"framePrompt\":\"\",\"motionPrompt\":\"\",\"notes\":[\"one short Simplified Chinese line per change\"],\"needs3d\":[]}" + userRule + (feedback ? " This overrides the rule above for body and hand actions: what a person does with their body or hands (pointing, gripping the handlebars, waving, holding something) belongs only in that person's 3D 动作 field. If the feedback asks for an action that differs from that person's written action in the 3D facts, do not write it into any field; add a needs3d line such as '人偶2·大人 的「动作」栏改成：……'." : ""),
+      system: "You keep one shot of a TikTok-style product video in sync with its 3D blocking. The 3D facts are the truth: location, people, camera lens and height, product orientation and the person filming. Check EVERY sentence of every field against the 3D facts: who is in frame, where each person and the product sit in the frame (left / center / right, near / far), poses and actions, product orientation and pose, location, background and holiday decorations, camera. The listed changes and conflicts come from a simple keyword check and are often incomplete, so also fix sentences that were not listed. A 3D pose name only describes the body position: never invent props or intentions from it (a reaching hand is not handing something over). Mention background or holiday decorations only if the location facts list them. Rewrite whatever does not match; keep all continuity details (same people, wardrobe, props, product details), the casual phone-footage style and roughly the same length. Call family members by their names from the 3D people list (e.g. Zoe), never 'a small child' or 'a woman'. Keep the story beat: the emotion and reaction of the shot (surprise, laughing, excitement) stay in description, framePrompt (expression) and motionPrompt; never flatten the shot into people just standing and looking. Never write film grain, cinematic, bokeh or shallow depth of field: it is an ordinary phone video with everything in focus. Never add a person who is not in the 3D people list; if the text mentions someone who is not there, remove them and make clear the remaining people are the only ones in frame. The person filming holds the phone and is never the subject: never call it a selfie (no 'selfie', no 自拍). Never mention the 3D blocking itself (no mannequins, gray boxes or markers). Keep the camera field consistent with the lens and camera height. Where people are and what they do come only from the 3D facts (positions plus each person's written action); the image prompt adds those automatically. So framePrompt holds only what the 3D cannot carry: wardrobe, facial expression and gaze, light, mood and small details of the people and the product; it must not describe positions, left / right, distances, poses, hand or body actions, camera or background layout. description and motionPrompt may describe actions, but only as the 3D facts give them. If a person has no written action, describe them only by the pose preset and add a needs3d line asking the user to write that person's action in the 3D figure's 动作 field (e.g. '人偶1·小孩：在 3D 的「动作」栏写这个人在做什么'). Fields description, camera and productNote are in Simplified Chinese; framePrompt and motionPrompt are in English. Output json: {\"description\":\"\",\"camera\":\"\",\"productNote\":\"\",\"framePrompt\":\"\",\"motionPrompt\":\"\",\"notes\":[\"one short Simplified Chinese line per change\"],\"needs3d\":[]}" + userRule + (feedback ? " This overrides the rule above for body and hand actions: what a person does with their body or hands (pointing, gripping the handlebars, waving, holding something) belongs only in that person's 3D 动作 field. If the feedback asks for an action that differs from that person's written action in the 3D facts, do not write it into any field; add a needs3d line such as '人偶2·大人 的「动作」栏改成：……'." : ""),
       user: JSON.stringify(feedback ? { facts3d: facts, changedSinceWritten: sync.changes, conflicts: [...sync.issues, ...own], shot: old, currentDraft: draft, userFeedback: feedback } : { facts3d: facts, changedSinceWritten: sync.changes, conflicts: [...sync.issues, ...own], shot: old }),
       maxTokens: 3000,
       thinking: !!feedback,
