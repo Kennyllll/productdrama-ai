@@ -19,7 +19,7 @@ export async function applyBudgetChange(v: ShortVideo, usd: number | null, reaso
   v.budgetUsd = next;
   saveShortVideo(v);
   const actor = await currentActor();
-  logAction(verdict.needsAdmin ? { ...actor, role: "admin" } : actor, {
+  logAction(verdict.needsAdmin && actor.role !== "admin" ? { role: "admin", name: `${actor.name}（凭管理员 PIN）` } : actor, {
     projectId: v.projectId,
     videoId: v.id,
     action: "预算调整",

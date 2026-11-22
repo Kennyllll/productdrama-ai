@@ -28,8 +28,18 @@ export function TrashList({ items, projectNames }: { items: TrashItem[]; project
       if (!r.error) router.refresh();
     });
   };
-  if (!items.length) return <p className="rounded-xl border border-white/10 p-6 text-sm text-neutral-400">回收站是空的。</p>;
+  const gone = msg && !msg.err && !items.some((t) => t.id === msg.id);
+  const banner = gone ? <p className="mb-3 rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">{msg.text}</p> : null;
+  if (!items.length)
+    return (
+      <>
+        {banner}
+        <p className="rounded-xl border border-white/10 p-6 text-sm text-neutral-400">回收站是空的。</p>
+      </>
+    );
   return (
+    <>
+    {banner}
     <ul className="space-y-2">
       {items.map((t) => (
         <li key={t.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-neutral-900/70 px-4 py-3 text-sm">
@@ -53,5 +63,6 @@ export function TrashList({ items, projectNames }: { items: TrashItem[]; project
         </li>
       ))}
     </ul>
+    </>
   );
 }

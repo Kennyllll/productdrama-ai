@@ -50,7 +50,7 @@ function HookCard({ h, onDone }: { h: HookDef | null; onDone?: () => void }) {
       </button>
       {!open ? <p className="mt-1 text-xs text-neutral-400">{d.use}</p> : null}
       {open ? (
-        <fieldset disabled={!admin} className="mt-3 space-y-2 text-xs text-neutral-400">
+        <fieldset disabled={!admin} className="mt-3 space-y-2 text-xs text-neutral-400 disabled:opacity-70">
           <div className="grid gap-2 md:grid-cols-4">
             <label className="block md:col-span-2">
               名字

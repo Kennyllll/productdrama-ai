@@ -157,7 +157,7 @@ function FamilyCard({ f, onDone }: { f: Family | null; onDone?: () => void }) {
         </span>
       </button>
       {open ? (
-        <fieldset disabled={!admin} className="mt-4 space-y-4">
+        <fieldset disabled={!admin} className="mt-4 space-y-4 disabled:opacity-70">
           <div className="grid gap-3 md:grid-cols-2">
             <label className="block text-xs text-neutral-400">
               家庭名字

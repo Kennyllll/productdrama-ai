@@ -65,9 +65,9 @@ export async function approveOverLimitAction(videoId: string, shotId: string, ki
     if (why.length < 4) throw new Error("放行要写原因（至少 4 个字）");
     checkPin(pin);
     const a = await currentActor();
-    const name = a.role === "admin" ? a.name : "管理员";
+    const name = a.role === "admin" ? a.name : `${a.name}（凭管理员 PIN）`;
     addApproval({ videoId, shotId, jobKind: kind, usd: Math.round(usd * 100) / 100, reason: why.slice(0, 200), actor: name });
-    logAction({ role: "admin", name }, { projectId: v.projectId, videoId, shotId, shotLabel: s.hook ? `开头「${s.hook.name}」` : `#${v.shots.indexOf(s) + 1} ${s.beat}`, action: "管理员放行超限", detail: `${kind === "video" ? "视频" : kind === "frame" ? "首帧" : "场地参考图"}；原因：${why.slice(0, 200)}`, usd });
+    logAction({ role: "admin", name }, { projectId: v.projectId, videoId, shotId, shotLabel: s.hook ? `开头「${s.hook.name}」` : `#${v.shots.indexOf(s) + 1} ${s.beat}`, action: "管理员放行超限", detail: `${kind === "video" ? "视频" : kind === "frame" ? "首帧" : "场地参考图"}；原因：${why.slice(0, 200)}`, usd: Math.round(usd * 100) / 100 });
     return { result: true };
   } catch (e) {
     return fail(e);

@@ -38,7 +38,7 @@ export function RevisionHistory({ entityType, projectId }: { entityType: RevEnti
     });
   };
   return (
-    <details className="mt-6 rounded-xl border border-white/10 bg-neutral-900/70 p-4" onToggle={(e) => (e.currentTarget.open && !list ? load() : undefined)}>
+    <details className="mt-6 rounded-xl border border-white/10 bg-neutral-900/70 p-4" onToggle={(e) => (e.currentTarget.open ? load() : undefined)}>
       <summary className="cursor-pointer select-none text-sm font-semibold text-white">
         {NAME[entityType]}历史版本 <span className="ml-1 text-xs font-normal text-neutral-500">每次改动、删除都留一版，删错了也能从这里恢复</span>
       </summary>
