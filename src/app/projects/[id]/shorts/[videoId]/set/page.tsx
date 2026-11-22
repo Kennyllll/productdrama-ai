@@ -1,3 +1,4 @@
+import { getBrainKey } from "@/lib/brain/kimi";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { SetShot } from "@/components/production/Set3D";
@@ -50,6 +51,7 @@ export default async function ShortSetPage({ params, searchParams }: { params: P
   const scenes = ensureScenes(id, listShortVideos(id));
   const sceneItems: Record<string, SceneItem[]> = {};
   const stage: Record<string, StageProps> = {};
+  const brainReady = Boolean(getBrainKey());
   const bindings: ShotBinding[] = v.shots.map((s, i) => {
     const sh = s.scene ?? legacyShotScene(scenes, v.room, videoTheme(v).theme);
     const sc = scenes.find((x) => x.id === sh.id) ?? scenes[0];
@@ -60,7 +62,8 @@ export default async function ShortSetPage({ params, searchParams }: { params: P
       layout: s.layout ?? autoLayout(s, i),
       scene: { id: sc.id, name: sc.name, v: ver.v, theme: sh.theme, themeLabel: findTheme(sh.theme).label },
       items: ver.items,
-      members: (castOf(v.families, s.family ?? 1)?.members ?? []).filter((m) => !!s.hook?.selfie || m.id !== filmerId(v, s)).map((m) => ({ id: m.id, name: m.name, kind: memberKind(m), h: m.heightCm / 100, label: `${m.name}（${roleOf(m.role).label}，${(m.heightCm / 100).toFixed(2)} 米）` })),
+      brainReady,
+      members: (castOf(v.families, s.family ?? 1)?.members ?? []).filter((m) => !!s.hook?.selfie || m.id !== filmerId(v, s)).map((m) => ({ id: m.id, name: m.name, kind: memberKind(m), h: m.heightCm / 100, role: m.role, label: `${m.name}（${roleOf(m.role).label}，${(m.heightCm / 100).toFixed(2)} 米）` })),
     };
     return { code: s.id, label: labelOf(s, i), scene: sh, family: s.family ?? 1, special: s.special ?? "", locked: shots[i].locked };
   });

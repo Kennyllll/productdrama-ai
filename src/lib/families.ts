@@ -83,6 +83,7 @@ export interface CastOption {
   kind: FigureKind;
   h: number;
   label: string;
+  role?: MemberRole;
 }
 
 export const memberKind = (m: Pick<FamilyMember, "role" | "age">): FigureKind => (m.age >= 14 ? "adult" : "child");

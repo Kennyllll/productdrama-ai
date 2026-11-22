@@ -2,7 +2,7 @@
 
 import { askConfirm } from "@/components/ConfirmHost";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { saveShortAngleAction, saveShortCompAction, saveShortLayoutAction, setShotFilmerAction, setShotOperatorAction } from "@/app/short-actions";
+import { saveShortAngleAction, saveShortCompAction, saveShortLayoutAction, setShotFilmerAction, setShotOperatorAction, shotStageAction } from "@/app/short-actions";
 import { OperatorPicker } from "@/components/shorts/OperatorPicker";
 import { filmerScale } from "@/lib/families";
 import type { SetLayout } from "@/lib/production-repo";
@@ -20,6 +20,8 @@ export interface StageProps {
   scene: { id: string; name: string; v: number; theme: string; themeLabel: string };
   items: SceneItem[];
   members?: CastOption[];
+  /** 填了 Kimi Key 没有（没填就不让点「让大脑调」） */
+  brainReady?: boolean;
 }
 import type { CastOption } from "@/lib/families";
 import { activeItems, type Scene, type SceneItem } from "@/lib/shorts-scenes";
@@ -70,6 +72,8 @@ export function ShortSet({
   const [draft, setDraft] = useState<SceneItem[] | null>(null);
   const [live, setLive] = useState<{ figures: FigureSpec[]; bike?: [number, number]; bikeYaw: number; bikeLift: number; bikePitch: number; bikeRoll: number; bikeGround: number; items: SceneItem[] } | null>(null);
   const [cap, setCap] = useState(0);
+  const [reopening, setReopening] = useState(false);
+  const [reopenMsg, setReopenMsg] = useState("");
   const [stageSave, setStageSave] = useState(0);
   const [tip, setTip] = useState(false);
   useEffect(() => setTip(!localStorage.getItem("pd-3d-tip")), []);
@@ -139,7 +143,7 @@ export function ShortSet({
   };
   const operatorBox = (c: string, locked: boolean, api: { layout: SetLayout; setCamH: (h: number) => void }) => (
     <div className="block">
-      拍摄者（先选姿态，露什么按机位自动算）<span className="ml-1 text-[11px] text-neutral-500">· 选完自动保存</span>
+      拍摄者（先选姿态，露什么按机位自动算）<span className="ml-1 text-[11px] text-neutral-500">· 选完马上自动保存（左边「撤销」撤不回这一项）</span>
       {filmers[c]?.options.length ? (
         <label className="mt-1 flex items-center gap-1">
           谁拿手机：
@@ -195,7 +199,25 @@ export function ShortSet({
         </button>
       </div>
       {lockedMsg ? (
-        <p className="rounded-lg bg-amber-400/10 px-3 py-2 text-sm text-amber-200">这一镜已确认，只能看。要改请回到镜头，点「退回构图」。</p>
+        <p className="flex flex-wrap items-center gap-2 rounded-lg bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
+          这一镜已确认，只能看。
+          <button
+            type="button"
+            disabled={reopening}
+            onClick={async () => {
+              if (!(await askConfirm("退回构图后能改人偶、产品和机位；改完要回镜头重新点「确认构图」才能出首帧。确定退回并编辑？"))) return;
+              setReopening(true);
+              const r = await shotStageAction(videoId, code, "reopen_comp");
+              setReopening(false);
+              if (r.error) setReopenMsg(`⚠ ${r.error}`);
+              else router.refresh();
+            }}
+            className="rounded border border-amber-400/50 px-2 py-0.5 text-amber-100 disabled:opacity-40"
+          >
+            {reopening ? "退回中…" : "退回构图并编辑"}
+          </button>
+          {reopenMsg ? <span className="text-rose-300">{reopenMsg}</span> : null}
+        </p>
       ) : tip ? (
         <p className="flex items-center gap-3 rounded-lg border border-sky-400/30 bg-sky-400/5 px-3 py-2 text-sm text-sky-100">
           <span>① 左边「模型」：点人或车，拖箭头、选姿势　② 右边「镜头」：拖地图上的黄点调机位　③ 点「保存」</span>
@@ -231,6 +253,7 @@ export function ShortSet({
               scene={st.scene}
               items={st.items}
               members={st.members}
+              brainReady={st.brainReady}
               glbUrl={glbUrl}
               modelId={modelId}
               rig={rig}
@@ -294,7 +317,7 @@ export function ShortSet({
             onDirty={setCamDirty}
             otherDirty={stageDirty}
           />
-          {code ? <ShotSyncBox videoId={videoId} shotId={code} label={b?.label ?? ""} figIds={(st?.layout.figures ?? []).map((f) => f.id)} /> : null}
+          {code ? <ShotSyncBox videoId={videoId} shotId={code} label={b?.label ?? ""} figIds={(st?.layout.figures ?? []).map((f) => f.id)} layout={st?.layout} saved={Boolean(cur?.edited)} live={live} members={st?.members} rig={rig} /> : null}
           {cur ? (
             <details className="rounded-xl border border-white/10 bg-neutral-900/60 px-3 py-2 text-xs text-neutral-400">
               <summary className="cursor-pointer select-none">镜头描述</summary>
