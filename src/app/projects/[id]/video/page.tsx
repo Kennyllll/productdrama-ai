@@ -10,7 +10,7 @@ import { getStoryboard } from "@/lib/storyboard-repo";
 
 export const dynamic = "force-dynamic";
 
-const pipeline = ["关键帧审核", "逐镜头视频生成", "配音 / 音效", "合成（FFmpeg / Remotion）", "质检 / 品牌保护", "导出"];
+const pipeline = ["关键帧审核", "逐镜头视频生成", "配音 / 音效", "拼成成片", "质检 / 品牌保护", "导出"];
 const providers = ["Higgsfield", "Kling", "Seedance", "其他供应商"];
 const qcChecks = ["电影感：画幅、帧率、调色与视觉规范一致", "剪辑节奏与转场", "产品几何与颜色一致性", "Logo 保真", "角色一致性", "猫咪彩蛋时长（1–3 秒）", "版本与原版存档", "数字水印 / C2PA（规划中）"];
 
@@ -55,7 +55,7 @@ function DemoVideoPage() {
                   <span>
                     {i + 1}. {step}
                   </span>
-                  <Tag>后续实现</Tag>
+                  <Tag>还没开放</Tag>
                 </li>
               ))}
             </ol>
@@ -90,7 +90,7 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
   const header = (
     <PageHeader
       title="视频制作工作台"
-      description="按分镜逐镜头放入素材（未上传的用占位画面），用 FFmpeg 在本机合成每集 45 秒成片和四集总片。暂不接 AI 视频。"
+      description="按分镜逐镜头放入素材（未上传的用占位画面），在这台电脑上拼成每集 45 秒成片和四集总片。这里不调用 AI 生成视频，不花钱。"
     />
   );
   const board = getStoryboard(id);

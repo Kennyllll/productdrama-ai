@@ -61,7 +61,7 @@ export function VisualSpecCard({
         ))}
       </div>
       {spec.aspectRatio === "9:16" || spec.fps !== 24 ? (
-        <p className="mt-3 text-xs text-amber-200">提示：电影感通常采用 24 fps 与宽银幕画幅（1.85:1 / 2.39:1）。电商竖版可在成片后另行裁切 9:16（后续实现）。</p>
+        <p className="mt-3 text-xs text-amber-200">提示：电影感通常采用 24 fps 与宽银幕画幅（1.85:1 / 2.39:1）。电商竖版 9:16 裁切还没开放。</p>
       ) : null}
     </Card>
   );

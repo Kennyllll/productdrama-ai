@@ -43,7 +43,7 @@ export function RulesBrowser({ projectId, rules, decisions, checks }: { projectI
               {label}（{rs.length}）
               <span className="ml-2 text-xs font-normal text-neutral-500">检查方式：{checks[layer]}</span>
             </summary>
-            {rs.length === 0 ? <p className="mt-3 text-sm text-neutral-500">还没有。</p> : null}
+            {rs.length === 0 ? <p className="mt-3 text-sm text-neutral-300">这一类还没有规则。</p> : null}
             <ul className="mt-3 space-y-2">
               {rs.map((r) => (
                 <li key={r.id} className="flex flex-wrap items-center gap-2 text-sm">

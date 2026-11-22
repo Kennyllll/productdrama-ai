@@ -210,7 +210,7 @@ export function LocalVideoWorkbench({
           <p className="mt-2 text-xs text-amber-200">有 {orphans} 个素材对应的镜头已不在当前分镜中（重新生成分镜后镜头会变），不会用于合成。</p>
         ) : null}
         <p role="status" className="mt-2 min-h-5 text-sm">
-          {busy ? <span className="text-amber-200">FFmpeg 正在合成，每集约需 10–60 秒…</span> : null}
+          {busy ? <span className="text-amber-200">正在拼成片，每集约 10–60 秒，别关页面…</span> : null}
           {!busy && status.ok ? <span className="text-emerald-300">{status.ok}</span> : null}
           {!busy && status.error ? <span className="text-rose-300">{status.error}</span> : null}
         </p>

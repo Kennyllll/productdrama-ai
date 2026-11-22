@@ -25,3 +25,13 @@ button:disabled,
 [aria-disabled="true"] {
   cursor: not-allowed;
 }
+
+/* 说明小字对比度：原来的深灰在黑底上看不清，统一提亮（WCAG AA ≥ 4.5:1） */
+.text-neutral-600 { color: #8f8f8f; }
+.text-neutral-500 { color: #a1a1a1; }
+
+/* 灰按钮去色：琥珀色主按钮灰掉后一眼看出点不了 */
+button:disabled { filter: grayscale(1); }
+
+/* 按钮按下立刻有反馈 */
+button:not(:disabled):active { transform: translateY(1px); }

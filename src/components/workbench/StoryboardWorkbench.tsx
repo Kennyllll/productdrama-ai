@@ -115,7 +115,7 @@ export function StoryboardWorkbench() {
               标记需修改
             </button>
           </div>
-          <p className="mt-2 text-xs text-neutral-500">审核状态仅为本地标记；关键帧需先审核通过再转视频（后续实现）。</p>
+          <p className="mt-2 text-xs text-neutral-500">审核状态仅为本地标记；关键帧审核通过后转视频的功能还没开放。</p>
 
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             <label className="text-sm text-neutral-400 sm:col-span-2">
