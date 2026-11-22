@@ -6,7 +6,7 @@ import { figuresOf, KB002_RIG, type ProductRig } from "@/lib/figures";
 import type { CastOption } from "@/lib/families";
 import type { ShortShot } from "@/lib/shorts";
 import { promptConflicts } from "@/lib/shorts-conflicts";
-import { basisOf, shotChecks } from "@/lib/shorts-sync";
+import { basisOf, shotChecks, stripFilmer } from "@/lib/shorts-sync";
 import { castTextIssues, stageRuleIssues, stageTextNotes, type StagePose } from "@/lib/stage-rules";
 import { applyShotTextAction, fitShotActionsAction, rewriteShotAction, shotSyncAction } from "@/app/short-actions";
 import { type ShotSync, type TextField } from "@/lib/shorts-sync";
@@ -67,7 +67,7 @@ export function ShotSyncBox({
     const text = Object.values(texts0).join("\n");
     const s = { ...texts0, layout: l } as unknown as ShortShot;
     const full = [...shotChecks(s, basisOf(s, null)), ...promptConflicts(s, rig ?? KB002_RIG).map((c) => c.msg)];
-    const extra = [...stageRuleIssues(d, members, filmerId), ...castTextIssues(text, members, d.figures)];
+    const extra = [...stageRuleIssues(d, members, filmerId), ...castTextIssues(stripFilmer(text), members, d.figures)];
     return { moved: changed, stale: changed || !saved, figs: d.figures.length, full: [...new Set([...full, ...extra])], extra, notes: stageTextNotes(text, d) };
   }, [layout, texts0, live, saved, members, rig, filmerId]);
   if (!st) return null;

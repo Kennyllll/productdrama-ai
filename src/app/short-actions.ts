@@ -249,7 +249,7 @@ function cleanShot(s: Partial<ShortShot>, prev?: ShortShot): ShortShot {
 
 async function englishFromChinese(s: ShortShot): Promise<{ framePrompt?: string; motionPrompt?: string }> {
   const { data } = await chatJson({
-    system: "The user edited the Chinese description and camera of one shot of a phone-filmed TikTok product video. Rewrite the two English prompts to match them. framePrompt: only facial expression and gaze, light, mood and small details of the first frame; no positions, poses, shot size, close-ups, camera, clothes, age, hair or ethnicity. Only say what IS there: never write negatives (no \"no film grain\", \"not cinematic\") and never use the words sparkle, glow, shine, film grain, cinematic or bokeh. motionPrompt: what happens during the clip in one or two plain sentences (people's actions and reactions, handheld phone movement); people never look straight into the lens. Use the people's names as written. Output json: {\"framePrompt\":\"\",\"motionPrompt\":\"\"}",
+    system: "The user edited the Chinese description and camera of one shot of a phone-filmed TikTok product video. Rewrite the two English prompts to match them. framePrompt: only facial expression and gaze, light, mood and small details of the first frame; no positions, poses, shot size, close-ups, camera, clothes, age, hair or ethnicity. Only say what IS there: never write negatives (no \"no film grain\", \"not cinematic\") and never use the words sparkle, glow, shine, film grain, cinematic or bokeh. motionPrompt: what happens during the clip in one or two plain sentences (people's actions and reactions, handheld phone movement); people never look straight into the lens; say what each person looks at (the handlebar, the product, another person), never just \"ahead\" or \"forward\". Use the people's names as written. Output json: {\"framePrompt\":\"\",\"motionPrompt\":\"\"}",
     user: JSON.stringify({ description: s.description, camera: s.camera, oldFramePrompt: s.framePrompt, oldMotionPrompt: s.motionPrompt }),
     maxTokens: 800,
     thinking: false,
@@ -1159,7 +1159,7 @@ function refPlan(v: ShortVideo, s: ShortShot): RefPart[] {
   const people = cands.find((x) => famOf(x) === famOf(s));
   if (place && people && place === people) {
     out.push({
-      text: `is the last frame of ${place === done[done.length - 1] ? "the previous shot" : "an earlier shot"} in this same video. Use it only for identity: same people (faces, age, hair, wardrobe), ${turned(place) ? "same decor style and lighting (this shot's camera faces a different direction: ignore that frame's background and follow Image 1 and the location text for what is behind the people)" : "same home, decor and lighting"}, same product with the same accessories. This is a different moment of the same real TikTok clip, cut together by a parent: a new angle and action as described, not a copy of that frame.`,
+      text: `is the last frame of ${place === done[done.length - 1] ? "the previous shot" : "an earlier shot"} in this same video, used only to keep the same people (faces, hair, wardrobe), ${turned(place) ? "decor style and lighting; this camera faces another way, so the background comes from Image 1 and the location text" : "home, decor and lighting"}, and the same product. A new moment, angle and action of the same clip, not a copy of that frame.`,
       file: () => stillOf(v, place),
     });
   } else {
@@ -1381,6 +1381,7 @@ function framePromptOf(v: ShortVideo, s: ShortShot): string {
     specialText(v, s),
     NOTES,
     s.hook?.selfie ? selfieFrameText(selfieWho(v, s)) : operatorPrompt(s.operator, s.layout, filmerText(v, s)),
+    s.hook?.selfie ? "" : "Nobody looks into the lens: each person's eyes are on the product, their hands or another person.",
     s.productNote.trim()
       ? `Product: ${p?.name || "the product"} — use the product reference photos: keep exact geometry, proportions, colors, materials and logo placement; do not redesign, recolor or add parts. Matte, even light on the product: no glare, sparkle or bright highlight spots.`
       : "",
@@ -1410,7 +1411,7 @@ function filmerText(v: ShortVideo, s: ShortShot): string {
   const id = filmerId(v, s);
   const fam = id ? castOf(v.families, famOf(s)) : null;
   const m = fam?.members.find((x) => x.id === id);
-  return fam && m ? memberText(m, videoTheme(v).theme) : "";
+  return fam && m ? memberText(m, videoTheme(v).theme, false) : "";
 }
 
 /** 绑定了家庭成员的人偶：“Person 1 is Leo, a 3-year-old boy, …”（衣服跟视频节日） */
@@ -1467,7 +1468,7 @@ function videoPromptOf(v: ShortVideo, s: ShortShot): string {
   const stay = still
     ? `The product stands still on the ground for the whole clip: it never rolls, turns, slides or moves by itself, and its wheels do not spin.${moving ? " Only the camera moves." : " Nothing moves except natural ambient motion in the background."}\n`
     : `The product keeps exactly the structure, parts, colors and proportions of the first frame in every frame: no part disappears, merges, bends or changes size.${(s.layout ? figuresOf(s.layout) : []).some((f) => f.onProduct) ? " The rider pedals slowly and stays at about the same distance from the camera; the product keeps the same size in frame and never rides toward or past the camera. It only ever moves forward, front wheel first, in the direction its front end points; it never rolls backward or slides sideways." : ""}\n`;
-  return `${motion ? `${motion}\n` : ""}${sp ? `${sp}\n` : ""}${s.hook?.selfie && s.layout?.move?.kind === "handheld" ? "Camera: the phone is held at arm's length by the person taking the selfie; natural slight hand shake and small drifts, not stabilized." : moveText(s.layout)}\n${op ? `${op}${operatorShows(s.operator, s.layout) ? " Keep what shows of them partly visible and moving naturally through the clip." : ""}\n` : ""}${stay}Keep the product's shape, colors and logo exactly as in the first frame. ${still ? "Same place and lighting as the first frame throughout; no people appear." : "Same people, wardrobe, room and lighting as the first frame throughout; no new people appear."} Looks like real phone footage a parent shot for TikTok: natural speed, no slow motion, no smooth cinematic camera glide, casual unposed behavior.${still || s.hook?.selfie ? "" : " People never look straight into the lens; when they talk to the person filming, they look just beside the phone."} No text overlays.${au ? `\n${au}` : ""}`;
+  return `${motion ? `${motion}\n` : ""}${sp ? `${sp}\n` : ""}${s.hook?.selfie && s.layout?.move?.kind === "handheld" ? "Camera: the phone is held at arm's length by the person taking the selfie; natural slight hand shake and small drifts, not stabilized." : moveText(s.layout)}${s.hook?.selfie ? "" : " Nobody looks into the lens."}\n${op ? `${op}${operatorShows(s.operator, s.layout) ? " Keep what shows of them partly visible and moving naturally through the clip." : ""}\n` : ""}${stay}Keep the product's shape, colors and logo exactly as in the first frame. ${still ? "Same place and lighting as the first frame throughout; no people appear." : "Same people, wardrobe, room and lighting as the first frame throughout; no new people appear."} Looks like real phone footage a parent shot for TikTok: natural speed, no slow motion, no smooth cinematic camera glide, casual unposed behavior.${still || s.hook?.selfie ? "" : " People never look straight into the lens; when they talk to the person filming, they look just beside the phone."} No text overlays.${au ? `\n${au}` : ""}`;
 }
 
 interface Prepared {

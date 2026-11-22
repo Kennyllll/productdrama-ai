@@ -7,7 +7,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { saveSetLayoutAction } from "@/app/production-actions";
 import type { SetLayout, SetMove, SetProp } from "@/lib/production-repo";
-import { lerpLayout, moveEnd, MOVES, shakeLayout } from "@/lib/shorts-set";
+import { frameShot, lerpLayout, moveEnd, MOVES, shakeLayout } from "@/lib/shorts-set";
 import type { SceneItem } from "@/lib/shorts-scenes";
 import { itemAt, itemLabel, roomBox, wallBetween } from "@/lib/stage-rules";
 import { buildFigure, buildFreeHand, buildScene } from "@/components/shorts/scene-mesh";
@@ -669,6 +669,9 @@ export function Set3D({
               <div>
                 <button type="button" disabled={pending || (!shot.edited && !dirty) || Boolean(shot.locked)} onClick={() => save(null)} className="rounded-lg border border-white/15 px-3 py-1 text-sm text-neutral-300 disabled:opacity-40">
                   恢复自动机位
+                </button>
+                <button type="button" disabled={pending || Boolean(shot.locked)} onClick={() => update(frameShot(layout))} title="照真实手机广告：车和人占画面一半左右，车轮下面少留地面，机位放低" className="ml-2 rounded-lg border border-amber-400/40 px-3 py-1 text-sm text-amber-200 disabled:opacity-40">
+                  按构图规则对准
                 </button>
               </div>
             </>

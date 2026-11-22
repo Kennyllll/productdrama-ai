@@ -138,10 +138,11 @@ export function cleanFamily(v: unknown): FamilyData | null {
 export const wearOf = (m: FamilyMember, theme: string): string => m.themeWear?.[theme]?.en || m.wear.en;
 
 /** 进提示词的一句话：“Leo, a 3-year-old boy, light brown curly hair, wearing …” */
-export function memberText(m: FamilyMember, theme: string): string {
+/** face=false：拿手机的人脸永远不出镜，只写名字、年龄和衣服（手和袖子会入镜） */
+export function memberText(m: FamilyMember, theme: string, face = true): string {
   const age = m.age < 1 ? "baby" : m.age < 14 ? `${Math.round(m.age * 2) / 2}-year-old ${m.role === "daughter" ? "girl" : m.role === "son" ? "boy" : "child"}` : `${Math.round(m.age)}-year-old ${m.role === "mom" || m.role === "grandma" ? "woman" : m.role === "dad" || m.role === "grandpa" ? "man" : "adult"}`;
   const wear = wearOf(m, theme);
-  return [`${m.name}, a ${age}`, m.look.en, wear ? `wearing ${wear}` : ""].filter(Boolean).join(", ");
+  return [`${m.name}, a ${age}`, face ? m.look.en : "", wear ? `wearing ${wear}` : ""].filter(Boolean).join(", ");
 }
 
 /** 定妆照状态：认脸只要长相没改；衣服也对得上才算这个造型的照片 */

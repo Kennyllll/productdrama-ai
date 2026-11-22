@@ -102,6 +102,7 @@ interface Pending {
   reason: string;
   overLimit: boolean;
   quote: Quote | null;
+  quoteErr?: string;
 }
 
 export function ShortStudio({
@@ -390,7 +391,7 @@ export function ShortStudio({
       );
       if (stale) return;
       if (r.error) setMsg({ tone: "err", text: r.error });
-      setPending((p) => (p ? { ...p, quote: r.result ?? null } : p));
+      setPending((p) => (p ? { ...p, quote: r.result ?? null, quoteErr: r.error } : p));
     }, 300);
     return () => {
       stale = true;
@@ -2081,7 +2082,9 @@ function Approval({
             />
           </label>
         ) : null}
-        {!q ? (
+        {!q && pending.quoteErr ? (
+          <p role="alert" className="rounded-md bg-red-500/10 px-3 py-2 text-red-300">还不能生成：{pending.quoteErr}</p>
+        ) : !q ? (
           <p className="text-neutral-400">估价中（免费）…</p>
         ) : (
           <div className="space-y-1 rounded-lg border border-white/10 p-3 text-xs">

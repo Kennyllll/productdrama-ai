@@ -10,6 +10,7 @@ import { castOf } from "@/lib/families-repo";
 import { memberKind, roleOf, filmerId } from "@/lib/families";
 import { cleanFigures, FIGURE_POSES, KB002_RIG, RIDE_KINDS, rideKindOf, type FigureSpec } from "@/lib/figures";
 import { blockingText } from "@/lib/shorts-blocking";
+import { autoLayout } from "@/lib/shorts-set";
 import { activeItems, findItemType, type SceneItem } from "@/lib/shorts-scenes";
 import { BrainError, kimiChat, parseJson } from "@/lib/brain/kimi";
 import { SKILLS } from "@/lib/brain/review";
@@ -86,8 +87,7 @@ export async function brainStageAction(videoId: string, shotId: string, request:
     const filmer = filmerId(v, s);
     const ask = request.trim().slice(0, 500);
     if (ask.length < 2) throw new Error("先写一句要怎么调");
-    const layout = s.layout;
-    if (!layout) throw new Error("这一镜还没有 3D 摆位，先打开 3D 保存一次");
+    const layout = s.layout ?? autoLayout(s, v.shots.indexOf(s));
     const p = getProduct(v.projectId);
     const m = getProductModel(v.projectId);
     const savedRig = m ? getRig(m.id) : null;
