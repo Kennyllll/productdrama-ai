@@ -4,6 +4,7 @@ import { ShortStudio } from "@/components/shorts/ShortStudio";
 import { hfPublicInfo } from "@/lib/higgsfield";
 import { arkPublicInfo } from "@/lib/ark";
 import { aiPublicInfo } from "@/lib/ai/settings";
+import { getAdFacts } from "@/lib/ad-facts-repo";
 import { productRefFiles } from "@/app/short-actions";
 import { getProductModel } from "@/lib/model-repo";
 import { loadKit } from "@/lib/product-kit";
@@ -37,6 +38,7 @@ export default async function ShortVideoPage({ params, searchParams }: { params:
         hfReady={hfPublicInfo().configured}
         arkReady={arkPublicInfo().configured}
         aiReady={aiPublicInfo().configured}
+        adFacts={getAdFacts(id)}
         productPhotos={(await productRefFiles(id, video.colorId)).length}
         kit={loadKit(id)}
         hasBase={!!getProductModel(id)}

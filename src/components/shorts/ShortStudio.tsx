@@ -70,7 +70,10 @@ import { DraftView, SyncNotice } from "@/components/shorts/RewriteUI";
 import type { Conflict } from "@/lib/shorts";
 import { PromptPreview } from "@/components/shorts/PromptPreview";
 import { ColorKits } from "@/components/workbench/ProductKit";
+import { ExportGate } from "@/components/shorts/ExportGate";
 import { NeedKey } from "@/components/shorts/NeedKey";
+import { exportReport } from "@/lib/export-check";
+import { EMPTY_FACTS, type AdFacts } from "@/lib/ad-compliance";
 import type { KitData } from "@/lib/product-kit";
 
 const input =
@@ -98,6 +101,7 @@ export function ShortStudio({
   hfReady,
   arkReady = false,
   aiReady = true,
+  adFacts = EMPTY_FACTS,
   productPhotos,
   finalAt: initialFinalAt,
   initialShot = null,
@@ -113,6 +117,8 @@ export function ShortStudio({
   arkReady?: boolean;
   /** DeepSeek Key 填了没 */
   aiReady?: boolean;
+  /** 产品资料第 5 步填的价格等依据：导出前对照 */
+  adFacts?: AdFacts;
   productPhotos: number;
   finalAt: string | null;
   initialShot?: string | null;
@@ -1854,19 +1860,24 @@ export function ShortStudio({
         {!v.shots.some((s) => s.stage === "accepted") ? (
           <p className="mb-2 text-xs text-neutral-400">还没有采用的镜头：先在镜头里点「采用」，才能导出</p>
         ) : null}
-        <button
-          className={primary}
-          disabled={busy || !v.shots.some((s) => s.stage === "accepted")}
-          onClick={() =>
-            start(async () => {
-              const r = await renderShortAction(v.id);
-              apply(r, "成片已更新");
-              if (!r.error) setFinalAt(new Date().toISOString());
-            })
+        <ExportGate
+          videoId={v.id}
+          projectId={v.projectId}
+          report={exportReport(v, adFacts)}
+          busy={busy}
+          hasAccepted={v.shots.some((s) => s.stage === "accepted")}
+          count={Math.max(1, exp.length)}
+          run={(preview) =>
+            new Promise<string>((done) =>
+              start(async () => {
+                const r = await renderShortAction(v.id, preview);
+                apply(r, preview ? "预览已更新（不完整）" : "成片已更新");
+                if (!r.error && !preview) setFinalAt(new Date().toISOString());
+                done(r.error ?? "");
+              }),
+            )
           }
-        >
-          导出 {Math.max(1, exp.length)} 个版本
-        </button>
+        />
         {finalAt ? (
           <div className="mt-3 flex flex-wrap gap-3">
             {(exp.length ? exp : ["1"]).map((id, k) => (

@@ -8,6 +8,8 @@ import { WHITE_REQUIRED } from "@/lib/fal-catalog";
 import { getProductModel } from "@/lib/model-repo";
 import { assetPath, findLocalProject, getProduct, listAssets } from "@/lib/repo";
 import type { AssetRecord } from "@/lib/types";
+import { AdFactsForm } from "@/components/workbench/AdFactsForm";
+import { getAdFacts } from "@/lib/ad-facts-repo";
 import { photoWarningsFor } from "@/lib/photo-quality-server";
 
 const toView = (a: AssetRecord) => ({ id: a.id, angle: a.angle, originalName: a.originalName, size: a.size });
@@ -46,6 +48,9 @@ async function LocalProductPage({ id }: { id: string }) {
         todo={todo}
         photoWarnings={photoWarnings}
       />
+      <div className="mt-4">
+        <AdFactsForm projectId={id} initial={getAdFacts(id)} />
+      </div>
     </>
   );
 }

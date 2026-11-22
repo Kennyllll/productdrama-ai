@@ -3,6 +3,9 @@
 import fs from "node:fs";
 import { productPhotos } from "@/lib/product-photos";
 import { requireProductReady } from "@/lib/product-readiness-repo";
+import { getAdFacts } from "@/lib/ad-facts-repo";
+import { exportReport, formalExportError } from "@/lib/export-check";
+import { previewPath } from "@/lib/export-paths";
 import { keyFromPath, putFile, readFile, storageKey } from "@/lib/storage";
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
@@ -1983,7 +1986,7 @@ async function drive(job: JobRecord): Promise<void> {
 }
 
 /** 导出：每个勾选的开头各出一条「开头 + 正文」；第一条同时存成 final.mp4 */
-export async function renderShortAction(videoId: string): Promise<Result<StudioState>> {
+export async function renderShortAction(videoId: string, preview = false): Promise<Result<StudioState>> {
   try {
     const v = load(videoId);
     const hooks = hooksOf(v);
@@ -1991,6 +1994,19 @@ export async function renderShortAction(videoId: string): Promise<Result<StudioS
     const notReady = picked.filter((h) => hookParts(v, h).some((p) => p.stage !== "accepted"));
     const badCap = picked.flatMap((h) => captionIssues(h).map((m) => `「${h.hook?.name}」${m}`));
     if (badCap.length) throw new Error(badCap.join("；"));
+    if (preview) {
+      const h = picked.find((x) => !notReady.includes(x));
+      await renderShort(v, previewPath(v), h?.id);
+      return { result: state(videoId) };
+    }
+    const formalErr = formalExportError(
+      exportReport(v, getAdFacts(v.projectId), (s) => {
+        const j = s.videoJobId ? getJob(s.videoJobId) : null;
+        const f = j && jobFilePath(j);
+        return !!f && fs.existsSync(f);
+      }),
+    );
+    if (formalErr) throw new Error(formalErr);
     if (notReady.length) throw new Error(`这些开头还没采用：${notReady.map((h) => h.hook?.name).join("、")}`);
     if (!picked.length) await renderShort(v);
     for (const [k, h] of picked.entries()) {

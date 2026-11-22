@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { cleanFacts, FACT_KEYS, factsErrors } from "@/lib/ad-compliance";
+import { saveAdFacts } from "@/lib/ad-facts-repo";
 import { checkAgeRange, formatAge } from "@/lib/age-range";
 import { emptyBible } from "@/lib/mock/demo";
 import { createProject, deleteProject, findLocalProject, saveProduct } from "@/lib/repo";
@@ -53,4 +55,15 @@ export async function saveProductAction(_prev: FormState, fd: FormData): Promise
   });
   revalidatePath(`/projects/${projectId}`, "layout");
   return { ok: `已保存到本地数据库（${new Date().toLocaleTimeString("zh-CN", { hour12: false })}）` };
+}
+
+export async function saveAdFactsAction(_prev: FormState, fd: FormData): Promise<FormState> {
+  const projectId = text(fd, "projectId", 64);
+  if (!findLocalProject(projectId)) return { error: "项目不存在或为示例项目" };
+  const facts = cleanFacts(Object.fromEntries(FACT_KEYS.map((k) => [k, text(fd, k, 300)])));
+  const errs = Object.values(factsErrors(facts));
+  if (errs.length) return { error: errs.join("；") };
+  saveAdFacts(projectId, facts);
+  revalidatePath(`/projects/${projectId}`, "layout");
+  return { ok: "依据已保存" };
 }
