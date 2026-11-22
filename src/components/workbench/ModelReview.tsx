@@ -7,7 +7,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
-import { reviewModelAction, turnModelAction } from "@/app/model-actions";
+import { flipStepUpAction, reviewModelAction, turnModelAction } from "@/app/model-actions";
 import { Card, Tag } from "@/components/ui";
 import { RIDE_KINDS, RIG_KEYS, rigFrom, rigLocal, type ProductRig, type RideKind, type RigKey } from "@/lib/figures";
 import { measureRig } from "@/lib/rig-measure";
@@ -208,7 +208,7 @@ export function ModelReview({
   kind,
   savedRig,
 }: {
-  model: { id: string; status: string; note: string; lengthCm: number | null; isColor: boolean };
+  model: { id: string; status: string; note: string; lengthCm: number | null; isColor: boolean; source?: string };
   kind: RideKind;
   savedRig: ProductRig | null;
   glbUrl: string;
@@ -219,6 +219,12 @@ export function ModelReview({
   const router = useRouter();
   const [view, setView] = useState("左前 45°");
   const [length, setLength] = useState(model.lengthCm ? String(model.lengthCm) : "");
+  // 换朝上的轴后 STEP 长度会变，跟着服务器的值走
+  const [seenLen, setSeenLen] = useState(model.lengthCm);
+  if (seenLen !== model.lengthCm) {
+    setSeenLen(model.lengthCm);
+    setLength(model.lengthCm ? String(model.lengthCm) : "");
+  }
   const [note, setNote] = useState(model.note);
   const [checks, setChecks] = useState<Record<string, boolean>>({});
   const [err, setErr] = useState("");
@@ -243,6 +249,17 @@ export function ModelReview({
       const r = await turnModelAction(model.id, deg);
       if (r.error) setErr(r.error);
       else setVer((x) => x + 1);
+    });
+
+  const flipUp = () =>
+    start(async () => {
+      setErr("");
+      const r = await flipStepUpAction(model.id);
+      if (r.error) setErr(r.error);
+      else {
+        setVer((x) => x + 1);
+        router.refresh();
+      }
     });
 
   const submit = (ok: boolean) =>
@@ -272,6 +289,11 @@ export function ModelReview({
             <button type="button" className={btn} disabled={pending} onClick={() => turn(90)}>↺ 左转 90°</button>
             <button type="button" className={btn} disabled={pending} onClick={() => turn(-90)}>↻ 右转 90°</button>
             <button type="button" className={btn} disabled={pending} onClick={() => turn(180)}>调头 180°</button>
+            {model.source === "step" ? (
+              <button type="button" className={btn} disabled={pending} onClick={flipUp} title="工厂 STEP 有的用 Z 轴朝上，有的用 Y 轴朝上">
+                车躺着？换朝上的方向
+              </button>
+            ) : null}
           </div>
         ) : null}
         <div className="flex flex-wrap gap-1">

@@ -23,11 +23,11 @@ export default async function ModelReviewPage({ params }: { params: Promise<{ id
   return (
     <>
       <PageHeader
-        title={color ? `审核颜色款「${color.name}」的贴色模型` : "审核白模"}
+        title={color ? `审核颜色款「${color.name}」的贴色模型` : m.source === "step" ? "审核工厂 STEP 模型" : "审核白模"}
         description={`${product?.name || "产品"} · ${m.originalName}。左边转动模型，点右边的照片可以把模型转到同一个角度对照。`}
       />
       <ModelReview
-        model={{ id: m.id, status: m.status, note: m.note, lengthCm: m.lengthCm, isColor: !!color }}
+        model={{ id: m.id, status: m.status, note: m.note, lengthCm: m.lengthCm, isColor: !!color, source: m.source }}
         glbUrl={`/api/models/${m.id}`}
         photos={photos}
         stickers={stickers}

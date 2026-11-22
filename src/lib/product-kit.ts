@@ -15,7 +15,7 @@ export interface KitModel {
   name: string;
   status: ModelStatus;
   colorId: string | null;
-  source: "upload" | "fal";
+  source: "upload" | "fal" | "step";
   size: number;
   note: string;
   createdAt: string;

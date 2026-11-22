@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useActionState, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { saveProductAction } from "@/app/actions";
+import { installCadToolsAction } from "@/app/model-actions";
 import { Tag } from "@/components/ui";
 import { BibleRow } from "@/components/workbench/BibleRow";
 import { ColorKits, ModelBuilder, PhotoSlots, StickersBody } from "@/components/workbench/ProductKit";
@@ -119,7 +120,7 @@ export function LocalProductWorkbench({
   details: AssetView[];
   logo: AssetView | null;
   packaging: AssetView[];
-  model: { id: string; originalName: string; size: number } | null;
+  model: { id: string; originalName: string; size: number; source?: string } | null;
   kit: KitData;
   todo: TodoItem[];
   /** 照片 id → 太小 / 太暗 / 太糊 */
@@ -132,6 +133,7 @@ export function LocalProductWorkbench({
   const logoInput = useRef<HTMLInputElement>(null);
   const packagingInput = useRef<HTMLInputElement>(null);
   const modelInput = useRef<HTMLInputElement>(null);
+  const [needTools, setNeedTools] = useState(false);
   const [saveState, saveAction, saving] = useActionState<FormState, FormData>(saveProductAction, {});
 
   const kind = rideKindOf(product.rideKind, product.category);
@@ -174,10 +176,22 @@ export function LocalProductWorkbench({
     }
   }
 
+  async function installTools() {
+    setBusy(true);
+    setNotice({ tone: "ok", text: "正在安装 CAD 转换工具，几分钟，别关页面…" });
+    const r = await installCadToolsAction();
+    setBusy(false);
+    if (r.error) setNotice({ tone: "error", text: r.error });
+    else {
+      setNeedTools(false);
+      setNotice({ tone: "ok", text: "装好了，再点一次「上传」" });
+    }
+  }
+
   async function uploadModel() {
     const f = modelInput.current?.files?.[0];
     if (!f) {
-      setNotice({ tone: "error", text: "请先选择 GLB 文件" });
+      setNotice({ tone: "error", text: "请先选择 STEP 或 GLB 文件" });
       return;
     }
     setBusy(true);
@@ -186,9 +200,14 @@ export function LocalProductWorkbench({
     fd.append("file", f);
     try {
       const res = await fetch(`/api/projects/${projectId}/models`, { method: "POST", body: fd });
-      const data = (await res.json()) as { error?: string; size?: number };
+      const data = (await res.json()) as { error?: string; size?: number; needTools?: boolean; reviewUrl?: string; step?: { parts: number; colored: number } };
+      setNeedTools(!!data.needTools);
+      if (res.ok && data.reviewUrl) {
+        router.push(data.reviewUrl);
+        return;
+      }
       setNotice(res.ok ? { tone: "ok", text: `3D 模型已保存（${formatSize(data.size ?? f.size)}）` } : { tone: "error", text: data.error ?? "上传失败" });
-      if (modelInput.current) modelInput.current.value = "";
+      if (res.ok && modelInput.current) modelInput.current.value = "";
       router.refresh();
     } catch {
       setNotice({ tone: "error", text: "上传失败：无法连接本地服务" });
@@ -351,6 +370,7 @@ export function LocalProductWorkbench({
           {model ? (
             <p className="flex flex-wrap items-center gap-3 text-sm text-neutral-300">
               <Tag tone="emerald">在用</Tag>
+              {model.source === "fal" ? <Tag tone="amber">近似（照片建模）：车可能走样，尽量换成工厂 STEP</Tag> : <Tag tone="emerald">精确（工厂文件）</Tag>}
               <span className="truncate" title={model.originalName}>
                 {model.originalName} · {formatSize(model.size)}
               </span>
@@ -369,15 +389,20 @@ export function LocalProductWorkbench({
         <details className="rounded-lg border border-white/10 p-3" open={!model || reviewing.length > 0}>
           <summary className="cursor-pointer text-sm text-neutral-200">{model ? "换一个模型" : "加模型"}</summary>
           <div className="mt-3 grid gap-4 lg:grid-cols-2">
-            <Part title="A. 有工厂 GLB 文件" hint="带真实颜色和 Logo 的最好，最大 300 MB。免费。">
+            <Part title="A. 有工厂 3D 文件（最准）" hint="工厂的 STEP（.step / .stp）最好：本机转换，尺寸和每个零件都和实物一样，出图时车的形状照它画。也可以传带材质的 GLB。最大 300 MB，免费。">
               <div className="flex flex-wrap items-center gap-2">
-                <input ref={modelInput} type="file" accept=".glb,model/gltf-binary" className="text-xs text-neutral-300" aria-label="GLB 文件" />
+                <input ref={modelInput} type="file" accept=".step,.stp,.glb,model/gltf-binary" className="text-xs text-neutral-300" aria-label="STEP 或 GLB 文件" />
                 <button type="button" disabled={busy} onClick={uploadModel} className={ghost}>
-                  上传
+                  {busy ? "转换中…" : "上传"}
                 </button>
+                {needTools ? (
+                  <button type="button" disabled={busy} onClick={installTools} className={ghost}>
+                    安装转换工具
+                  </button>
+                ) : null}
               </div>
             </Part>
-            <Part title="B. 没有文件：用角度照建模" hint="用第 2 步的角度照，要花钱，提交前先显示价格。建好后先审核。">
+            <Part title="B. 没有工厂文件：用角度照建模（近似）" hint="用第 2 步的角度照，要花钱，提交前先显示价格。建好后先审核。照片建的模型只用来定位置和方向，车的样子照实物照画，可能走样，尽量向工厂要 STEP。">
               <ModelBuilder kit={kit} target="shape" />
             </Part>
           </div>

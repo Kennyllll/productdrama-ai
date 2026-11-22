@@ -893,6 +893,13 @@ export function ShortStudio({
                     )
                   )
                     return;
+                  const fc0 = s.frameCheck?.jobId === s.frameJobId ? s.frameCheck : undefined;
+                  if (a === "frame_ok_force" && fc0?.product?.length) {
+                    const why = await askPrompt(`产品和实物不一致（规则 #1）：\n· ${fc0.product.join("\n· ")}\n\n只有确认是误报（例如零件被人挡住）才能放行，需要管理员。写一句放行原因：`);
+                    if (!why?.trim()) return;
+                    act(() => shotStageAction(v.id, s.id, a, why.trim()));
+                    return;
+                  }
                   act(() => shotStageAction(v.id, s.id, a));
                 }}
               >
@@ -1493,13 +1500,14 @@ export function ShortStudio({
                         const unchecked = !fc || !!fc.failed;
                         return (
                           <>
-                            {gate(bad ? "frame_ok_force" : "frame_ok", bad ? "我看过了，仍然通过" : unchecked ? "没自动检查：我对照产品照看过了，通过" : "首帧通过", s.stage === "frame_ready")}
+                            {gate(bad ? "frame_ok_force" : "frame_ok", bad ? (fc?.product?.length ? "管理员：确认是误报，放行" : "我看过了，仍然通过") : unchecked ? "没自动检查：我对照产品照看过了，通过" : "首帧通过", s.stage === "frame_ready")}
                             {fc && (s.stage === "frame_ready" || s.stage === "frame_ok") ? (
                               fc.pass ? (
                                 <span className="self-center text-xs text-emerald-300">看图检查通过：图和提示词、3D 对得上</span>
                               ) : (
                                 <div className={`w-full rounded border p-2 text-xs ${fc.failed ? "border-amber-400/40 text-amber-200" : "border-rose-400/50 bg-rose-400/5 text-rose-200"}`}>
                                   <p className="font-medium">{fc.failed ? "看图检查" : `看图检查发现 ${fc.issues.length} 个问题，先看图再决定`}</p>
+                                  {fc.product?.length ? <p className="font-semibold text-rose-100">车和实物不一样（规则 #1）：请点「首帧不行」重出，不能直接通过</p> : null}
                                   {fc.issues.map((x, i) => (
                                     <p key={i}>· {x}</p>
                                   ))}

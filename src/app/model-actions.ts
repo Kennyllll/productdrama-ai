@@ -13,6 +13,7 @@ import { grayGlb, groundGlb, realSizeFactor, scaleGlb, turnGlb } from "@/lib/glb
 import { cleanRig, scaleRig } from "@/lib/figures";
 import { saveRig } from "@/lib/product-rig-repo";
 import { keyFromPath, putFile, readFile } from "@/lib/storage";
+import { installCadTools, stepLengthCm, stepToGlb } from "@/lib/step-import";
 import {
   buildInput,
   COLOR_REQUIRED,
@@ -39,6 +40,8 @@ import {
   getModelJob,
   getProductModel,
   getProductModelById,
+  replaceModelFile,
+  stepKey,
   isGlb,
   listProductModels,
   modelPath,
@@ -269,6 +272,40 @@ export async function clearUnknownJobAction(jobId: string): Promise<Result<true>
   updateModelJob(j.id, { status: "failed", error: `${j.error ?? ""}（用户确认没提交成功）` });
   refresh(j.projectId);
   return { result: true };
+}
+
+/** 安装本机 CAD 转换工具（STEP / DXF 用，免费） */
+export async function installCadToolsAction(): Promise<Result<true>> {
+  try {
+    await installCadTools();
+    return { result: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 工厂 STEP 转出来车是躺着的：换朝上的轴（z ↔ y）重新转换（免费） */
+export async function flipStepUpAction(modelId: string): Promise<Result<"z" | "y">> {
+  try {
+    const m = getProductModelById(modelId);
+    if (!m || m.source !== "step") throw new Error("只有工厂 STEP 模型能换朝上的轴");
+    if (m.status !== "review") throw new Error("只有待审核的模型能改");
+    const metaKey = keyFromPath(`${modelPath(m)}.up`);
+    let cur: "z" | "y" = "z";
+    try {
+      cur = readFile(metaKey).toString() === "y" ? "y" : "z";
+    } catch {
+      // 没记过 = 默认 z
+    }
+    const up = cur === "z" ? "y" : "z";
+    const { glb, info } = await stepToGlb(readFile(stepKey(m)), up);
+    replaceModelFile(m.id, glb, stepLengthCm(info, up));
+    putFile(metaKey, Buffer.from(up));
+    refresh(m.projectId);
+    return { result: up };
+  } catch (e) {
+    return fail(e);
+  }
 }
 
 /** 待审核模型车头不对：整体绕竖轴转一下（免费，只改本机文件） */

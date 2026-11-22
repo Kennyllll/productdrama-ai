@@ -53,7 +53,7 @@ import { findTheme, sceneText } from "@/lib/shorts-scenes";
 import { createScene, ensureScenes, getScene, legacyShotScene, saveScene, themedScene, versionOf } from "@/lib/shorts-scenes-repo";
 import { createTemplate, deleteTemplate, getTemplate, saveTemplate, type TemplateScene, type TemplateShot } from "@/lib/shorts-templates-repo";
 import type { Scene } from "@/lib/shorts-scenes";
-import { cadDir, getColor, getProductModel, modelFor, modelPath } from "@/lib/model-repo";
+import { cadDir, getColor, getProductModel, modelFor, modelPath, modelPrecision } from "@/lib/model-repo";
 import { addRule, type SetLayout, type SetMove } from "@/lib/production-repo";
 import { figuresOf, KB002_RIG, RIDE_KINDS, rideKindOf } from "@/lib/figures";
 import { basisOf, shotChecks, shotSync, TEXT_FIELDS, type ShotSync, type TextField } from "@/lib/shorts-sync";
@@ -82,7 +82,8 @@ import {
   type JobRecord,
 } from "@/lib/shorts-repo";
 import { runKey, runningOf, runs, type RunInfo } from "@/lib/shorts-runs";
-import { requireAdmin } from "@/lib/admin";
+import { currentActor, requireAdmin } from "@/lib/admin";
+import { logAction } from "@/lib/audit-repo";
 import { applyBudgetChange } from "@/lib/budget-change";
 import { missingBody } from "@/lib/spend";
 import { auditJobEnd, auditStage, auditSubmit, gateOverLimit, recordExport, trashCleared, trashReplaced, trashShortVideo, trashShots } from "@/lib/short-audit";
@@ -1029,6 +1030,13 @@ export async function shotStageAction(videoId: string, shotId: string, action: S
         need(s.stage === "frame_ready" && !!s.frameJobId, "还没有待检查的首帧");
         const fc = s.frameCheck?.jobId === s.frameJobId ? s.frameCheck : undefined;
         need(action === "frame_ok_force" || !fc || fc.pass || !!fc.failed, `看图检查没过：${fc?.issues.join("；")}。确认没问题请点“我看过了，仍然通过”`);
+        // 规则 #1：产品必须和实物一模一样。零件不符只有管理员能放行（比如确认是被人挡住的误报），并写明原因
+        if (action === "frame_ok_force" && fc?.product?.length) {
+          const a = await currentActor();
+          need(a.role === "admin", `产品和实物不一致：${fc.product.join("；")}。请重出首帧；确认是误报要管理员登录后放行`);
+          need(note.trim().length >= 4, "写一句为什么放行（例如：靠背被孩子挡住，看不到孔）");
+          logAction(a, { action: "frame_product_override", projectId: v.projectId, videoId, shotId, detail: `${fc.product.join("；")} → ${note.trim()}` });
+        }
         s.stage = "frame_ok";
         break;
       }
@@ -1158,13 +1166,16 @@ function refPlan(v: ShortVideo, s: ShortShot): RefPart[] {
         text:
           modelFor(v.projectId, v.colorId)?.source === "fal"
             ? "is a rough gray 3D model of the product from this shot's camera angle: use it ONLY for where it stands, its size and which side faces the camera, never mirrored or turned; its shape is approximate, parts come from the real photos"
-            : "is the real product rendered from exactly this shot's camera angle: in the photo the product must face exactly this way and show this same side, never mirrored or turned.",
+            : "is the exact factory 3D model of the product rendered from exactly this shot's camera angle: the product must have exactly this shape (every part, bend, hole, proportion and position as here) and face exactly this way, never mirrored or turned; where it is gray or plain, colors, materials and logo come from the real photos",
         file: () => angleRef(v, s),
       });
     const ph = sameSidePhoto(v, s);
+    const exact = modelPrecision(modelFor(v.projectId, v.colorId)) === "exact";
     if (ph)
       out.push({
-        text: "is a real photo of the product from about this side: draw every part exactly like it (stem bend, backrest hole, baskets, cranks, frame tube, wheel sizes, logo spot); 3D images give only position, size and direction",
+        text: exact
+          ? "is a real photo of the product from about this side: copy its colors, materials, logo and stickers; its shape matches the exact 3D render above"
+          : "is a real photo of the product from about this side: draw every part exactly like it (stem bend, backrest hole, baskets, cranks, frame tube, wheel sizes, logo spot); 3D images give only position, size and direction",
         file: async () => ph,
       });
   }
@@ -1235,6 +1246,13 @@ function castPortraits(v: ShortVideo, s: ShortShot): RefPart[] {
 const FRAME_PROMPT_MAX = 4900;
 
 /** 产品的车把 / 座椅接触点：模型页保存的为准；没保存时和 3D 页一样先用 KB002 的（3D 页会按模型尺寸估，服务器这边拿不到尺寸） */
+/** 工厂精确模型按本镜机位的截图：首帧检查拿它比形状（照片建模的近似模型不算） */
+async function cadRenderFor(v: ShortVideo, s: ShortShot): Promise<Buffer | undefined> {
+  if (modelPrecision(modelFor(v.projectId, v.colorId)) !== "exact") return undefined;
+  const f = await angleRef(v, s);
+  return f ? fs.readFileSync(f) : undefined;
+}
+
 /** 首帧出图后自动看图：对照提示词和 3D；没 Key 或出错只记下来，不拦生成 */
 async function runFrameCheck(videoId: string, shotId: string, jobId: string, bytes: Buffer) {
   const at = new Date().toISOString();
@@ -1257,9 +1275,10 @@ async function runFrameCheck(videoId: string, shotId: string, jobId: string, byt
         noBox: s0.hook ? s0.hook.entry !== "unbox" : !/\b(box|packag|unbox)/i.test(s0.framePrompt),
         car: s0.hook?.scene === "car" ? { person: carPersonText(v0, s0) } : undefined,
         productRefs: (await productRefFiles(v0.projectId, v0.colorId)).filter((f) => !/svg/.test(f.mime)).slice(0, 3).map((f) => fs.readFileSync(f.file)),
+        cadRender: await cadRenderFor(v0, s0),
       });
       // 说没过却一条问题都没列：当成“没检查成”，让用户自己看，不显示“发现 0 个问题”
-      res = !r.pass && !r.issues.length ? { jobId, pass: false, failed: true, issues: ["没检查成：检查结果说不过关，但没列出问题，请自己对照产品照看一遍"], at } : { jobId, pass: r.pass, issues: r.issues, at };
+      res = !r.pass && !r.issues.length ? { jobId, pass: false, failed: true, issues: ["没检查成：检查结果说不过关，但没列出问题，请自己对照产品照看一遍"], at } : { jobId, pass: r.pass, issues: r.issues, product: r.product, at };
     } catch (e) {
       res = { jobId, pass: false, failed: true, issues: [`没做成：${e instanceof Error ? e.message : "未知错误"}`], at };
     }

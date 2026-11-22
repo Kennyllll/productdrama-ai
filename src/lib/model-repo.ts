@@ -20,7 +20,8 @@ export interface ProductModel {
   status: ModelStatus;
   /** 空 = 白模 / 原模型；有值 = 这个颜色款的贴色模型 */
   colorId: string | null;
-  source: "upload" | "fal";
+  /** upload = 上传的 GLB；step = 工厂 STEP 转的（尺寸零件都准）；fal = 照片 AI 建的（近似） */
+  source: "upload" | "fal" | "step";
   note: string;
   lengthCm: number | null;
   /** fal 返回的文件地址：给白模贴色时直接引用，不用再上传 */
@@ -51,7 +52,7 @@ const toModel = (r: Row): ProductModel => ({
   createdAt: r.created_at,
   status: (["review", "approved", "rejected", "archived"].includes(r.status) ? r.status : "approved") as ModelStatus,
   colorId: r.color_id,
-  source: r.source === "fal" ? "fal" : "upload",
+  source: r.source === "fal" ? "fal" : r.source === "step" ? "step" : "upload",
   note: r.note ?? "",
   lengthCm: r.length_cm,
   remoteUrl: r.remote_url,
@@ -61,6 +62,21 @@ export const modelKey = (m: ProductModel) => storageKey(m.projectId, "models", m
 export const modelPath = (m: ProductModel) => localPath(modelKey(m));
 export const cadDir = (projectId: string) => localPath(storageKey(projectId, "cad"));
 const refsKey = (projectId: string, colorId: string | null) => storageKey(projectId, "cad", "short-refs", ...(colorId ? [colorId] : []));
+
+/** 工厂 STEP 原文件（换朝上的轴时重新转换用） */
+export const stepKey = (m: ProductModel) => storageKey(m.projectId, "models", `${m.id}.step`);
+
+/** 产品锁定等级：exact = 工厂文件（STEP / 带材质 GLB），出图时形状照模型；approx = 照片 AI 建模，只管位置和方向 */
+export const modelPrecision = (m: ProductModel | null): "exact" | "approx" | "none" => (!m ? "none" : m.source === "fal" ? "approx" : "exact");
+export const PRECISION_LABEL = { exact: "精确（工厂文件）", approx: "近似（照片建模）", none: "没有模型" } as const;
+
+/** 换了模型文件（例如 STEP 换朝上的轴重新转换）：更新大小和长度 */
+export function replaceModelFile(id: string, bytes: Buffer, lengthCm: number | null) {
+  const m = getProductModelById(id);
+  if (!m) throw new Error("模型不存在");
+  putFile(modelKey(m), bytes);
+  getDb().prepare("UPDATE product_models SET size = ?, length_cm = ? WHERE id = ?").run(bytes.length, lengthCm, id);
+}
 
 /** GLB 文件头：magic "glTF" + version 2 */
 export const isGlb = (buf: Buffer) => buf.length >= 12 && buf.subarray(0, 4).toString("ascii") === "glTF" && buf.readUInt32LE(4) === 2;
@@ -113,17 +129,18 @@ export function addProductModel(input: {
   bytes: Buffer;
   status?: ModelStatus;
   colorId?: string | null;
-  source?: "upload" | "fal";
+  source?: ProductModel["source"];
   remoteUrl?: string | null;
+  lengthCm?: number | null;
 }): ProductModel {
   const id = randomUUID();
   const fileName = `${id}.glb`;
   putFile(storageKey(input.projectId, "models", fileName), input.bytes);
   getDb()
     .prepare(
-      "INSERT INTO product_models (id, project_id, original_name, file_name, size, created_at, status, color_id, source, remote_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO product_models (id, project_id, original_name, file_name, size, created_at, status, color_id, source, remote_url, length_cm) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
-    .run(id, input.projectId, input.originalName.slice(0, 200), fileName, input.bytes.length, now(), input.status ?? "approved", input.colorId ?? null, input.source ?? "upload", input.remoteUrl ?? null);
+    .run(id, input.projectId, input.originalName.slice(0, 200), fileName, input.bytes.length, now(), input.status ?? "approved", input.colorId ?? null, input.source ?? "upload", input.remoteUrl ?? null, input.lengthCm ?? null);
   const m = getProductModelById(id)!;
   if (m.status === "approved") archiveOthers(m);
   return m;
@@ -146,6 +163,7 @@ export function deleteProductModel(id: string): boolean {
   if (!m) return false;
   getDb().prepare("DELETE FROM product_models WHERE id = ?").run(id);
   removeFile(modelKey(m));
+  if (m.source === "step") removeFile(stepKey(m));
   if (m.status === "approved") removePrefix(m.colorId ? refsKey(m.projectId, m.colorId) : storageKey(m.projectId, "cad"));
   return true;
 }

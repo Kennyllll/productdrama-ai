@@ -43,7 +43,7 @@ async function LocalProductPage({ id }: { id: string }) {
         details={assets.filter((a) => a.kind === "product_photo" && !inGrid.has(a.originalName)).map(toView)}
         logo={logo ? toView(logo) : null}
         packaging={assets.filter((a) => a.kind === "packaging_photo").map(toView)}
-        model={model ? { id: model.id, originalName: model.originalName, size: model.size } : null}
+        model={model ? { id: model.id, originalName: model.originalName, size: model.size, source: model.source } : null}
         kit={kit}
         todo={todo}
         photoWarnings={photoWarnings}

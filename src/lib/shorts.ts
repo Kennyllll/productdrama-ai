@@ -161,7 +161,7 @@ export interface ShortShot {
   videoJobId: string | null;
   checkNote: string;
   /** 首帧出图后的看图检查（对照提示词和 3D）；jobId 不是当前首帧就作废 */
-  frameCheck?: { jobId: string; pass: boolean; issues: string[]; at: string; failed?: boolean };
+  frameCheck?: { jobId: string; pass: boolean; issues: string[]; at: string; failed?: boolean; /** 产品和实物不一致的问题（规则 #1：只有管理员能放行） */ product?: string[] };
   /** 视频出来后自动看：每 0.5 秒一帧对照产品照查变形 */
   videoCheck?: { jobId: string; pass: boolean; issues: string[]; at: string; failed?: boolean };
   /** 本镜场地（场地库 id + 版本 + 节日主题）；确认构图后锁定版本。旧数据没有时按 video.room 迁移 */
