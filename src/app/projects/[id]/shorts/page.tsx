@@ -11,6 +11,7 @@ import { ProductRefs } from "@/components/shorts/ProductRefs";
 import { cadDir, getProductModel } from "@/lib/model-repo";
 import { listTemplates } from "@/lib/shorts-templates-repo";
 import { listFamilies } from "@/lib/families-repo";
+import { productGapsOf } from "@/lib/product-readiness-repo";
 
 export const dynamic = "force-dynamic";
 
@@ -71,19 +72,14 @@ export default async function ShortsPage({ params }: { params: Promise<{ id: str
         </Card>
         <div className="space-y-4">
           <Card title="新建短视频">
-            {!product?.name || (photos === 0 && !model) ? (
-              <p className="mb-3 rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-                先把产品资料补好再建：{!product?.name ? "还没填产品名称" : "还没有产品照"}。
-                <Link href={`/projects/${id}/product`} className="ml-1 underline">去产品资料 →</Link>
-              </p>
-            ) : null}
-            {!product?.name || (photos === 0 && !model) ? null : <NewShortForm
+            <NewShortForm
+              gaps={productGapsOf(id)}
               projectId={id}
               templates={SHORT_TEMPLATES.map((t) => ({ id: t.id, label: t.label, description: t.description, needsPackaging: Boolean(t.needsPackaging) }))}
               saved={listTemplates().map((t) => ({ id: t.id, name: t.name, v: t.v, theme: t.theme, themeText: t.themeText, shots: t.shots.length, fromProduct: t.fromProduct, needsPackaging: Boolean(findTemplate(t.baseTemplateId).needsPackaging) }))}
               hasPackaging={listAssets(id).some((a) => a.kind === "packaging_photo")}
               families={listFamilies().map((f) => ({ id: f.id, name: f.name, who: f.members.map((m) => m.name).join("、") }))}
-            />}
+            />
           </Card>
           <Card title="产品资料（长剧和短视频共用）">
             <p className="text-sm text-neutral-300">{product?.name || "未填写产品名称"}</p>

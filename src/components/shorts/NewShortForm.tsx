@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { createFromTemplateAction, createShortVideoAction, deleteTemplateAction, setTemplateThemeAction } from "@/app/short-actions";
 import { THEMES } from "@/lib/shorts-scenes";
+import Link from "next/link";
+import { gapsText, type ProductGap } from "@/lib/product-readiness";
 
 const inputClass = "mt-1 w-full rounded-md border border-white/10 bg-neutral-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-400/60";
 
@@ -24,12 +26,14 @@ export function NewShortForm({
   templates,
   saved,
   hasPackaging,
+  gaps = [],
   families = [],
 }: {
   projectId: string;
   templates: { id: string; label: string; description: string; needsPackaging?: boolean }[];
   saved: SavedTemplate[];
   hasPackaging: boolean;
+  gaps?: ProductGap[];
   families?: { id: string; name: string; who: string }[];
 }) {
   const router = useRouter();
@@ -165,9 +169,19 @@ export function NewShortForm({
         <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={60} placeholder="例如：圣诞 · 爷爷奶奶送礼" className={inputClass} />
       </label>
       {error ? <p className="text-sm text-rose-300">{error}</p> : null}
-      <button disabled={pending} className="rounded-lg bg-amber-400 px-3 py-1.5 text-sm font-medium text-black disabled:opacity-50">
-        {pending ? "创建中…" : "新建"}
-      </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button disabled={pending || gaps.length > 0} className="rounded-lg bg-amber-400 px-3 py-1.5 text-sm font-medium text-black disabled:cursor-not-allowed disabled:opacity-50">
+          {pending ? "创建中…" : "新建"}
+        </button>
+        {gaps.length ? (
+          <span className="text-xs text-amber-300">
+            {gapsText(gaps)}。
+            <Link href={`/projects/${projectId}/product`} className="underline underline-offset-4 hover:text-amber-200">
+              去产品资料补 →
+            </Link>
+          </span>
+        ) : null}
+      </div>
     </form>
   );
 }

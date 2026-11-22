@@ -2,6 +2,7 @@
 
 import fs from "node:fs";
 import { productPhotos } from "@/lib/product-photos";
+import { requireProductReady } from "@/lib/product-readiness-repo";
 import { keyFromPath, putFile, readFile, storageKey } from "@/lib/storage";
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
@@ -135,6 +136,7 @@ function cleanFams(f: Record<string, string> | undefined): Record<string, string
 export async function createShortVideoAction(projectId: string, title: string, templateId: string, theme = "none", themeText = "", families?: Record<string, string>): Promise<Result<string>> {
   try {
     if (!findLocalProject(projectId)) throw new Error("项目不存在");
+    requireProductReady(projectId);
     requirePackaging(projectId, templateId);
     const th = findTheme(theme).id;
     const text = th === "custom" ? themeText.trim().slice(0, 300) : "";
@@ -2124,6 +2126,7 @@ export async function createFromTemplateAction(projectId: string, templateId: st
     if (!findLocalProject(projectId)) throw new Error("项目不存在");
     const tp = getTemplate(templateId);
     if (!tp) throw new Error("模板不存在");
+    requireProductReady(projectId);
     requirePackaging(projectId, tp.baseTemplateId);
     const th = findTheme(theme).id;
     const text = th === "custom" ? themeText.trim().slice(0, 300) : "";
