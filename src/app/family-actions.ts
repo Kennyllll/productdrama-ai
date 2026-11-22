@@ -8,26 +8,58 @@ import { addFamilyLedger, createFamily, deleteFamily, getFamily, portraitKey, po
 import { deleteRequest, estimate, getStatus, HiggsfieldError, submit, uploadFile } from "@/lib/higgsfield";
 import { FRAME_MODEL, FRAME_USD_FALLBACK } from "@/lib/shorts";
 import { putFile, readFile } from "@/lib/storage";
+import { adminError, currentActor, requireAdmin } from "@/lib/admin";
+import { logAction } from "@/lib/audit-repo";
+import { addRevision } from "@/lib/revisions-repo";
+
+const famData = (id: string) => {
+  const f = getFamily(id);
+  if (!f) return null;
+  const { id: _i, updatedAt: _u, ...d } = f;
+  void _i;
+  void _u;
+  return d;
+};
 
 type Result<T> = { result?: T; error?: string };
 const fail = (e: unknown) => ({ error: e instanceof Error ? e.message : String(e) });
 
+/** 家庭库只有管理员能改；每次改动留一版，能回退 */
 export async function saveFamilyAction(id: string | null, data: unknown): Promise<Result<string>> {
-  const f = cleanFamily(data);
-  if (!f) return { error: "家庭名字不能为空" };
-  if (!f.members.length) return { error: "至少要有一个成员" };
-  if (id) {
-    if (!getFamily(id)) return { error: "家庭不存在" };
-    saveFamily(id, f);
-  } else id = createFamily(f);
-  revalidatePath("/families");
-  return { result: id };
+  try {
+    const actor = await requireAdmin();
+    const f = cleanFamily(data);
+    if (!f) return { error: "家庭名字不能为空" };
+    if (!f.members.length) return { error: "至少要有一个成员" };
+    if (id) {
+      const before = famData(id);
+      if (!before) return { error: "家庭不存在" };
+      saveFamily(id, f);
+      addRevision({ entityType: "family", entityId: id, label: f.name, data: famData(id), op: "update", actor: actor.name, before });
+    } else {
+      id = createFamily(f);
+      addRevision({ entityType: "family", entityId: id, label: f.name, data: famData(id), op: "create", actor: actor.name });
+    }
+    logAction(actor, { action: "修改家庭资料", detail: f.name, refId: id });
+    revalidatePath("/families");
+    return { result: id };
+  } catch (e) {
+    return fail(e);
+  }
 }
 
 export async function deleteFamilyAction(id: string): Promise<Result<true>> {
-  if (!deleteFamily(id)) return { error: "家庭不存在" };
-  revalidatePath("/families");
-  return { result: true };
+  try {
+    const actor = await requireAdmin();
+    const before = famData(id);
+    if (!before || !deleteFamily(id)) return { error: "家庭不存在" };
+    addRevision({ entityType: "family", entityId: id, label: before.name, data: before, op: "delete", actor: actor.name });
+    logAction(actor, { action: "删除家庭", detail: `${before.name}（可在历史版本里恢复）`, refId: id });
+    revalidatePath("/families");
+    return { result: true };
+  } catch (e) {
+    return fail(e);
+  }
 }
 
 // ---------- 定妆照：每张先报价审批，后台出图，出好了再让用户采用 ----------
@@ -72,6 +104,9 @@ const runs = (g.__portraitRuns ??= new Set<string>());
 const runKey = (familyId: string, memberId: string, look: string) => `${familyId}:${memberId}:${look}`;
 
 export async function runPortraitAction(familyId: string, memberId: string, look: string, approvedUsd: number): Promise<Result<Family>> {
+  const noAdmin = await adminError();
+  if (noAdmin) return { error: noAdmin };
+  logAction(await currentActor(), { action: "生成定妆照", detail: `${getFamily(familyId)?.name ?? ""} / ${memberId} / ${look}` });
   try {
     const { m } = target(familyId, memberId, look);
     if (m.portraitJobs?.[look] && !m.portraitJobs[look].error) throw new Error("这张正在出，等它完成");
@@ -175,6 +210,9 @@ function edit(familyId: string, memberId: string, fn: (m: FamilyMember) => void)
 
 /** 采用：出好的这张变成这个造型的定妆照（首帧认人用它） */
 export async function acceptPortraitAction(familyId: string, memberId: string, look: string): Promise<Result<Family>> {
+  const noAdmin = await adminError();
+  if (noAdmin) return { error: noAdmin };
+  logAction(await currentActor(), { action: "采用定妆照", detail: `${getFamily(familyId)?.name ?? ""} / ${memberId} / ${look}` });
   return edit(familyId, memberId, (m) => {
     const d = m.portraitDrafts?.[look];
     if (!d) return;
@@ -185,6 +223,9 @@ export async function acceptPortraitAction(familyId: string, memberId: string, l
 
 /** 不要这张 / 清掉失败记录（已花的钱照记在被丢掉的照片上，不退） */
 export async function discardPortraitAction(familyId: string, memberId: string, look: string): Promise<Result<Family>> {
+  const noAdmin = await adminError();
+  if (noAdmin) return { error: noAdmin };
+  logAction(await currentActor(), { action: "丢弃定妆照", detail: `${getFamily(familyId)?.name ?? ""} / ${memberId} / ${look}` });
   return edit(familyId, memberId, (m) => {
     if (m.portraitDrafts?.[look]) delete m.portraitDrafts[look];
     if (m.portraitJobs?.[look]?.error) delete m.portraitJobs[look];

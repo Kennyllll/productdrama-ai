@@ -2,7 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { findLocalProject } from "@/lib/repo";
-import { addDecision, addGuideMessage, addRule, deleteRule, saveSetLayout, type GuideMessage, type RuleLayer, type SetLayout } from "@/lib/production-repo";
+import { requireAdmin } from "@/lib/admin";
+import { logAction } from "@/lib/audit-repo";
+import { addRevision } from "@/lib/revisions-repo";
+import { addDecision, addGuideMessage, addRule, deleteRule, listRules, saveSetLayout, type GuideMessage, type RuleLayer, type SetLayout } from "@/lib/production-repo";
 
 const LAYERS: RuleLayer[] = ["product", "character", "scene", "edit", "process"];
 const MAX_TEXT = 2000;
@@ -32,20 +35,41 @@ export async function rememberDecisionAction(projectId: string, text: string, co
   return {};
 }
 
+/** 规则库只有管理员能改；每次改动留一版，能回退 */
 export async function addRuleAction(projectId: string, input: { layer: string; level: string; text: string; source: string }): Promise<{ error?: string }> {
   if (!findLocalProject(projectId)) return { error: "项目不存在" };
+  let actor;
+  try {
+    actor = await requireAdmin();
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
   const layer = LAYERS.find((l) => l === input.layer);
   const text = clean(input.text);
   if (!layer || !text) return { error: "请选择层级并填写规则" };
   addRule(projectId, { layer, level: input.level === "warn" ? "warn" : "must", text, source: clean(input.source).slice(0, 200) });
+  const r = listRules(projectId).at(-1);
+  if (r) addRevision({ entityType: "rule", entityId: r.id, projectId, label: text.slice(0, 60), data: r, op: "create", actor: actor.name });
+  logAction(actor, { projectId, action: "新增规则", detail: text.slice(0, 200), refId: r?.id });
   revalidatePath(`/projects/${projectId}/rules`);
   return {};
 }
 
-export async function deleteRuleAction(projectId: string, id: string): Promise<void> {
-  if (!findLocalProject(projectId)) return;
+export async function deleteRuleAction(projectId: string, id: string): Promise<{ error?: string }> {
+  if (!findLocalProject(projectId)) return { error: "项目不存在" };
+  let actor;
+  try {
+    actor = await requireAdmin();
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+  const r = listRules(projectId).find((x) => x.id === id);
+  if (!r) return { error: "规则不存在" };
   deleteRule(projectId, id);
+  addRevision({ entityType: "rule", entityId: id, projectId, label: r.text.slice(0, 60), data: r, op: "delete", actor: actor.name });
+  logAction(actor, { projectId, action: "删除规则", detail: `${r.text.slice(0, 200)}（可在历史版本里恢复）`, refId: id });
   revalidatePath(`/projects/${projectId}/rules`);
+  return {};
 }
 
 const num = (v: unknown, lo: number, hi: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : null);

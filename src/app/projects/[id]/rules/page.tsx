@@ -1,3 +1,4 @@
+import { RevisionHistory } from "@/components/admin/RevisionHistory";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui";
 import { RulesBrowser } from "@/components/production/RulesBrowser";
@@ -21,6 +22,7 @@ export default async function RulesPage({ params }: { params: Promise<{ id: stri
     <>
       <PageHeader title="规则与决定" description="你纠正过的规矩存成规则，以后每个镜头都按它检查；决定记录是你拍过板的事。点分类展开。" />
       <RulesBrowser projectId={id} rules={listRules(id)} decisions={listDecisions(id)} checks={CHECK} />
+      <RevisionHistory entityType="rule" projectId={id} />
     </>
   );
 }

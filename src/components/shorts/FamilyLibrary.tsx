@@ -3,6 +3,7 @@
 import { askConfirm } from "@/components/ConfirmHost";
 import { useEffect, useState, useTransition } from "react";
 import { acceptPortraitAction, deleteFamilyAction, discardPortraitAction, familyStateAction, quotePortraitAction, runPortraitAction, saveFamilyAction } from "@/app/family-actions";
+import { NeedAdmin, useIsAdmin } from "@/components/admin/AdminContext";
 import { DAILY, lookLabel, MEMBER_ROLES, memberKind, portraitState, WEAR_THEMES, type Bi, type Family, type FamilyData, type FamilyMember, type Portrait } from "@/lib/families";
 
 const inp = "w-full rounded border border-white/10 bg-neutral-950 px-2 py-1 text-sm text-white";
@@ -99,6 +100,7 @@ function FamilyCard({ f, onDone }: { f: Family | null; onDone?: () => void }) {
   const [msg, setMsg] = useState("");
   const [dirty, setDirty] = useState(false);
   const [pending, start] = useTransition();
+  const admin = useIsAdmin();
   const set = (p: Partial<FamilyData>) => {
     setD((x) => ({ ...x, ...p }));
     setDirty(true);
@@ -127,7 +129,7 @@ function FamilyCard({ f, onDone }: { f: Family | null; onDone?: () => void }) {
       }
     });
   const del = async () => {
-    if (!f || !(await askConfirm(`删除「${f.name}」？已经用这家人做的视频，提示词里会去掉这家人的描述。`))) return;
+    if (!f || !(await askConfirm(`删除「${f.name}」？已经用这家人做的视频，提示词里会去掉这家人的描述。删掉后可以在页面下方「历史版本」里恢复。`))) return;
     start(async () => {
       const r = await deleteFamilyAction(f.id);
       if (r.error) setMsg(`⚠ ${r.error}`);
@@ -155,7 +157,7 @@ function FamilyCard({ f, onDone }: { f: Family | null; onDone?: () => void }) {
         </span>
       </button>
       {open ? (
-        <div className="mt-4 space-y-4">
+        <fieldset disabled={!admin} className="mt-4 space-y-4">
           <div className="grid gap-3 md:grid-cols-2">
             <label className="block text-xs text-neutral-400">
               家庭名字
@@ -247,9 +249,10 @@ function FamilyCard({ f, onDone }: { f: Family | null; onDone?: () => void }) {
                 删除这家
               </button>
             ) : null}
+            <NeedAdmin />
             {msg ? <span className="text-sm text-neutral-300">{msg}</span> : null}
           </div>
-        </div>
+        </fieldset>
       ) : null}
     </section>
   );
@@ -257,6 +260,7 @@ function FamilyCard({ f, onDone }: { f: Family | null; onDone?: () => void }) {
 
 export function FamilyLibrary({ families }: { families: Family[] }) {
   const [adding, setAdding] = useState(false);
+  const admin = useIsAdmin();
   return (
     <div className="space-y-3">
       {families.map((f) => (
@@ -265,9 +269,12 @@ export function FamilyLibrary({ families }: { families: Family[] }) {
       {adding ? (
         <FamilyCard f={null} onDone={() => setAdding(false)} />
       ) : (
-        <button type="button" onClick={() => setAdding(true)} className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-neutral-200">
-          ＋ 新家庭
-        </button>
+        <span className="flex items-center gap-2">
+          <button type="button" disabled={!admin} onClick={() => setAdding(true)} className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-neutral-200 disabled:opacity-40">
+            ＋ 新家庭
+          </button>
+          <NeedAdmin />
+        </span>
       )}
     </div>
   );

@@ -7,6 +7,7 @@ import { HOOK_ENTRIES, type HookData, type HookDef, type HookEntry, type HookFie
 import { effectDef, HOOK_EFFECTS, type HookEffectId } from "@/lib/hook-effects";
 import { HookCases } from "@/components/shorts/HookCases";
 import { DEFAULT_STAGE } from "@/lib/hook-stage";
+import { NeedAdmin, useIsAdmin } from "@/components/admin/AdminContext";
 
 const inp = "w-full rounded border border-white/10 bg-neutral-950 px-2 py-1 text-sm text-white";
 const blank = (): HookData => ({ name: "", about: "", use: "", seconds: 3, entry: "assembled", caption: "", fields: [], effect: "claimWords" });
@@ -17,6 +18,7 @@ function HookCard({ h, onDone }: { h: HookDef | null; onDone?: () => void }) {
   const [msg, setMsg] = useState("");
   const [dirty, setDirty] = useState(false);
   const [pending, start] = useTransition();
+  const admin = useIsAdmin();
   const set = (p: Partial<HookData>) => {
     setD((x) => ({ ...x, ...p }));
     setDirty(true);
@@ -32,7 +34,7 @@ function HookCard({ h, onDone }: { h: HookDef | null; onDone?: () => void }) {
       }
     });
   const del = async () => {
-    if (!h || !await askConfirm(`删除「${h.name}」？已经用它做的开头不受影响。`)) return;
+    if (!h || !await askConfirm(`删除「${h.name}」？已经用它做的开头不受影响。删掉后可以在页面底部「历史版本」里恢复。`)) return;
     start(async () => {
       const r = await deleteHookAction(h.id);
       if (r.error) setMsg(`⚠ ${r.error}`);
@@ -48,7 +50,7 @@ function HookCard({ h, onDone }: { h: HookDef | null; onDone?: () => void }) {
       </button>
       {!open ? <p className="mt-1 text-xs text-neutral-400">{d.use}</p> : null}
       {open ? (
-        <div className="mt-3 space-y-2 text-xs text-neutral-400">
+        <fieldset disabled={!admin} className="mt-3 space-y-2 text-xs text-neutral-400">
           <div className="grid gap-2 md:grid-cols-4">
             <label className="block md:col-span-2">
               名字
@@ -149,9 +151,10 @@ function HookCard({ h, onDone }: { h: HookDef | null; onDone?: () => void }) {
                 删除这个 Hook
               </button>
             ) : null}
+            <NeedAdmin />
             <span>{msg}</span>
           </div>
-        </div>
+        </fieldset>
       ) : null}
     </div>
   );
@@ -159,6 +162,7 @@ function HookCard({ h, onDone }: { h: HookDef | null; onDone?: () => void }) {
 
 export function HookLibrary({ hooks }: { hooks: HookDef[] }) {
   const [adding, setAdding] = useState(false);
+  const admin = useIsAdmin();
   return (
     <div className="space-y-3">
       {hooks.map((h) => (
@@ -167,9 +171,12 @@ export function HookLibrary({ hooks }: { hooks: HookDef[] }) {
       {adding ? (
         <HookCard h={null} onDone={() => setAdding(false)} />
       ) : (
-        <button className="rounded border border-white/10 px-3 py-1 text-sm text-neutral-200" onClick={() => setAdding(true)}>
-          ＋ 新建 Hook
-        </button>
+        <span className="flex items-center gap-2">
+          <button className="rounded border border-white/10 px-3 py-1 text-sm text-neutral-200 disabled:opacity-40" disabled={!admin} onClick={() => setAdding(true)}>
+            ＋ 新建 Hook
+          </button>
+          <NeedAdmin />
+        </span>
       )}
     </div>
   );

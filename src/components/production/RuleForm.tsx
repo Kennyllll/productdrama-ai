@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { addRuleAction, deleteRuleAction } from "@/app/production-actions";
 import { RULE_LAYERS } from "@/lib/rule-layers";
+import { askConfirm } from "@/components/ConfirmHost";
+import { NeedAdmin, useIsAdmin } from "@/components/admin/AdminContext";
 
 export function RuleForm({ projectId }: { projectId: string }) {
   const router = useRouter();
@@ -13,6 +15,7 @@ export function RuleForm({ projectId }: { projectId: string }) {
   const [source, setSource] = useState("");
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
+  const admin = useIsAdmin();
   return (
     <form
       className="flex flex-wrap items-end gap-2 text-sm"
@@ -53,9 +56,10 @@ export function RuleForm({ projectId }: { projectId: string }) {
         来源（哪个镜头 / 谁说的）
         <input value={source} onChange={(e) => setSource(e.target.value)} className="mt-1 rounded border border-white/15 bg-black/40 px-2 py-1 text-sm text-white" />
       </label>
-      <button type="submit" disabled={pending || !text.trim()} className="rounded-lg bg-amber-400 px-3 py-1.5 font-medium text-black disabled:opacity-40">
+      <button type="submit" disabled={pending || !text.trim() || !admin} className="rounded-lg bg-amber-400 px-3 py-1.5 font-medium text-black disabled:opacity-40">
         加入规则库
       </button>
+      <NeedAdmin className="self-center" />
       {error ? <span className="w-full text-xs text-rose-300">{error}</span> : null}
     </form>
   );
@@ -64,19 +68,27 @@ export function RuleForm({ projectId }: { projectId: string }) {
 export function DeleteRuleButton({ projectId, ruleId }: { projectId: string; ruleId: string }) {
   const router = useRouter();
   const [pending, start] = useTransition();
+  const [err, setErr] = useState("");
+  const admin = useIsAdmin();
   return (
-    <button
-      type="button"
-      disabled={pending}
-      onClick={() =>
-        start(async () => {
-          await deleteRuleAction(projectId, ruleId);
-          router.refresh();
-        })
-      }
-      className="text-xs text-neutral-500 underline hover:text-rose-300 disabled:opacity-40"
-    >
-      删除
-    </button>
+    <span className="inline-flex items-center gap-1">
+      <button
+        type="button"
+        disabled={pending || !admin}
+        onClick={async () => {
+          if (!(await askConfirm("删除这条规则？以后的镜头不再按它检查。删掉后可以在页面下方「历史版本」里恢复。"))) return;
+          start(async () => {
+            const r = await deleteRuleAction(projectId, ruleId);
+            setErr(r.error ?? "");
+            router.refresh();
+          });
+        }}
+        className="text-xs text-neutral-500 underline hover:text-rose-300 disabled:opacity-40"
+      >
+        删除
+      </button>
+      <NeedAdmin />
+      {err ? <span className="text-xs text-rose-300">{err}</span> : null}
+    </span>
   );
 }

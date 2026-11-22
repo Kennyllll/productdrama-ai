@@ -1,3 +1,4 @@
+import { RevisionHistory } from "@/components/admin/RevisionHistory";
 import { Card, PageHeader } from "@/components/ui";
 import { FamilyLibrary } from "@/components/shorts/FamilyLibrary";
 import { listFamilies, listFamilyLedger } from "@/lib/families-repo";
@@ -13,6 +14,7 @@ export default function FamiliesPage() {
     <main className="mx-auto max-w-6xl px-6 py-8">
       <PageHeader title="家庭库" description="所有产品共用。短视频里每个人偶绑定一个成员：3D 按身高缩放，首帧提示词写这个人的长相和衣服（衣服跟着视频的节日），有定妆照就用定妆照认脸。" />
       <FamilyLibrary families={listFamilies()} />
+      <RevisionHistory entityType="family" />
       <Card title="家庭库费用账本" className="mt-6" aside={<span className="text-sm text-white">{usd(total)}</span>}>
         {ledger.length === 0 ? (
           <p className="text-sm text-neutral-400">还没有出过定妆照。</p>
