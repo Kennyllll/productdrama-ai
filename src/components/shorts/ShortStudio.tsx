@@ -3,11 +3,14 @@
 import { BudgetEditor } from "@/components/admin/BudgetEditor";
 import { ExportHistory } from "@/components/admin/ExportHistory";
 import { OverLimitApproval } from "@/components/admin/OverLimitApproval";
-import { missingBody, replaceLoss, shotsSpend } from "@/lib/spend";
+import { replaceLoss, shotsSpend } from "@/lib/spend";
 import { askConfirm, askPrompt } from "@/components/ConfirmHost";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { fmtWait } from "@/components/shorts/JobPill";
 import { RunProgress } from "@/components/shorts/RunProgress";
+import { NearToast } from "@/components/NearToast";
+import { DisabledWhy } from "@/components/DisabledWhy";
+import { useLeaveGuard } from "@/lib/use-leave-guard";
 import { useRunPoll } from "@/lib/use-run-poll";
 import { OperatorPicker } from "@/components/shorts/OperatorPicker";
 import { effectDef } from "@/lib/hook-effects";
@@ -144,6 +147,7 @@ export function ShortStudio({
     null,
   );
   const [busy, start] = useTransition();
+  useLeaveGuard(dirty);
   const [pending, setPending] = useState<Pending | null>(null);
   const [finalAt, setFinalAt] = useState(initialFinalAt);
   const [rw, setRw] = useState<{ shotId: string; text: string } | null>(null);
@@ -179,6 +183,7 @@ export function ShortStudio({
           : null,
     );
   };
+  const closeMsg = useCallback(() => setMsg(null), []);
   const act = (
     fn: () => Promise<{ error?: string; result?: StudioState }>,
     ok?: string,
@@ -607,13 +612,7 @@ export function ShortStudio({
         </div>
       </header>
 
-      {msg ? (
-        <p
-          className={`fixed bottom-6 left-1/2 z-50 max-w-xl -translate-x-1/2 rounded-md px-3 py-2 text-sm shadow-lg shadow-black/50 ${msg.tone === "err" ? "bg-rose-500/15 text-rose-200" : "bg-emerald-500/15 text-emerald-200"}`}
-        >
-          {msg.text}
-        </p>
-      ) : null}
+      <NearToast msg={msg} busy={busy} onClose={closeMsg} />
       {bgCap ? (
         <>
           <p className="rounded-md bg-sky-400/10 px-3 py-2 text-sm text-sky-200">3D 构图正在后台自动保存…</p>
@@ -766,7 +765,18 @@ export function ShortStudio({
               "镜头"
             )}
           </h2>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <DisabledWhy
+              why={
+                !v.conceptId
+                  ? v.concepts.length
+                    ? "先在上面点选一个创意；也可以点「+ 镜头」自己写"
+                    : "先点上面的「AI 出 4 个创意」，再点选一个；也可以点「+ 镜头」自己写"
+                  : st.jobs.some((j) => j.status !== "failed")
+                    ? "已经生成过画面，不能整体重出；可以逐镜修改"
+                    : null
+              }
+            />
             <button
               className={btn}
               disabled={
