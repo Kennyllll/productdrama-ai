@@ -2,6 +2,8 @@
 
 // 产品白模 / 颜色款建模（fal）。花钱的一步：先 quote 出价格，用户在审批框点同意后 start 才提交；
 // 提交前先记任务，同一个目标有进行中或状态不明的任务就不许再提交，断线后只查原任务，不重复扣费。
+import { adminError, currentActor } from "@/lib/admin";
+import { logAction } from "@/lib/audit-repo";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -55,6 +57,9 @@ const KEY_RE = /^[\x21-\x7e]{10,300}$/;
 import { arkPublicInfo, saveArkKey, testArkKey } from "@/lib/ark";
 
 export async function saveArkKeyAction(input: { key: string; clear: boolean }): Promise<FormState & { info?: { configured: boolean; keyHint: string } }> {
+  const noAdmin = await adminError();
+  if (noAdmin) return { error: noAdmin };
+  logAction(await currentActor(), { action: "修改设置", detail: "火山方舟 Key（Key 本身不记）" });
   if (input.clear) saveArkKey("");
   else {
     const key = (input.key ?? "").trim();
@@ -76,6 +81,9 @@ export async function testArkAction(): Promise<FormState> {
 const MAX_MESH_UPLOAD = 90 * 1024 * 1024;
 
 export async function saveFalKeyAction(input: { key: string; clear: boolean }): Promise<FormState & { info?: { configured: boolean; keyHint: string } }> {
+  const noAdmin = await adminError();
+  if (noAdmin) return { error: noAdmin };
+  logAction(await currentActor(), { action: "修改设置", detail: "fal Key（Key 本身不记）" });
   if (input.clear) saveFalKey("");
   else {
     const key = (input.key ?? "").trim();

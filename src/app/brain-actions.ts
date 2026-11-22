@@ -1,5 +1,7 @@
 "use server";
 
+import { adminError, currentActor } from "@/lib/admin";
+import { logAction } from "@/lib/audit-repo";
 import { revalidatePath } from "next/cache";
 import { brainPublicInfo, kimiChat, saveBrainKey } from "@/lib/brain/kimi";
 import type { FormState } from "@/lib/types";
@@ -7,6 +9,9 @@ import type { FormState } from "@/lib/types";
 const CRED_RE = /^[\x21-\x7e]{6,300}$/;
 
 export async function saveBrainKeyAction(input: { apiKey: string; clear: boolean }): Promise<FormState & { info?: { configured: boolean; keyHint: string } }> {
+  const noAdmin = await adminError();
+  if (noAdmin) return { error: noAdmin };
+  logAction(await currentActor(), { action: "修改设置", detail: "Kimi Key（Key 本身不记）" });
   if (input.clear) saveBrainKey("");
   else {
     const k = (input.apiKey ?? "").trim();

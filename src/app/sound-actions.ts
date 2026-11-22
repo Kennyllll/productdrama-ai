@@ -1,5 +1,7 @@
 "use server";
 
+import { adminError, currentActor } from "@/lib/admin";
+import { logAction } from "@/lib/audit-repo";
 import { revalidatePath } from "next/cache";
 import type { AiResult } from "@/app/ai-actions";
 import { AiError, chatJson } from "@/lib/ai/client";
@@ -23,6 +25,9 @@ export async function saveSoundPlanAction(projectId: string, data: unknown): Pro
 const KEY_RE = /^[\x21-\x7e]{6,300}$/;
 
 export async function saveElevenLabsKeyAction(input: { apiKey: string; clear: boolean }): Promise<FormState & { info?: { configured: boolean; keyHint: string } }> {
+  const noAdmin = await adminError();
+  if (noAdmin) return { error: noAdmin };
+  logAction(await currentActor(), { action: "修改设置", detail: "ElevenLabs Key（Key 本身不记）" });
   if (input.clear) saveElevenLabsKey("");
   else {
     const k = (input.apiKey ?? "").trim();

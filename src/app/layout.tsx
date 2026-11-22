@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { AppShell } from "@/components/AppShell";
 import { ConfirmHost } from "@/components/ConfirmHost";
 import { listLocalProjects } from "@/lib/repo";
+import { currentActor } from "@/lib/admin";
+import { AdminProvider } from "@/components/admin/AdminContext";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -11,12 +13,15 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const projects = listLocalProjects().map((p) => ({ id: p.id, name: p.name, kind: p.kind }));
+  const actor = await currentActor();
   return (
     <html lang="zh-CN">
       <body className="antialiased">
-        <AppShell projects={projects}>{children}</AppShell>
+        <AdminProvider actor={actor}>
+          <AppShell projects={projects}>{children}</AppShell>
+        </AdminProvider>
         <ConfirmHost />
       </body>
     </html>

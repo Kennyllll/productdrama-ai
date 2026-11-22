@@ -1,5 +1,7 @@
 "use server";
 
+import { adminError, currentActor } from "@/lib/admin";
+import { logAction } from "@/lib/audit-repo";
 import { revalidatePath } from "next/cache";
 import { estimate, getHfCreds, hfPublicInfo, HiggsfieldError, saveHfCreds } from "@/lib/higgsfield";
 import type { FormState } from "@/lib/types";
@@ -8,6 +10,9 @@ import { saveVisionKey, testVision, visionPublicInfo } from "@/lib/vision-qa";
 const CRED_RE = /^[\x21-\x7e]{6,300}$/;
 
 export async function saveHfCredsAction(input: { keyId: string; secret: string; clear: boolean }): Promise<FormState & { info?: { configured: boolean; keyHint: string } }> {
+  const noAdmin = await adminError();
+  if (noAdmin) return { error: noAdmin };
+  logAction(await currentActor(), { action: "修改设置", detail: "Higgsfield Key（Key 本身不记）" });
   if (input.clear) {
     saveHfCreds({ keyId: "", secret: "" });
   } else {
@@ -56,6 +61,9 @@ export async function testHfAction(): Promise<FormState & { checks?: { label: st
 }
 
 export async function saveVisionKeyAction(input: { apiKey: string; clear: boolean }): Promise<FormState & { info?: { configured: boolean; keyHint: string } }> {
+  const noAdmin = await adminError();
+  if (noAdmin) return { error: noAdmin };
+  logAction(await currentActor(), { action: "修改设置", detail: "看图检查 Key（Key 本身不记）" });
   if (input.clear) saveVisionKey("");
   else {
     const k = (input.apiKey ?? "").trim();

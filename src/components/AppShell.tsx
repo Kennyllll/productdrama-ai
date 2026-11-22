@@ -6,6 +6,7 @@ import { useState, type ReactNode } from "react";
 import { DEMO_PROJECT_ID, demoProject } from "@/lib/mock/demo";
 import { stepHref, workflowSteps } from "@/lib/navigation";
 import type { ProjectKind } from "@/lib/types";
+import { useActor } from "@/components/admin/AdminContext";
 
 export interface ShellProject {
   id: string;
@@ -55,6 +56,7 @@ export function AppShell({ children, projects }: { children: ReactNode; projects
   const [longOpen, setLongOpen] = useState<boolean | null>(null);
   const showLong = longOpen ?? onLong;
   const href = (k: string) => `/projects/${project?.id}/${k}`;
+  const actor = useActor();
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-200 lg:flex">
@@ -62,6 +64,9 @@ export function AppShell({ children, projects }: { children: ReactNode; projects
         <div className="px-5 py-4">
           <Link href="/dashboard" className="text-lg font-bold tracking-tight text-white">
             Product<span className="text-amber-400">Drama</span> AI
+          </Link>
+          <Link href="/settings#identity" className={`mt-2 block w-fit rounded-full px-2.5 py-0.5 text-xs ${actor.role === "admin" ? "bg-amber-400 text-black" : "bg-white/10 text-neutral-300"}`} title="点这里切换新手 / 管理员">
+            {actor.role === "admin" ? "管理员" : "新手"} · {actor.name}
           </Link>
         </div>
         <nav aria-label="主导航" className="flex gap-1 overflow-x-auto px-3 pb-4 lg:flex-col lg:overflow-visible">
@@ -80,6 +85,12 @@ export function AppShell({ children, projects }: { children: ReactNode; projects
           </NavLink>
           <NavLink href="/settings" active={pathname.startsWith("/settings")}>
             设置
+          </NavLink>
+          <NavLink href="/logs" active={pathname.startsWith("/logs")}>
+            操作日志
+          </NavLink>
+          <NavLink href="/trash" active={pathname.startsWith("/trash")}>
+            回收站
           </NavLink>
           {project ? (
             <>

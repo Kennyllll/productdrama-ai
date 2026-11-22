@@ -1,5 +1,7 @@
 "use server";
 
+import { adminError, currentActor } from "@/lib/admin";
+import { logAction } from "@/lib/audit-repo";
 import { revalidatePath } from "next/cache";
 import { addUsage, AiError, chatJson } from "@/lib/ai/client";
 import { AI_MODELS, type AiModel, type AiPublicInfo, type AiUsage, type ScriptReview } from "@/lib/ai/models";
@@ -27,6 +29,9 @@ const failure = (e: unknown): { error: string } => ({
 const isModel = (m: unknown): m is AiModel => AI_MODELS.includes(m as AiModel);
 
 export async function saveAiSettingsAction(input: { model: string; storyModel: string; apiKey: string; clearKey: boolean }): Promise<FormState & { info?: AiPublicInfo }> {
+  const noAdmin = await adminError();
+  if (noAdmin) return { error: noAdmin };
+  logAction(await currentActor(), { action: "修改设置", detail: "AI 文字模型设置（Key 本身不记）" });
   if (!isModel(input.model) || !isModel(input.storyModel)) return { error: "未知模型" };
   const current = getAiSettings();
   const key = typeof input.apiKey === "string" ? input.apiKey.trim() : "";
