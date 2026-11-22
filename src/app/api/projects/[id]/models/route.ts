@@ -31,6 +31,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
   }
   if (!isGlb(bytes)) return fail(`${file.name}：只支持 GLB（材质已内嵌）或工厂 STEP（.step / .stp）`, 400);
+  // 规则 #1：只有工厂 CAD 导出的才算精确；照片 / AI 建的 GLB 按近似处理，先审核
+  const origin = form.get("origin");
+  if (origin !== "factory" && origin !== "ai") return fail("先选这个 GLB 从哪来：工厂 CAD 导出，还是照片 / AI 建的", 400);
+  if (origin === "ai") {
+    const model = addProductModel({ projectId: id, originalName: file.name, bytes, status: "review", source: "fal" });
+    return Response.json({ id: model.id, size: model.size, originalName: model.originalName, reviewUrl: `/projects/${id}/product/models/${model.id}` });
+  }
   const model = addProductModel({ projectId: id, originalName: file.name, bytes });
   return Response.json({ id: model.id, size: model.size, originalName: model.originalName });
 }

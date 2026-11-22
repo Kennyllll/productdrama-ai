@@ -134,6 +134,8 @@ export function LocalProductWorkbench({
   const packagingInput = useRef<HTMLInputElement>(null);
   const modelInput = useRef<HTMLInputElement>(null);
   const [needTools, setNeedTools] = useState(false);
+  const [isGlbFile, setIsGlbFile] = useState(false);
+  const [origin, setOrigin] = useState<"" | "factory" | "ai">("");
   const [saveState, saveAction, saving] = useActionState<FormState, FormData>(saveProductAction, {});
 
   const kind = rideKindOf(product.rideKind, product.category);
@@ -194,10 +196,16 @@ export function LocalProductWorkbench({
       setNotice({ tone: "error", text: "请先选择 STEP 或 GLB 文件" });
       return;
     }
+    const glbFile = /\.glb$/i.test(f.name);
+    if (glbFile && !origin) {
+      setNotice({ tone: "error", text: "先选这个 GLB 从哪来" });
+      return;
+    }
     setBusy(true);
     setNotice(null);
     const fd = new FormData();
     fd.append("file", f);
+    if (glbFile) fd.append("origin", origin);
     try {
       const res = await fetch(`/api/projects/${projectId}/models`, { method: "POST", body: fd });
       const data = (await res.json()) as { error?: string; size?: number; needTools?: boolean; reviewUrl?: string; step?: { parts: number; colored: number } };
@@ -391,10 +399,33 @@ export function LocalProductWorkbench({
           <div className="mt-3 grid gap-4 lg:grid-cols-2">
             <Part title="A. 有工厂 3D 文件（最准）" hint="工厂的 STEP（.step / .stp）最好：本机转换，尺寸和每个零件都和实物一样，出图时车的形状照它画。也可以传带材质的 GLB。最大 300 MB，免费。">
               <div className="flex flex-wrap items-center gap-2">
-                <input ref={modelInput} type="file" accept=".step,.stp,.glb,model/gltf-binary" className="text-xs text-neutral-300" aria-label="STEP 或 GLB 文件" />
+                <input
+                  ref={modelInput}
+                  type="file"
+                  accept=".step,.stp,.glb,model/gltf-binary"
+                  className="text-xs text-neutral-300"
+                  aria-label="STEP 或 GLB 文件"
+                  onChange={(e) => {
+                    setIsGlbFile(/\.glb$/i.test(e.target.files?.[0]?.name ?? ""));
+                    setOrigin("");
+                  }}
+                />
                 <button type="button" disabled={busy} onClick={uploadModel} className={ghost}>
                   {busy ? "转换中…" : "上传"}
                 </button>
+                {isGlbFile ? (
+                  <span className="flex w-full flex-wrap items-center gap-3 text-xs text-neutral-300" role="radiogroup" aria-label="GLB 从哪来">
+                    <span className="text-amber-200">这个 GLB 从哪来？</span>
+                    <label className="flex items-center gap-1">
+                      <input type="radio" name="glb-origin" checked={origin === "factory"} onChange={() => setOrigin("factory")} />
+                      工厂 CAD 导出（精确，直接用）
+                    </label>
+                    <label className="flex items-center gap-1">
+                      <input type="radio" name="glb-origin" checked={origin === "ai"} onChange={() => setOrigin("ai")} />
+                      照片 / AI 建的（近似，先审核）
+                    </label>
+                  </span>
+                ) : null}
                 {needTools ? (
                   <button type="button" disabled={busy} onClick={installTools} className={ghost}>
                     安装转换工具
