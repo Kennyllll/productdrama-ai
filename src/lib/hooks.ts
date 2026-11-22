@@ -154,7 +154,7 @@ export const PRESET_HOOKS: HookData[] = [
     seconds: 2,
     entry: "assembled",
     caption: "{claim}",
-    stage: { dist: 2, camH: 0.7, lens: 28, view: "front34", fill: 0.55, people: [{ kind: "adult", pose: "crouch", side: "right", dist: 0.6 }] },
+    stage: { dist: 2, camH: 0.7, lens: 28, view: "front34", fill: 0.55, people: [{ kind: "adult", pose: "crouch", side: "left", dist: 0.5 }] },
     second: { seconds: 2, about: "切到证据：孩子骑着车，开心、很稳，正好证明那句主张", stage: { dist: 2, camH: 0.6, lens: 28, view: "front34", fill: 0.55, people: [{ kind: "child", pose: "ride", onProduct: true }] } },
     fields: [
       { key: "claim", label: "主张", example: "The only trike my 2-year-old actually rides", visual: false },

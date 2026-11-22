@@ -91,6 +91,17 @@ function db() {
       }
       d.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('hooks_preset_v', '8')").run();
     }
+    // 第 9 版：大胆主张的大人蹲到车的另一边（和摄影机同侧时人挡在车前、车显得很小）
+    const v9 = d.prepare("SELECT value FROM settings WHERE key = 'hooks_preset_v'").get() as { value: string } | undefined;
+    if (Number(v9?.value ?? 0) < 9) {
+      for (const r of d.prepare("SELECT id, data FROM hooks").all() as { id: string; data: string }[]) {
+        const x = JSON.parse(r.data) as HookData;
+        const a = x.stage?.people;
+        if (x.name === "大胆主张" && a?.length === 1 && a[0].pose === "crouch" && a[0].side === "right" && a[0].dist === 0.6)
+          d.prepare("UPDATE hooks SET data = ? WHERE id = ?").run(JSON.stringify({ ...x, stage: { ...x.stage, people: [{ ...a[0], side: "left", dist: 0.5 }] } }), r.id);
+      }
+      d.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('hooks_preset_v', '9')").run();
+    }
     ready = true;
   }
   return d;

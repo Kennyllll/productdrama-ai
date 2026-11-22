@@ -174,8 +174,12 @@ export const peopleText = (people: HookPerson[], members?: FamilyMember[]) =>
 const vHalfTan = (lens: number) => 32 / lens;
 /** 主体占画面 fill 高度时摄影机该多远：有孩子骑车按 1 米高算，只有产品按车把高度 */
 function camDist(st: HookStage, k: number): number {
-  const h = (st.people.some((p) => p.onProduct) ? 1 : 0.6) * k;
-  const fit = h / ((st.fill ?? 0.5) * 2 * vHalfTan(st.lens));
+  const ride = st.people.some((p) => p.onProduct);
+  const crouch = st.people.some((p) => !p.onProduct && p.pose === "crouch");
+  const h = Math.max(ride ? 1 : 0.6, crouch ? 0.95 : 0) * k;
+  // 站着的大人本来就只拍腰以下，不算高度；但旁边的人要整个进画面，宽度也要装得下
+  const half = Math.max(0.45, ...st.people.filter((p) => !p.onProduct && p.side !== "behind").map((p) => (p.dist ?? 0.7) + 0.2)) * k;
+  const fit = Math.max(h / ((st.fill ?? 0.5) * 2 * vHalfTan(st.lens)), (2 * half) / (0.9 * 2 * (18 / st.lens)));
   return Math.max(0.5 * k, Math.min(st.dist * k, fit));
 }
 /** 让产品着地点落在画面 groundY 高度：反算摄影机看向哪个高度 */
