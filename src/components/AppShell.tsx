@@ -7,6 +7,7 @@ import { DEMO_PROJECT_ID, demoProject } from "@/lib/mock/demo";
 import { stepHref, workflowSteps } from "@/lib/navigation";
 import type { ProjectKind } from "@/lib/types";
 import { useActor } from "@/components/admin/AdminContext";
+import { GlobalRuns } from "@/components/GlobalRuns";
 
 export interface ShellProject {
   id: string;
@@ -146,6 +147,7 @@ export function AppShell({ children, projects }: { children: ReactNode; projects
         </nav>
       </aside>
       <div className="min-w-0 flex-1">{children}</div>
+      <GlobalRuns />
     </div>
   );
 }

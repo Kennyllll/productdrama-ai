@@ -271,7 +271,12 @@ export function ShortStudio({
   );
   const stuck = inflight.filter((j) => !activeJobs.has(j.id));
   const unsure = st.jobs.filter((j) => j.status === "unknown");
-  const [now, setNow] = useState(() => Date.now());
+  // 服务端渲染时没有当前时间：先用 0，装好后马上换成真时间（避免服务端/浏览器时间不同的 hydration 警告）
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    const t0 = setTimeout(() => setNow(Date.now()), 0);
+    return () => clearTimeout(t0);
+  }, []);
   const [done, setDone] = useState<{ shotId: string; kind: JobKind } | null>(
     null,
   );
@@ -682,7 +687,7 @@ export function ShortStudio({
             </button>
           ))}
           {stuck.map((j) =>
-            Date.now() - Date.parse(j.createdAt) > 30 * 60_000 ? (
+            now - Date.parse(j.createdAt) > 30 * 60_000 ? (
               <button
                 key={`x${j.id}`}
                 className={`${btn} ml-2`}
