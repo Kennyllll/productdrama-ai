@@ -257,6 +257,7 @@ export function ShortSet({
           <SceneEditor projectId={projectId} videoId={videoId} shot={b} scenes={scenes} onDraft={onDraft} />
         </details>
       ) : null}
+      {code ? <ShotSyncBox videoId={videoId} shotId={code} label={b?.label ?? ""} figIds={(st?.layout.figures ?? []).map((f) => f.id)} layout={st?.layout} saved={Boolean(cur?.edited)} live={live} members={st?.members} rig={rig} filmerId={fv[code] === "none" ? undefined : fv[code] || filmers[code]?.video || undefined} /> : null}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         <section id="pd-3d-model" className="min-w-0 rounded-xl border border-white/10 p-3">
           <h2 className="mb-2 text-sm font-medium text-white">
@@ -341,7 +342,6 @@ export function ShortSet({
             onDirty={setCamDirty}
             otherDirty={stageDirty}
           />
-          {code ? <ShotSyncBox videoId={videoId} shotId={code} label={b?.label ?? ""} figIds={(st?.layout.figures ?? []).map((f) => f.id)} layout={st?.layout} saved={Boolean(cur?.edited)} live={live} members={st?.members} rig={rig} filmerId={fv[code] === "none" ? undefined : fv[code] || filmers[code]?.video || undefined} /> : null}
           {cur ? (
             <details className="rounded-xl border border-white/10 bg-neutral-900/60 px-3 py-2 text-xs text-neutral-400">
               <summary className="cursor-pointer select-none">镜头描述</summary>

@@ -317,11 +317,11 @@ export function LocalProductWorkbench({
         done={done2}
         summary={`角度照 ${kit.white.length}/10 · 细节照 ${details.length} · Logo ${logo ? "有" : "缺"} · 贴纸 ${kit.stickers.length}`}
       >
-        <Part title="角度照" hint="至少 4 张：正面、左侧、背面、右侧（★）。再加左前 45°、右前 45° 更准。白色背景，产品占满画面，不要手和阴影；用手机原图，短边至少 1000 像素。点格子上传。">
+        <Part title="角度照" hint="至少 4 张：正面、左侧、背面、右侧。白底、产品占满画面、不要手，用手机原图。">
           <PhotoSlots projectId={projectId} kind="white_photo" assets={kit.white} required={model ? [] : WHITE_REQUIRED} library={kit.library.filter((a) => detailIds.has(a.id))} warnings={photoWarnings} />
         </Part>
 
-        <Part title="细节照（建议 2–4 张）" hint="座椅、车轮、把手、Logo 特写，出首帧时一起参考。">
+        <Part title="细节照（建议 2–4 张）" hint="座椅、车轮、把手、Logo 的特写。">
           <div className="flex flex-wrap items-center gap-2">
             <input ref={detailInput} type="file" multiple accept="image/png,image/jpeg,image/webp" className="text-xs text-neutral-300" aria-label="细节照" />
             <button type="button" disabled={busy} onClick={() => upload("product_photo", detailInput.current)} className={ghost}>
@@ -331,7 +331,7 @@ export function LocalProductWorkbench({
           <Thumbs items={details} busy={busy} onRemove={remove} warnings={photoWarnings} />
         </Part>
 
-        <Part title="Logo" hint="成片里的 Logo 用原文件合成，不让 AI 重画。最好是透明背景的 PNG 或 SVG。" aside={<Tag tone={logo ? "emerald" : "amber"}>{logo ? "已上传" : "未上传"}</Tag>}>
+        <Part title="Logo" hint="最好是透明背景的 PNG 或 SVG。" aside={<Tag tone={logo ? "emerald" : "amber"}>{logo ? "已上传" : "未上传"}</Tag>}>
           <div className="flex flex-wrap items-center gap-3">
             {logo ? (
               /* eslint-disable-next-line @next/next/no-img-element */
