@@ -186,6 +186,6 @@ export function operatorPrompt(op: string | undefined, l?: SetLayout | null, who
     bits.push(`Their free ${fh.side} hand (their ${fh.other} hand holds the phone) enters from the bottom-${fh.side} corner of the frame${o.act ? `, ${actOf(o.act)!.en}` : ""}, slightly out of focus, exactly where the 3D blocking shows it. The hand stays small at the edge of the frame for the whole clip: it never moves toward the lens, never grows, and never covers the product or anyone's face.`);
   }
   if (o.shadow) bits.push("Their soft shadow, holding up a phone, falls on the ground in the foreground; it is the only shadow from behind the camera: no second person's shadow appears.");
-  bits.push("They are holding the phone, so at most one of their hands can appear and it never holds anything else. Never show the filming person's face. They stay behind the phone for the whole clip and never walk into the frame.");
+  bits.push("This image is taken with their phone, so the phone itself never appears in the image; at most one of their empty hands can appear. Never show the filming person's face. They stay behind the phone for the whole clip and never walk into the frame.");
   return bits.join(" ");
 }

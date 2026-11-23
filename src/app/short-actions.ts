@@ -23,17 +23,21 @@ import { hookParts, hooksOf, isExtraHook, needsComposite, shotSound } from "@/li
 import { applySelfie, buildHookLayout, cleanHookPeople, DEFAULT_STAGE, peopleText, renameText, VIEW_LABEL, type HookPerson, addNamedPeople } from "@/lib/hook-stage";
 import { shortConceptPrompt, shortShotsPrompt } from "@/lib/ai/short-prompts";
 import { deleteRequest, estimate, getStatus, HiggsfieldError, submit, uploadFile, type HfRequest } from "@/lib/higgsfield";
+import { uploadToFal } from "@/lib/fal";
+import { falGetImage, falSubmitImage, isFalModel } from "@/lib/fal-image";
 import { arkFindTask, arkGetTask, arkSubmitVideo, arkUsd, isArkModel, type ArkVideoInput } from "@/lib/ark";
 import { assetPath, findLocalProject, getProduct, listAssets } from "@/lib/repo";
 import {
   findTemplate,
   FRAME_MODEL,
   FRAME_USD_FALLBACK,
+  jobModelOf,
+  SHORT_FRAME_MAX_REFS,
+  SHORT_FRAME_USD,
   paramsKey,
   quoteJob,
   VIDEO_MIN_SEC,
   shotHasPeople,
-  videoModelOf,
   videoUsdPerSec,
   VIDEO_USD_PER_SEC,
   type GenJob,
@@ -607,7 +611,7 @@ export async function setHookValuesAction(videoId: string, shotId: string, value
     if (visual.length && made && !confirmed) {
       const lib = getHook(h.libId);
       const names = visual.map((k) => lib?.fields.find((f) => f.key === k)?.label ?? k).join("、");
-      const usd = FRAME_USD_FALLBACK + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * videoUsdPerSec(s, v.resolution) : 0);
+      const usd = SHORT_FRAME_USD + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * videoUsdPerSec(s, v.resolution) : 0);
       return { result: { confirm: `改了影响画面的属性（${names}），开头「${h.name}」已经做过的画面要退回构图、重写剧本再重做：\n剧本 DeepSeek 约 $0.01 + 重做大约 $${usd.toFixed(2)}（每次生成照样先审批）。已经生成的画面会留在历史里。` } };
     }
     s.hook = { ...h, values: vals };
@@ -744,7 +748,7 @@ export async function setVideoFamilyAction(videoId: string, slot: number, family
     if (accepted.length) throw new Error(`已采用的镜头 ${accepted.map(label).join("、")} 不会被自动改：要换家庭，先在这些镜头点“退回返工”`);
     const redo = changed.filter((s) => s.stage !== "draft" || s.frameJobId || s.videoJobId);
     if (redo.length && !confirmed) {
-      const usd = redo.reduce((a, s) => a + FRAME_USD_FALLBACK + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * videoUsdPerSec(s, v.resolution) : 0), 0);
+      const usd = redo.reduce((a, s) => a + SHORT_FRAME_USD + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * videoUsdPerSec(s, v.resolution) : 0), 0);
       const to = familyId ? getFamily(familyId)!.name : "不指定";
       return { result: { confirm: `家庭位 ${k} 换成「${to}」以后，这些已经做过的镜头画面里还是原来的人，要退回构图重做：\n${redo.map(label).join("、")}\n\n重做大约 $${usd.toFixed(2)}（每次生成照样先审批）。已经生成的画面会留在历史里。` } };
     }
@@ -784,7 +788,7 @@ export async function setVideoFilmerAction(videoId: string, memberId: string | n
     if (accepted.length) throw new Error(`已采用的镜头 ${accepted.map(label).join("、")} 不会被自动改：要换拍摄者，先在这些镜头点“退回返工”`);
     const redo = changed.filter((s) => s.stage !== "draft" || s.frameJobId || s.videoJobId);
     if (redo.length && !confirmed) {
-      const usd = redo.reduce((a, s) => a + FRAME_USD_FALLBACK + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * videoUsdPerSec(s, v.resolution) : 0), 0);
+      const usd = redo.reduce((a, s) => a + SHORT_FRAME_USD + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * videoUsdPerSec(s, v.resolution) : 0), 0);
       return { result: { confirm: `拿手机的人换成「${who?.name ?? "不指定"}」以后，这些已经做过的镜头里露出的手、衣服和拍摄高度还是原来的，要退回构图重做：\n${redo.map(label).join("、")}\n\n重做大约 $${usd.toFixed(2)}（每次生成照样先审批）。已经生成的画面会留在历史里。` } };
     }
     for (const s of redo) {
@@ -834,7 +838,7 @@ export async function setVideoThemeAction(videoId: string, theme: string, themeT
     if (accepted.length) throw new Error(`已采用的镜头 ${accepted.map(label).join("、")} 不会被自动改：要换节日，先在这些镜头点“退回返工”`);
     const redo = changed.filter((s) => s.stage !== "draft" || s.frameJobId || s.videoJobId);
     if (redo.length && !confirmed) {
-      const usd = redo.reduce((a, s) => a + FRAME_USD_FALLBACK + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * videoUsdPerSec(s, v.resolution) : 0), 0);
+      const usd = redo.reduce((a, s) => a + SHORT_FRAME_USD + (s.videoJobId ? Math.max(VIDEO_MIN_SEC, s.genSeconds) * videoUsdPerSec(s, v.resolution) : 0), 0);
       return {
         result: {
           confirm: `换成「${findTheme(t).label}」以后，这些已经做过的镜头画面里还是旧节日，要退回构图重做：\n${redo.map(label).join("、")}\n\n重做大约 $${usd.toFixed(2)}（每次生成照样先审批）。已经生成的图和视频会留在历史里。\n\n确定要换吗？`,
@@ -1656,11 +1660,11 @@ async function prepare(videoId: string, shotId: string, kind: JobKind, seconds: 
   const prompt = kind === "video" ? videoPromptOf(v, s) : kind === "scene" ? scenePromptOf(me!) : framePromptOf(v, s);
   if (kind !== "video" && prompt.length > 5000) throw new Error(`提示词 ${prompt.length} 字符，超过 Sunburst 的 5000 上限：先删减场地或镜头的特殊要求`);
   const hash = paramsKey(kind, { prompt, seconds: secs, resolution: kind === "video" ? v.resolution : "", frameJobId: kind === "video" ? s.frameJobId : kind === "scene" ? `${me!.sc.id}:v${me!.ver.v}` : s.compFile });
-  let unit: number = kind === "video" ? videoUsdPerSec(s, v.resolution) : FRAME_USD_FALLBACK;
+  let unit: number = kind === "video" ? videoUsdPerSec(s, v.resolution) : kind === "frame" ? SHORT_FRAME_USD : FRAME_USD_FALLBACK;
   // 估价接口免费；能拿到金额就以它为准
   try {
     const est =
-      kind === "video"
+      kind !== "scene"
         ? { usd: NaN }
         : await estimate(FRAME_MODEL, { prompt: "estimate", quality: "high", resolution: "2k", aspect_ratio: "9:16" });
     if (Number.isFinite(est.usd) && est.usd > 0) unit = kind === "video" ? est.usd / (secs || VIDEO_MIN_SEC) : est.usd;
@@ -1738,15 +1742,15 @@ async function frameRefs(v: ShortVideo, s: ShortShot): Promise<string[]> {
   for (const r of refPlan(v, s)) {
     const f = await r.file();
     if (!f) throw new Error("参考图文件不存在：先点「退回构图」，再打开 3D 点「保存」");
-    urls.push(await uploadFile(readFile(keyFromPath(f)), "image/png"));
+    urls.push(await uploadToFal(readFile(keyFromPath(f)), "image/png", `ref-${urls.length + 1}.png`));
   }
   if (!car && findTemplate(v.templateId).needsPackaging) {
     const pk = listAssets(v.projectId).filter((a) => a.kind === "packaging_photo" && fs.existsSync(assetPath(a))).slice(0, 3);
     if (!pk.length) throw new Error("开箱视频要先在产品页上传真实包装照片");
-    for (const a of pk) urls.push(await uploadFile(readFile(keyFromPath(assetPath(a))), a.mime));
+    for (const a of pk) urls.push(await uploadToFal(readFile(keyFromPath(assetPath(a))), a.mime, `pack-${urls.length + 1}`));
   }
-  for (const f of files.slice(0, Math.max(1, 16 - urls.length))) urls.push(await uploadFile(readFile(keyFromPath(f.file)), f.mime));
-  return urls;
+  for (const f of files.slice(0, Math.max(1, SHORT_FRAME_MAX_REFS - urls.length))) urls.push(await uploadToFal(readFile(keyFromPath(f.file)), f.mime, `product-${urls.length + 1}`));
+  return urls.slice(0, SHORT_FRAME_MAX_REFS);
 }
 
 /** 免费：保存浏览器用 3D 模型渲染的一张产品参考图（PNG data URL） */
@@ -1985,14 +1989,15 @@ async function runInBackground(key: string, videoId: string, shotId: string, kin
             ? { prompt: p.prompt, quality: "high", resolution: "2k", aspect_ratio: "9:16", enhance_prompt: false }
             : await (async () => {
                 const refs = await frameRefs(p.v, p.s);
-                return { prompt: p.prompt, ...(refs.length ? { image_urls: refs } : {}), quality: "high", resolution: "2k", aspect_ratio: "9:16", enhance_prompt: false };
+                if (!refs.length) throw new Error("没有参考图：先在 3D 里点「保存」");
+                return { prompt: p.prompt, image_urls: refs, image_size: { width: 1440, height: 2560 }, num_images: 1, enable_safety_checker: true };
               })();
       const job = insertJob({
         projectId: p.v.projectId,
         videoId,
         shotId,
         kind,
-        model: kind === "video" ? videoModelOf(p.s) : FRAME_MODEL,
+        model: jobModelOf(kind, p.s),
         input,
         paramsHash: p.hash,
         seconds: p.seconds,
@@ -2033,7 +2038,7 @@ export async function runJobAction(
     if (cur && !cur.error) throw new Error("这一镜正在生成，等它完成");
     const approval = overLimit ? gateOverLimit(videoId, shotId, kind, p.quote.costUsd) : "";
     runs.set(key, { kind, startedAt: Date.now(), step: "prep" });
-    await auditSubmit(p.v, p.s, kind, p.quote.costUsd, kind === "video" ? videoModelOf(p.s) : FRAME_MODEL, reason, approval);
+    await auditSubmit(p.v, p.s, kind, p.quote.costUsd, jobModelOf(kind, p.s), reason, approval);
     void runInBackground(key, videoId, shotId, kind, p, reason);
     return { result: state(videoId) };
   } catch (e) {
@@ -2098,7 +2103,11 @@ async function drive(job: JobRecord): Promise<void> {
   if (!requestId) {
     let req;
     try {
-      req = isArkModel(job.model) ? await arkSubmitVideo(job.model, job.input as unknown as ArkVideoInput) : await submit(job.model, job.input, job.idempotencyKey);
+      req = isArkModel(job.model)
+        ? await arkSubmitVideo(job.model, job.input as unknown as ArkVideoInput)
+        : isFalModel(job.model)
+          ? await falSubmitImage(job.model, job.input)
+          : await submit(job.model, job.input, job.idempotencyKey);
     } catch (e) {
       // 供应商明确拒绝（4xx）：没有扣费，任务作废；网络错误：保持 submitting，下次用同一个幂等键续提
       if (e instanceof HiggsfieldError && e.status && e.status < 500) {
@@ -2106,6 +2115,9 @@ async function drive(job: JobRecord): Promise<void> {
       } else if (isArkModel(job.model)) {
         // 方舟没有幂等键：重提可能重复扣费，所以不续提，让用户先去方舟控制台确认
         updateJob(job.id, { status: "unknown", error: `提交时网络断了，不知道方舟有没有收到，可能已扣 $${job.estUsd.toFixed(2)}。为了不重复扣费，先点「重新查一次」` });
+      } else if (isFalModel(job.model)) {
+        // fal 没有幂等键：不续提，记失败；万一 fal 收到了，最多多扣一张首帧的钱
+        updateJob(job.id, { status: "failed", error: `提交时网络断了：可以重做；fal 万一收到了，最多扣 $${job.estUsd.toFixed(2)}` });
       }
       throw e;
     }
@@ -2118,7 +2130,7 @@ async function drive(job: JobRecord): Promise<void> {
   for (;;) {
     let r: HfRequest & { tokens?: number };
     try {
-      r = isArkModel(job.model) ? await arkGetTask(requestId) : await getStatus(requestId);
+      r = isArkModel(job.model) ? await arkGetTask(requestId) : isFalModel(job.model) ? await falGetImage(job.model, requestId) : await getStatus(requestId);
     } catch (e) {
       // 查进度时网络抖动/供应商 5xx：任务已提交，不重提，继续等
       const transient = e instanceof HiggsfieldError && (!e.status || e.status >= 500);
@@ -2180,7 +2192,7 @@ async function drive(job: JobRecord): Promise<void> {
           note: `短视频${job.reason ? ` · 重做原因：${job.reason}` : ""}`,
         });
       }
-      if (!isArkModel(job.model)) await deleteRequest(requestId).catch(() => undefined);
+      if (!isArkModel(job.model) && !isFalModel(job.model)) await deleteRequest(requestId).catch(() => undefined);
       if (v && s && job.kind === "frame") await runFrameCheck(v.id, s.id, job.id, bytes);
       if (v && s && job.kind === "video") await runVideoCheck(v.id, s.id, job.id, bytes);
       if (v && s && job.kind === "video") await runLogoLock(v.id, s.id, job.id).catch(() => undefined);

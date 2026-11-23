@@ -13,6 +13,12 @@ export const DEFAULT_ATTEMPTS = 2;
 /** 视频：火山方舟 Seedance 2.5（直接调字节，不经 Higgsfield） */
 export const VIDEO_MODEL = "doubao-seedance-2-5-260628";
 export const FRAME_MODEL = "marketing-studio/image/sunburst";
+/** 短视频首帧：fal 上的 Seedream 4.5（$0.04/张，最多 10 张参考图）；家庭定妆照、场地图仍用 Sunburst */
+export const SHORT_FRAME_MODEL = "fal-ai/bytedance/seedream/v4.5/edit";
+export const SHORT_FRAME_USD = 0.04;
+export const SHORT_FRAME_MAX_REFS = 10;
+export const jobModelOf = (kind: "frame" | "video" | "scene", s: Pick<ShortShot, "hook" | "layout">) =>
+  kind === "video" ? videoModelOf(s) : kind === "frame" ? SHORT_FRAME_MODEL : FRAME_MODEL;
 /** 方舟官方价估算（美元/秒）：70 元/百万 token × 宽×高×24 帧/1024，按 7.1 换汇；完成后按方舟返回的实际 token 记账 */
 export const VIDEO_USD_PER_SEC = { "480p": 0.0958, "720p": 0.213 } as const;
 export type VideoResolution = keyof typeof VIDEO_USD_PER_SEC;
@@ -445,7 +451,7 @@ export function quoteJob(q: QuoteInput): Quote {
 
   return {
     kind,
-    model: kind === "video" ? videoModelOf(shot) : FRAME_MODEL,
+    model: jobModelOf(kind, shot),
     seconds: kind === "video" ? q.seconds : 0,
     resolution: kind === "video" ? video.resolution : "2k 竖版",
     unitUsd: q.unitUsd,
