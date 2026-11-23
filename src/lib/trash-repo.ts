@@ -3,8 +3,8 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
 
-export type TrashKind = "shots" | "frame" | "video" | "short_video";
-export const TRASH_LABEL: Record<TrashKind, string> = { shots: "镜头 / 开头", frame: "首帧", video: "视频", short_video: "整条短视频" };
+export type TrashKind = "shots" | "frame" | "video" | "short_video" | "portrait";
+export const TRASH_LABEL: Record<TrashKind, string> = { shots: "镜头 / 开头", frame: "首帧", video: "视频", short_video: "整条短视频", portrait: "家庭定妆照草稿" };
 
 export interface TrashItem {
   id: string;

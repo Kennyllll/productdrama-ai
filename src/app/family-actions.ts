@@ -11,6 +11,7 @@ import { putFile, readFile } from "@/lib/storage";
 import { adminError, currentActor, requireAdmin } from "@/lib/admin";
 import { logAction } from "@/lib/audit-repo";
 import { addRevision } from "@/lib/revisions-repo";
+import { addTrash } from "@/lib/trash-repo";
 
 const famData = (id: string) => {
   const f = getFamily(id);
@@ -225,7 +226,12 @@ export async function acceptPortraitAction(familyId: string, memberId: string, l
 export async function discardPortraitAction(familyId: string, memberId: string, look: string): Promise<Result<Family>> {
   const noAdmin = await adminError();
   if (noAdmin) return { error: noAdmin };
-  logAction(await currentActor(), { action: "丢弃定妆照", detail: `${getFamily(familyId)?.name ?? ""} / ${memberId} / ${look}` });
+  const actor = await currentActor();
+  const fam = getFamily(familyId);
+  const m0 = fam?.members.find((x) => x.id === memberId);
+  const draft = m0?.portraitDrafts?.[look];
+  logAction(actor, { action: "丢弃定妆照", detail: `${fam?.name ?? ""} / ${m0?.name ?? memberId} / ${look}${draft ? "；草稿进回收站，可恢复" : ""}` });
+  if (draft) addTrash({ projectId: null, videoId: null, kind: "portrait", label: `${fam?.name ?? ""} · ${m0?.name ?? memberId} · ${lookLabel(look)}`, usd: draft.usd, payload: { familyId, memberId, look, draft }, actor: actor?.name ?? "系统" });
   return edit(familyId, memberId, (m) => {
     if (m.portraitDrafts?.[look]) delete m.portraitDrafts[look];
     if (m.portraitJobs?.[look]?.error) delete m.portraitJobs[look];

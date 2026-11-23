@@ -6,6 +6,8 @@ import { logAction } from "@/lib/audit-repo";
 import { getTrash, listTrash, markTrash, TRASH_LABEL, type TrashItem } from "@/lib/trash-repo";
 import { getJob, getShortVideo, getShortVideoAny, listJobs, purgeShortVideo, restoreShortVideo, saveShortVideo } from "@/lib/shorts-repo";
 import { trashCleared } from "@/lib/short-audit";
+import { getFamily, updateMember } from "@/lib/families-repo";
+import type { Portrait } from "@/lib/families";
 import { usdText } from "@/lib/spend";
 import type { ShortShot } from "@/lib/shorts";
 
@@ -33,6 +35,16 @@ export async function restoreTrashAction(id: string): Promise<Result<string>> {
     if (t.kind === "short_video") {
       if (!t.videoId || !restoreShortVideo(t.videoId)) throw new Error("这条短视频已经找不到了");
       msg = `短视频「${t.label}」已恢复`;
+    } else if (t.kind === "portrait") {
+      const { familyId, memberId, look, draft } = t.payload as { familyId: string; memberId: string; look: string; draft: Portrait };
+      const m = getFamily(familyId)?.members.find((x) => x.id === memberId);
+      if (!m) throw new Error("这个家庭成员已经删了，不能恢复");
+      if (m.portraitDrafts?.[look]) throw new Error("这个造型已经有一张新草稿：先处理它（采用或不要），再恢复");
+      updateMember(familyId, memberId, (x) => {
+        x.portraitDrafts = { ...(x.portraitDrafts ?? {}), [look]: draft };
+      });
+      revalidatePath("/families");
+      msg = "定妆照草稿已放回家庭库，可以重新决定采不采用";
     } else {
       const v = t.videoId ? getShortVideo(t.videoId) : null;
       if (!v) throw new Error("所在的短视频已删除：先恢复短视频");
