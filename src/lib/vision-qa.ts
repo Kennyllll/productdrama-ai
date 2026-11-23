@@ -229,8 +229,31 @@ export async function locateGeometry(o: { plate: Buffer; support: string; width:
   };
 }
 
+/** 规则 #1 逐零件比对看几遍图（多数票） */
+const PRODUCT_VOTES = 3;
+const FRAME_PARTS = "handlebar stem, seat backrest (and any hole in it), front basket, rear basket, pedals and cranks, wheels (count and sizes), frame tube, front fender, logo";
+
+/** 逐零件结果 → 违反规则 #1 的问题。看几遍图投票：同一个零件至少 minVotes 遍都说「看得清、明显不一样」才算，单次看图的误报和漏报互相抵消 */
+export function frameProductIssues(runs: unknown[], minVotes = Math.floor(runs.length / 2) + 1): string[] {
+  const votes = new Map<string, { n: number; note: string }>();
+  for (const parts of runs) {
+    if (!Array.isArray(parts)) continue;
+    const seen = new Set<string>();
+    for (const p of parts as { part?: unknown; visible?: unknown; same?: unknown; note?: unknown }[]) {
+      if (!p || typeof p !== "object" || p.visible !== "clear" || p.same !== "no") continue;
+      const part = String(p.part ?? "零件").toLowerCase().trim();
+      if (seen.has(part)) continue;
+      seen.add(part);
+      const v = votes.get(part) ?? { n: 0, note: typeof p.note === "string" && p.note.trim() ? p.note.trim() : `${part}和实物不一样` };
+      v.n++;
+      votes.set(part, v);
+    }
+  }
+  return [...votes.values()].filter((v) => v.n >= minVotes).map((v) => v.note).slice(0, 8);
+}
+
 /** 短视频首帧：对照提示词和 3D 摆位看图，只报明显看得出的不一致 */
-export async function reviewShortFrame(o: { image: Buffer; productName: string; productFacts: string; framePrompt: string; description: string; facts3d: string; holiday: string; noBox: boolean; car?: { person: string }; groundMax?: number; productRefs?: Buffer[]; cadRender?: Buffer }): Promise<VisionReview> {
+export async function reviewShortFrame(o: { image: Buffer; productName: string; productFacts: string; framePrompt: string; description: string; facts3d: string; holiday: string; noBox: boolean; car?: { person: string }; groundMax?: number; productRefs?: Buffer[]; refNotes?: string[]; cadRender?: Buffer }): Promise<VisionReview> {
   const name = o.productName || "product";
   const prompt = o.car
     ? [
@@ -257,7 +280,7 @@ export async function reviewShortFrame(o: { image: Buffer; productName: string; 
     `4. Exactly one ${name}, with the correct structure (count the wheels, round wheels on axles, no melted or missing parts).`,
     ...(o.productRefs?.length
       ? [
-          `4b. The ${name} must be IDENTICAL to the real product in the reference photos (the images after the still). Compare it part by part and report every part whose shape, size, position or count differs, naming the part: the handlebar and the shape of its stem (straight or bent), the seat and the shape of its backrest including any hole or cut-out, each basket and where it is mounted, fenders, pedals and cranks and where they attach, every frame tube and how it bends, every wheel and its size, the logo position. A part hidden by a person or cut by the frame edge is fine.`,
+          `4b. Compare the ${name} part by part with the real product in the reference photos (the images after the still, each labelled with its view; for each part use the photo whose view is closest to the still). Judge each part from THIS camera angle. Fill "parts" with one entry for each of: ${FRAME_PARTS}. visible = "clear" only if that part's shape is plainly visible in the still; a part seen edge-on, from behind, too small to make out, hidden by a person or cut by the frame edge is "partly" or "hidden": a backrest seen from the side shows only its edge, so its hole is not visible; when the product is under about a quarter of the frame height, small parts (pedals, cranks, holes, logo) are not "clear". Count every wheel, including any small extra wheel under the frame. same = "no" only if a clearly visible part is plainly different from the real product: missing, extra, wrong count or position, straight where the real one clearly bends, solid where the real one has a hole that faces the camera here. For each part first write "expect": how that part looks in the reference photo taken from the closest angle (e.g. the backrest is a ring with a big see-through oval hole, so the background shows through it), then "seen": how it looks in the still, then decide. A stem that rises straight and curves only near the top is a bent stem. Small differences in curvature, perspective, light or detail are "yes"; if not sure, "unsure".`,
         ]
       : []),
     ...(o.cadRender
@@ -269,15 +292,20 @@ export async function reviewShortFrame(o: { image: Buffer; productName: string; 
     `6. Must not appear: the person filming (only a hand or feet at the frame edge if the prompt says so)${o.noBox ? ", any box, packaging or wrapping" : ""}, garbled text, watermarks, extra logos.`,
     "7. Human anatomy is correct (hands, fingers, limbs, faces).",
     `8. Framing like real phone ads: empty ground or floor below the lowest wheel or foot takes at most about ${o.groundMax ?? 20}% of the frame height; the ${name} (with its rider, if any) is not tiny; an adult next to the product is not shown full-length standing while the ${name} is a small object at their feet.`,
-    'Return JSON only: {"pass": boolean, "issues": string[], "product": string[]}. Each issue is ONE short sentence in Simplified Chinese naming who or what and the problem (e.g. "小孩的脚没有踩在脚踏上", "产品下面空地太多，约占画面 40%"). "product" repeats only the issues where the product itself differs from the real product (a part missing, extra, bent, reshaped, resized or moved); a part hidden by a person or the frame edge is not an issue.',
+    o.productRefs?.length
+      ? 'Return JSON only: {"pass": boolean, "issues": string[], "parts": [{"part": string, "expect": string, "seen": string, "visible": "clear" | "partly" | "hidden", "same": "yes" | "no" | "unsure", "note": string}]}. Each issue is ONE short sentence in Simplified Chinese naming who or what and the problem (e.g. "小孩的脚没有踩在脚踏上", "产品下面空地太多，约占画面 40%"); product part differences go only in "parts", whose "note" is one short Simplified Chinese sentence saying what differs (empty if same is "yes").'
+      : 'Return JSON only: {"pass": boolean, "issues": string[], "product": string[]}. Each issue is ONE short sentence in Simplified Chinese naming who or what and the problem (e.g. "小孩的脚没有踩在脚踏上", "产品下面空地太多，约占画面 40%"). "product" repeats only the issues where the product itself differs from the real product (a part missing, extra, bent, reshaped, resized or moved); a part hidden by a person or the frame edge is not an issue.',
   ].join("\n");
-  const refs = o.car ? [] : (o.productRefs ?? []).slice(0, 3);
+  const refs = o.car ? [] : (o.productRefs ?? []).slice(0, 5);
   const parts = [{ text: prompt }, await jpegPart(o.image, 1536)];
   if (o.cadRender && !o.car) parts.push({ text: `Exact factory CAD render of the ${name} from this shot's camera angle:` }, await jpegPart(o.cadRender, 1024));
-  for (const [i, r] of refs.entries()) parts.push({ text: `Reference photo ${i + 1} of the real ${name}:` }, await jpegPart(r, 1024));
-  const data = (await generate(parts, 120_000)) as { pass?: unknown; issues?: unknown; product?: unknown };
+  for (const [i, r] of refs.entries()) parts.push({ text: `Reference photo ${i + 1} of the real ${name}${o.refNotes?.[i] ? ` (${o.refNotes[i]})` : ""}:` }, await jpegPart(r, 1024));
+  type Raw = { pass?: unknown; issues?: unknown; product?: unknown; parts?: unknown };
+  const perPart = !!o.productRefs?.length && !o.cadRender && !o.car;
+  const [data, ...more] = (await Promise.all(Array.from({ length: perPart ? PRODUCT_VOTES : 1 }, () => generate(parts, 120_000)))) as Raw[];
   const strs = (a: unknown) => (Array.isArray(a) ? a.filter((x): x is string => typeof x === "string" && x.trim() !== "").map((x) => x.trim()).slice(0, 8) : []);
-  const product = strs(data.product);
+  // 逐零件：只有看得清、而且明显不一样的零件才算违反规则 #1；看不清、被挡、拿不准的不算
+  const product = perPart ? frameProductIssues([data, ...more].map((d) => d.parts)) : strs(data.product);
   const issues = [...new Set([...strs(data.issues), ...product])];
   return { pass: data.pass === true && issues.length === 0, issues, product };
 }

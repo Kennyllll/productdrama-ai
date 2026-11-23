@@ -1263,6 +1263,25 @@ async function cadRenderFor(v: ShortVideo, s: ShortShot): Promise<Buffer | undef
 }
 
 /** 首帧出图后自动看图：对照提示词和 3D；没 Key 或出错只记下来，不拦生成 */
+/** 首帧检查用的实物照：同角度那张放第一，再按角度补 45°、侧面、座椅和前轮特写，每张标明角度 */
+async function checkRefs(v: ShortVideo, s: ShortShot): Promise<{ productRefs: Buffer[]; refNotes: string[] }> {
+  const photos = listAssets(v.projectId).filter((a) => (a.kind === "product_photo" || a.kind === "white_photo") && a.angle && fs.existsSync(assetPath(a)));
+  const pick = (re: RegExp) => photos.find((a) => re.test(a.angle));
+  const same = sameSidePhoto(v, s);
+  const named: [string | null | undefined, string][] = [
+    [same, "same side as the still"],
+    [pick(/45|hero|前/i) && assetPath(pick(/45|hero|前/i)!), "front three-quarter view"],
+    [pick(/side|侧/i) && assetPath(pick(/side|侧/i)!), "side view"],
+    [pick(/seat|座/i) && assetPath(pick(/seat|座/i)!), "seat close-up"],
+    [pick(/wheel|轮/i) && assetPath(pick(/wheel|轮/i)!), "front wheel, pedals and cranks close-up"],
+  ];
+  const seen = new Set<string>();
+  const list = named.filter((x): x is [string, string] => !!x[0] && !seen.has(x[0]) && !!seen.add(x[0]));
+  const refs = list.length ? list : (await productRefFiles(v.projectId, v.colorId)).filter((f) => !/svg/.test(f.mime)).slice(0, 3).map((f): [string, string] => [f.file, ""]);
+  const top = refs.slice(0, 5);
+  return { productRefs: top.map(([f]) => fs.readFileSync(f)), refNotes: top.map(([, n]) => n) };
+}
+
 async function runFrameCheck(videoId: string, shotId: string, jobId: string, bytes: Buffer) {
   const at = new Date().toISOString();
   const v0 = getShortVideo(videoId);
@@ -1283,7 +1302,7 @@ async function runFrameCheck(videoId: string, shotId: string, jobId: string, byt
         holiday: th.theme && th.theme !== "none" ? th.themeText || th.theme : "none",
         noBox: s0.hook ? s0.hook.entry !== "unbox" : !/\b(box|packag|unbox)/i.test(s0.framePrompt),
         car: s0.hook?.scene === "car" ? { person: carPersonText(v0, s0) } : undefined,
-        productRefs: (await productRefFiles(v0.projectId, v0.colorId)).filter((f) => !/svg/.test(f.mime)).slice(0, 3).map((f) => fs.readFileSync(f.file)),
+        ...(await checkRefs(v0, s0)),
         cadRender: await cadRenderFor(v0, s0),
       });
       // 说没过却一条问题都没列：当成“没检查成”，让用户自己看，不显示“发现 0 个问题”
