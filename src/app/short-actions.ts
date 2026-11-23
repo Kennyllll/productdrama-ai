@@ -1158,7 +1158,7 @@ function refPlan(v: ShortVideo, s: ShortShot): RefPart[] {
   const comp = s.compFile ? path.join(videoDir(v.projectId, v.id), s.compFile) : null;
   if (comp) {
     out.push({
-      text: "is a simple 3D blocking render of this exact shot: match its camera angle, lens, framing, and the product's position, size and orientation exactly; furniture sits where the blocking puts it. Replace the untextured shapes with a real, lived-in home matching the description; the translucent mannequins or capsule mark where people are. Plain sky or empty flat ground at the edges of the render is just unfinished 3D: fill it as the location text describes.",
+      text: "is a 3D blocking render of this exact shot: match its camera angle, lens, framing and the product's position, size and orientation exactly; furniture stays where it is. Turn the untextured shapes into a real lived-in home as described; translucent mannequins or a capsule mark the people. Empty sky or flat ground at the edges is unfinished 3D: fill it from the location text.",
       file: async () => (fs.existsSync(comp) ? comp : null),
     });
     if (angleRefPath(v, s))
@@ -1189,7 +1189,7 @@ function refPlan(v: ShortVideo, s: ShortShot): RefPart[] {
   const people = cands.find((x) => famOf(x) === famOf(s));
   if (place && people && place === people) {
     out.push({
-      text: `is the last frame of ${place === done[done.length - 1] ? "the previous shot" : "an earlier shot"} in this same video, used only to keep the same people (faces, hair, wardrobe), ${turned(place) ? "decor style and lighting; this camera faces another way, so the background comes from Image 1 and the location text" : "home, decor and lighting"}, and the same product. A new moment, angle and action of the same clip, not a copy of that frame.`,
+      text: `is the last frame of ${place === done[done.length - 1] ? "the previous shot" : "an earlier shot"} in this video: keep only its people (faces, hair, wardrobe), ${turned(place) ? "decor style and light; this camera faces another way, so the background follows Image 1 and the location text" : "home, decor and light"}. Ignore its product (it may be drawn wrong): draw the product only from the real photos. A new moment, not a copy.`,
       file: () => stillOf(v, place),
     });
   } else {
@@ -1209,7 +1209,7 @@ function refPlan(v: ShortVideo, s: ShortShot): RefPart[] {
       });
     if (people)
       out.push({
-        text: "is a frame from an earlier shot with the same family in a different place. Use it only for the people: same faces, age, hair and wardrobe, and the same product with the same accessories. Ignore its room and background: this shot is in a different location.",
+        text: "is a frame from an earlier shot with the same family in a different place. Use it only for the people: same faces, age, hair and wardrobe. Ignore the product in that frame (it may be drawn wrong): draw it only from the real product photos. Ignore its room and background: this shot is in a different location.",
         file: () => stillOf(v, people),
       });
   }
@@ -1422,7 +1422,7 @@ function framePromptOf(v: ShortVideo, s: ShortShot): string {
     s.hook?.selfie ? selfieFrameText(selfieWho(v, s)) : operatorPrompt(s.operator, s.layout, filmerText(v, s)),
     s.hook?.selfie ? "" : "Nobody looks into the lens: each person's eyes are on the product, their hands or another person.",
     s.productNote.trim()
-      ? `Product: ${p?.name || "the product"} — use the product reference photos: keep exact geometry, proportions, colors, materials and logo placement; do not redesign, recolor or add parts.${(() => { const st = p?.bible.find((f) => f.key === "structure")?.value.trim(); return st ? ` Exact structure: ${st}.` : ""; })()} Matte, even light on the product: no glare, sparkle or bright highlight spots.`
+      ? `Product: ${p?.name || "the product"} — use the product reference photos: keep exact geometry, proportions, colors, materials and logo placement; do not redesign, recolor or add parts.${(() => { const st = (p?.bible.find((f) => f.key === "structure")?.value.trim() || p?.bible.find((f) => f.key === "geometry")?.value.trim())?.replace(/[（(]待确认[)）]/g, "").trim(); return st ? ` Exact structure: ${st}.` : ""; })()} Matte, even light on the product: no glare, sparkle or bright highlight spots.`
       : "",
     colorText(v),
     s.compositeNote.trim() ? "Any screen, projection or printed graphic on the product is left plain/blank; it will be composited later." : "",
@@ -1456,7 +1456,7 @@ function framePromptOf(v: ShortVideo, s: ShortShot): string {
     const sc = sceneText(me.sc, me.ver, me.sh, s.layout ? itemSight(s.layout) : undefined);
     const i = parts.indexOf(sc);
     const keep = sc.length - (out.length - FRAME_PROMPT_MAX) - 2;
-    if (i >= 0 && keep > 200) parts[i] = `${sc.slice(0, keep).replace(/\s+\S*$/, "")}…`;
+    if (i >= 0) parts[i] = keep > 120 ? `${sc.slice(0, keep).replace(/\s+\S*$/, "")}…` : `${sc.split(/(?<=\.)\s/)[0]}`;
     out = build();
   }
   return out;

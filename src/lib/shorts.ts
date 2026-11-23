@@ -309,6 +309,10 @@ export type JobKind = "frame" | "video" | "scene";
 /** unknown = 提交时断线，不知道供应商有没有收到（按可能已扣费记账，挡住本镜重提）；abandoned = 用户放弃等待，按已扣费记账 */
 export type JobStatus = "submitting" | "submitted" | "completed" | "failed" | "unknown" | "abandoned";
 
+/** 首帧因为产品和实物不一致而重出：重做原因用这个开头 */
+export const RULE1_REDO = "产品和实物不一致";
+export const RULE1_MAX = 3;
+
 export interface GenJob {
   id: string;
   videoId: string;
@@ -412,7 +416,11 @@ export function quoteJob(q: QuoteInput): Quote {
   // 出图 / 视频每次都是随机的：参数相同也可能这次变形、下次正常，所以只提示不拦
   if (sameKind.some((j) => j.paramsHash === q.paramsHash && j.status !== "failed")) warnings.push("参数和上次完全相同：这次只是重新随机生成一次，结果可能好也可能还一样");
   if (attempt >= 2 && q.reason.trim().length < 4) blocked.push("这是重做：请写重做原因，这次改了什么、为什么（至少 4 个字）");
-  if (attempt > DEFAULT_ATTEMPTS && !q.overLimit) blocked.push(`本镜已经 ${charged.length} 次，超过默认上限（1 次 + 1 次重做）：先考虑剪辑或补短镜头；确实要重做请勾选“超限重新审批”`);
+  // 规则 #1：车和实物不一致的首帧重出是必须的，不占默认次数，但最多 3 次
+  const rule1 = kind === "frame" && q.reason.startsWith(RULE1_REDO);
+  const rule1Done = sameKind.filter((j) => j.status !== "failed" && j.reason.startsWith(RULE1_REDO)).length;
+  if (rule1 && rule1Done >= RULE1_MAX) blocked.push(`因为车不对已经重出 ${rule1Done} 次：别再花钱重出。换一个能看清产品的 3D 角度、补同角度的实物照，或者向工厂要 STEP`);
+  if (attempt > DEFAULT_ATTEMPTS && !q.overLimit && !rule1) blocked.push(`本镜已经 ${charged.length} 次，超过默认上限（1 次 + 1 次重做）：先考虑剪辑或补短镜头；确实要重做请勾选“超限重新审批”`);
   if (overHook) {
     if (!q.overLimit) blocked.push(`超出这个开头的预算 $${budget.toFixed(2)}（生成秒数 × $${MAX_USD_PER_SECOND}）：已花 $${videoSpent.toFixed(2)}，本次 $${costUsd.toFixed(2)}。确实要做请勾选“超限重新审批”`);
   } else if (videoSpent + costUsd > budget + 1e-9) blocked.push(`超出本条视频预算 $${budget.toFixed(2)}：已花 $${videoSpent.toFixed(2)}，本次 $${costUsd.toFixed(2)}。需要你主动提高预算`);
