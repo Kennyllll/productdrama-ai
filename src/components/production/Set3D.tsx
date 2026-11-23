@@ -696,7 +696,14 @@ export function Set3D({
             more
           )}
           {onSave ? (
-            <div className="space-y-2 border-t border-white/10 pt-3 text-xs text-neutral-400">
+            <details className="group border-t border-white/10 pt-3 text-xs text-neutral-400">
+              <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-white [&::-webkit-details-marker]:hidden">
+                运镜和拍摄者
+                <span className="text-xs text-neutral-400">{MOVES.find((m) => m.id === (layout.move?.kind ?? "static"))?.label}</span>
+                <span className="ml-auto text-xs text-neutral-500 group-open:hidden">展开</span>
+                <span className="ml-auto hidden text-xs text-neutral-500 group-open:inline">收起</span>
+              </summary>
+              <div className="mt-2 space-y-2">
               <label className="block">
                 运镜
                 <select
@@ -718,7 +725,8 @@ export function Set3D({
                 ▶ 预演运镜（3 秒）
               </button>
               {moveExtra?.(code, Boolean(shot.locked), { layout, setCamH: (h) => update({ camPos: [layout.camPos[0], layout.camPos[1], h] }) })}
-            </div>
+              </div>
+            </details>
           ) : null}
           {compact ? null : (
             <>

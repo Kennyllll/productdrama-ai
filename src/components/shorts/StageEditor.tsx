@@ -927,7 +927,7 @@ export function StageEditor({
   };
   const vBrain = ro ? null : (
     <div className="space-y-2 rounded-xl border border-violet-400/30 bg-violet-400/5 p-3">
-      <p className="text-white">跟大脑说一句 <span className="text-[11px] text-neutral-400">调人偶和产品（家具在「场地」里改，摄影机在右边「镜头」里调）</span></p>
+      <p className="text-white">跟大脑说一句 <span className="text-[11px] text-neutral-400">说想怎么摆人和车，大脑帮你摆</span></p>
       <div className="flex gap-2">
         <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="比如：小孩骑在车上，大人站在旁边，其他细节你帮我调" className="min-w-0 flex-1 rounded border border-white/10 bg-neutral-950 px-2 py-1 text-white" />
         <button type="button" disabled={!brainReady || thinking || askOk || ask.trim().length < 2} onClick={() => setAskOk(true)} className="rounded-lg bg-violet-400 px-3 py-1 font-medium text-black disabled:opacity-40">
