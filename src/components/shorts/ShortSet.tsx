@@ -232,8 +232,8 @@ export function ShortSet({
       ) : tip ? (
         <p className="flex items-center gap-3 rounded-lg border border-sky-400/30 bg-sky-400/5 px-3 py-2 text-sm text-sky-100">
           <span>
-            <button type="button" className="underline decoration-dotted" onClick={() => jump("pd-3d-model")}>① 左边「模型」</button>：点人或车，拖箭头、选姿势　
-            <button type="button" className="underline decoration-dotted" onClick={() => jump("pd-3d-camera")}>② 右边「镜头」</button>：拖地图上的黄点调机位　③ 点「保存」
+            <button type="button" className="underline decoration-dotted" onClick={() => jump("pd-3d-model")}>① 模型</button>：点人或车，拖箭头、选姿势　
+            <button type="button" className="underline decoration-dotted" onClick={() => jump("pd-3d-camera")}>② 镜头</button>：拖地图上的黄点调机位　③ 点右上角「保存」
           </span>
           <button type="button" onClick={() => (localStorage.setItem("pd-3d-tip", "1"), setTip(false))} className="ml-auto text-xs text-neutral-400 hover:text-white">
             知道了
@@ -261,7 +261,7 @@ export function ShortSet({
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         <section id="pd-3d-model" className="min-w-0 rounded-xl border border-white/10 p-3">
           <h2 className="mb-2 text-sm font-medium text-white">
-            模型 <span className="text-xs font-normal text-neutral-400">人、车、家具放在哪、什么姿势</span>
+            ① 模型 <span className="text-xs font-normal text-neutral-400">人、车、家具放在哪、什么姿势</span>
           </h2>
           {st ? (
             <StageEditor
@@ -291,7 +291,7 @@ export function ShortSet({
         </section>
         <section id="pd-3d-camera" className="min-w-0 space-y-3 rounded-xl border border-sky-400/20 p-3">
           <h2 className="text-sm font-medium text-white">
-            镜头 <span className="text-xs font-normal text-neutral-400">摄影机放在哪、拍成什么样</span>
+            ② 镜头 <span className="text-xs font-normal text-neutral-400">摄影机放在哪、拍成什么样</span>
           </h2>
           <Set3D
             compact

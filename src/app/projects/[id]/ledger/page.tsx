@@ -139,7 +139,7 @@ export default async function LedgerPage({ params, searchParams }: { params: Pro
                             E2-{shot}
                           </Link>
                         ) : (
-                          shot
+                          shot.replace(/ \/ (\d+)$/, " · 第 $1 镜")
                         )}
                       </td>
                       {kinds.map((k) => {

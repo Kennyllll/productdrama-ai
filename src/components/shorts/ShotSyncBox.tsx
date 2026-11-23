@@ -82,12 +82,12 @@ export function ShotSyncBox({
       ))}
       {now.stale && !now.full.length ? <p className="text-emerald-200">文字和现在的 3D 没有冲突</p> : null}
       {now.notes.length ? (
-        <div className="space-y-0.5 pt-1 text-sky-200">
-          <p className="text-neutral-400">3D 做不到的，先说清楚：</p>
+        <details className="space-y-0.5 pt-1 text-sky-200">
+          <summary className="cursor-pointer select-none text-neutral-400">3D 摆不出来的 {now.notes.length} 处（不影响出片，点开看）</summary>
           {now.notes.map((x) => (
             <p key={x.key}>· {x.text}</p>
           ))}
-        </div>
+        </details>
       ) : null}
       {!saved ? <p className="text-neutral-400">摆好以后点上方「保存」：人数不对就点「+ 小孩」「+ 大人」。</p> : null}
     </div>
