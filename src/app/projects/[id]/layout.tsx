@@ -1,5 +1,5 @@
-import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { NotFoundView } from "@/components/NotFoundView";
 import { ProjectStatusBar } from "@/components/ProjectStatusBar";
 import { GuideRail } from "@/components/production/GuideRail";
 import { listDecisions, listGuideMessages } from "@/lib/production-repo";
@@ -17,7 +17,8 @@ export default async function ProjectLayout({
 }) {
   const { id } = await params;
   const project = findProject(id);
-  if (!project) notFound();
+  // notFound() thrown from this layout leaves the client router stuck on the 404 page (Next 15), so render it inline.
+  if (!project) return <NotFoundView />;
   const local = project.source === "local";
   const videoTitles = local ? Object.fromEntries(listShortVideos(id).map((v) => [v.id, v.title])) : {};
   return (
