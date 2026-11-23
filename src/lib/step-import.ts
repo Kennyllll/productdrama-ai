@@ -94,3 +94,55 @@ export function stepLengthCm(info: StepInfo, up: "z" | "y"): number {
   const [x, y, z] = info.sizeM;
   return Math.round(Math.max(x, up === "z" ? y : z) * 1000) / 10;
 }
+
+// ---- 工厂 2D 图纸（DXF）：读尺寸标注 + 出预览图 ----
+const DXF_SCRIPT = path.join(process.cwd(), "scripts", "cad", "dxf_info.py");
+export const MAX_DXF_BYTES = 50 * 1024 * 1024;
+
+/** DWG 文件头 AC10xx：平台读不了，要另存为 DXF */
+export const isDwg = (buf: Buffer) => /^AC10\d\d/.test(buf.subarray(0, 6).toString("latin1"));
+export const isDxf = (buf: Buffer) => {
+  const h = buf.subarray(0, 4096).toString("latin1");
+  return h.startsWith("AutoCAD Binary DXF") || (/\bSECTION\b/.test(h) && /\b(HEADER|ENTITIES|TABLES)\b/.test(h));
+};
+
+export interface DxfDim {
+  kind: string;
+  valueMm: number;
+  text: string;
+}
+export interface DxfInfo {
+  units: number;
+  extentsMm: [number, number];
+  dims: DxfDim[];
+}
+
+export async function readDxf(dxf: Buffer): Promise<{ info: DxfInfo; png: Buffer }> {
+  if (!cadToolsReady()) throw new Error(NEED_CAD_TOOLS);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pd-dxf-"));
+  try {
+    const src = path.join(dir, "in.dxf");
+    const out = path.join(dir, "out.png");
+    fs.writeFileSync(src, dxf);
+    let stdout = "";
+    try {
+      stdout = await run(envPython(), [DXF_SCRIPT, src, out], 5 * 60_000);
+    } catch (e) {
+      stdout = (e as { stdout?: string }).stdout ?? "";
+    }
+    let r: { ok?: boolean; error?: string; units?: number; extents_mm?: number[]; dims?: { kind: string; value_mm: number; text: string }[] } = {};
+    try {
+      r = JSON.parse(stdout.trim().split("\n").pop() ?? "");
+    } catch {
+      throw new Error("图纸读取没有结果：文件可能损坏");
+    }
+    if (!r.ok || !fs.existsSync(out)) throw new Error(r.error ? `读不了这个 DXF：${r.error}` : "读不了这个 DXF");
+    const e = r.extents_mm ?? [];
+    return {
+      png: fs.readFileSync(out),
+      info: { units: r.units ?? 0, extentsMm: [e[0] ?? 0, e[1] ?? 0], dims: (r.dims ?? []).map((d) => ({ kind: d.kind, valueMm: d.value_mm, text: d.text })) },
+    };
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}

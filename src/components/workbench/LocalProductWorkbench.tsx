@@ -7,6 +7,8 @@ import { useActionState, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { saveProductAction } from "@/app/actions";
 import { installCadToolsAction } from "@/app/model-actions";
+import { DrawingCalibrate } from "@/components/workbench/DrawingCalibrate";
+import type { ModelCad } from "@/lib/model-repo";
 import { Tag } from "@/components/ui";
 import { BibleRow } from "@/components/workbench/BibleRow";
 import { ColorKits, ModelBuilder, PhotoSlots, StickersBody } from "@/components/workbench/ProductKit";
@@ -120,7 +122,7 @@ export function LocalProductWorkbench({
   details: AssetView[];
   logo: AssetView | null;
   packaging: AssetView[];
-  model: { id: string; originalName: string; size: number; source?: string } | null;
+  model: { id: string; originalName: string; size: number; source?: string; cad?: ModelCad | null } | null;
   kit: KitData;
   todo: TodoItem[];
   /** 照片 id → 太小 / 太暗 / 太糊 */
@@ -378,7 +380,7 @@ export function LocalProductWorkbench({
           {model ? (
             <p className="flex flex-wrap items-center gap-3 text-sm text-neutral-300">
               <Tag tone="emerald">在用</Tag>
-              {model.source === "fal" ? <Tag tone="amber">近似（照片建模）：车可能走样，尽量换成工厂 STEP</Tag> : <Tag tone="emerald">精确（工厂文件）</Tag>}
+              {model.source !== "fal" ? <Tag tone="emerald">精确（工厂文件）</Tag> : model.cad?.ok ? <Tag tone="emerald">校准（照片模型 + 2D 图纸尺寸）：零件形状仍照实物照</Tag> : <Tag tone="amber">近似（照片建模）：车可能走样，尽量换成工厂 STEP，或传 2D 图纸校准</Tag>}
               <span className="truncate" title={model.originalName}>
                 {model.originalName} · {formatSize(model.size)}
               </span>
@@ -435,6 +437,9 @@ export function LocalProductWorkbench({
             </Part>
             <Part title="B. 没有工厂文件：用角度照建模（近似）" hint="用第 2 步的角度照，要花钱，提交前先显示价格。建好后先审核。照片建的模型只用来定位置和方向，车的样子照实物照画，可能走样，尽量向工厂要 STEP。">
               <ModelBuilder kit={kit} target="shape" />
+            </Part>
+            <Part title="C. 有工厂 2D 图纸（DXF）：校准照片模型" hint="读出图纸上的长宽高，把照片模型缩放到真实尺寸，再比比例。差 5% 以内才算校准。只有 DWG 的话请工厂另存为 DXF。免费。">
+              <DrawingCalibrate projectId={projectId} hasModel={!!model} cad={model?.cad ?? null} source={model?.source} />
             </Part>
           </div>
         </details>

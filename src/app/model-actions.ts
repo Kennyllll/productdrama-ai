@@ -9,9 +9,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/lib/db";
-import { grayGlb, groundGlb, realSizeFactor, scaleGlb, turnGlb } from "@/lib/glb-gray";
+import { glbSizeRaw, grayGlb, groundGlb, realSizeFactor, scaleGlb, turnGlb } from "@/lib/glb-gray";
 import { cleanRig, scaleRig } from "@/lib/figures";
-import { saveRig } from "@/lib/product-rig-repo";
+import { getRig, saveRig } from "@/lib/product-rig-repo";
 import { keyFromPath, putFile, readFile } from "@/lib/storage";
 import { installCadTools, stepLengthCm, stepToGlb } from "@/lib/step-import";
 import {
@@ -40,6 +40,9 @@ import {
   getModelJob,
   getProductModel,
   getProductModelById,
+  setModelCad,
+  CAD_MAX_DEV_PCT,
+  type ModelCad,
   replaceModelFile,
   stepKey,
   isGlb,
@@ -366,6 +369,48 @@ export async function compareModelAction(modelId: string, shots: { photoId: stri
       return { label: s.label, render: Buffer.from(b64, "base64"), photo: fs.readFileSync(assetPath(a)) };
     });
     return { result: await compareModelToPhotos({ productName: p?.name ?? "", structure, pairs }) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 用工厂 2D 图纸的长宽高校准在用的模型：照片模型按图纸长度缩放，再比长宽高比例（免费） */
+export async function calibrateModelAction(projectId: string, input: { file: string; lengthCm: number; widthCm: number | null; heightCm: number | null }): Promise<Result<ModelCad>> {
+  try {
+    const m = getProductModel(projectId);
+    if (!m) throw new Error("先要有一个审核通过的 3D 模型（照片建模或工厂文件），再用图纸校准");
+    const ok = (n: number | null) => n === null || (Number.isFinite(n) && n > 5 && n < 1000);
+    if (!input.lengthCm || !ok(input.lengthCm) || !ok(input.widthCm) || !ok(input.heightCm)) throw new Error("长宽高要填厘米，在 5 到 1000 之间");
+    if (!input.heightCm && !input.widthCm) throw new Error("除了长度，至少再填高度或宽度，才能比形状比例");
+    const k = keyFromPath(modelPath(m));
+    const buf = readFile(k);
+    const [x, y, z] = glbSizeRaw(buf);
+    const L = Math.max(x, z), W = Math.min(x, z), H = y;
+    if (!(L > 0 && H > 0)) throw new Error("读不出模型尺寸");
+    const lines: string[] = [];
+    const devs: number[] = [];
+    const cmp = (name: string, got: number, cm: number | null) => {
+      if (!cm) return;
+      const want = cm / input.lengthCm;
+      const d = Math.abs(got / L / want - 1) * 100;
+      devs.push(d);
+      lines.push(`${name}：模型 ${((got / L) * input.lengthCm).toFixed(1)} cm，图纸 ${cm} cm，差 ${d.toFixed(1)}%`);
+    };
+    cmp("高", H, input.heightCm);
+    cmp("宽", W, input.widthCm);
+    const devPct = Math.round(Math.max(...devs) * 10) / 10;
+    // 照片模型没有准确单位：按图纸长度缩放，接触点跟着缩
+    if (m.source === "fal" && Math.abs((m.lengthCm ?? 0) - input.lengthCm) > 0.1) {
+      const factor = m.lengthCm ? input.lengthCm / m.lengthCm : 1;
+      replaceModelFile(m.id, scaleGlb(buf, input.lengthCm / 100), input.lengthCm);
+      const g = getRig(m.id);
+      if (g && factor !== 1) saveRig(m.id, scaleRig(g, factor));
+    }
+    const cad: ModelCad = { file: input.file.slice(0, 200), lengthCm: input.lengthCm, widthCm: input.widthCm, heightCm: input.heightCm, devPct, ok: devPct <= CAD_MAX_DEV_PCT, lines, at: new Date().toISOString() };
+    setModelCad(m.id, cad);
+    logAction(await currentActor(), { action: "model_cad_calibrate", projectId, detail: `${cad.file}：${lines.join("；")}` });
+    refresh(projectId);
+    return { result: cad };
   } catch (e) {
     return fail(e);
   }

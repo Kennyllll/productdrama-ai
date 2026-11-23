@@ -26,7 +26,24 @@ export interface ProductModel {
   lengthCm: number | null;
   /** fal 返回的文件地址：给白模贴色时直接引用，不用再上传 */
   remoteUrl: string | null;
+  /** 用工厂 2D 图纸校准的结果 */
+  cad: ModelCad | null;
 }
+
+export interface ModelCad {
+  file: string;
+  lengthCm: number;
+  widthCm: number | null;
+  heightCm: number | null;
+  /** 模型比例和图纸差多少（%，取最大的一项） */
+  devPct: number;
+  ok: boolean;
+  lines: string[];
+  at: string;
+}
+
+/** 比例差在这以内才算「校准」 */
+export const CAD_MAX_DEV_PCT = 5;
 
 interface Row {
   id: string;
@@ -41,6 +58,7 @@ interface Row {
   note: string;
   length_cm: number | null;
   remote_url: string | null;
+  cad_json?: string | null;
 }
 
 const toModel = (r: Row): ProductModel => ({
@@ -56,7 +74,18 @@ const toModel = (r: Row): ProductModel => ({
   note: r.note ?? "",
   lengthCm: r.length_cm,
   remoteUrl: r.remote_url,
+  cad: (() => {
+    try {
+      return r.cad_json ? (JSON.parse(r.cad_json) as ModelCad) : null;
+    } catch {
+      return null;
+    }
+  })(),
 });
+
+export function setModelCad(id: string, cad: ModelCad) {
+  getDb().prepare("UPDATE product_models SET cad_json = ? WHERE id = ?").run(JSON.stringify(cad), id);
+}
 
 export const modelKey = (m: ProductModel) => storageKey(m.projectId, "models", m.fileName);
 export const modelPath = (m: ProductModel) => localPath(modelKey(m));
@@ -67,8 +96,9 @@ const refsKey = (projectId: string, colorId: string | null) => storageKey(projec
 export const stepKey = (m: ProductModel) => storageKey(m.projectId, "models", `${m.id}.step`);
 
 /** 产品锁定等级：exact = 工厂文件（STEP / 带材质 GLB），出图时形状照模型；approx = 照片 AI 建模，只管位置和方向 */
-export const modelPrecision = (m: ProductModel | null): "exact" | "approx" | "none" => (!m ? "none" : m.source === "fal" ? "approx" : "exact");
-export const PRECISION_LABEL = { exact: "精确（工厂文件）", approx: "近似（照片建模）", none: "没有模型" } as const;
+export type ModelPrecision = "exact" | "calibrated" | "approx" | "none";
+export const modelPrecision = (m: ProductModel | null): ModelPrecision => (!m ? "none" : m.source !== "fal" ? "exact" : m.cad?.ok ? "calibrated" : "approx");
+export const PRECISION_LABEL: Record<ModelPrecision, string> = { exact: "精确（工厂文件）", calibrated: "校准（照片模型 + 2D 图纸尺寸）", approx: "近似（照片建模）", none: "没有模型" };
 
 /** 换了模型文件（例如 STEP 换朝上的轴重新转换）：更新大小和长度 */
 export function replaceModelFile(id: string, bytes: Buffer, lengthCm: number | null) {

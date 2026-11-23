@@ -400,6 +400,7 @@ function migrate(db: Database.Database) {
   add("source", "TEXT NOT NULL DEFAULT 'upload'");
   add("note", "TEXT NOT NULL DEFAULT ''");
   add("length_cm", "REAL");
+  add("cad_json", "TEXT");
   add("remote_url", "TEXT");
   const vcols = db.prepare("PRAGMA table_info(short_videos)").all() as { name: string }[];
   if (!vcols.some((c) => c.name === "deleted_at")) db.exec("ALTER TABLE short_videos ADD COLUMN deleted_at TEXT");

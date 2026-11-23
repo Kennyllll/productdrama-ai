@@ -120,3 +120,20 @@ export function scaleGlb(buf: Buffer, lengthM: number): Buffer {
     }
   return writeGlb(json, rest);
 }
+
+/** 模型网格自己的长宽高（x / y / z，没算节点缩放和旋转）：只用来比例比对 */
+export function glbSizeRaw(buf: Buffer): [number, number, number] {
+  const { json } = readGlb(buf) as { json: Gltf & { accessors?: { min?: number[]; max?: number[] }[] } };
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  for (const m of json.meshes ?? []) for (const p of m.primitives ?? []) {
+    const a = p.attributes?.POSITION;
+    const acc = a === undefined ? undefined : json.accessors?.[a];
+    if (!acc?.min || !acc.max) continue;
+    for (let i = 0; i < 3; i++) {
+      lo[i] = Math.min(lo[i], acc.min[i]);
+      hi[i] = Math.max(hi[i], acc.max[i]);
+    }
+  }
+  return [0, 1, 2].map((i) => (Number.isFinite(hi[i] - lo[i]) ? hi[i] - lo[i] : 0)) as [number, number, number];
+}
