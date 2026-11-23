@@ -25,7 +25,7 @@ export default function DashboardPage() {
   const projects = listLocalProjects();
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
-      <PageHeader title="项目中心" description="每个产品一张卡片。点「短视频」或「长视频」进入制作。" />
+      <PageHeader title="项目中心" description="每个产品一张卡片。先把「产品资料」填完整，再点「短视频」开始做。" />
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           {projects.length === 0 ? (
@@ -60,7 +60,6 @@ export default function DashboardPage() {
                       {p.brand} · 更新于 {formatDate(p.updatedAt)}
                     </p>
                   </div>
-                  <DeleteProjectButton id={p.id} name={p.name} />
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <Fact label="产品资料" value={bible.length ? `${filled}/${bible.length} 项 · ${photos} 张照片` : `${photos} 张照片`} ok={photos > 0} />
@@ -72,12 +71,15 @@ export default function DashboardPage() {
                   <Link href={`${base}/shorts`} className={shortFirst ? primary : secondary}>
                     短视频
                   </Link>
-                  <Link href={`${base}/creative`} className={shortFirst ? secondary : primary}>
-                    长视频
-                  </Link>
                   <Link href={`${base}/product`} className={secondary}>
                     产品资料
                   </Link>
+                  <Link href={`${base}/creative`} className={shortFirst ? "px-2 py-1.5 text-sm text-neutral-400 hover:text-white" : primary}>
+                    长视频
+                  </Link>
+                  <span className="ml-auto">
+                    <DeleteProjectButton id={p.id} name={p.name} />
+                  </span>
                 </div>
               </article>
             );

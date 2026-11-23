@@ -23,7 +23,7 @@ export function AdFactsForm({ projectId, initial }: { projectId: string; initial
   const bad = Object.keys(errs).length > 0;
   return (
     <section id="ad-facts" className="scroll-mt-4 rounded-xl border border-white/10 bg-neutral-900/70 p-5">
-      <h2 className="text-base font-semibold text-white">5. 广告里的数字和说法（可选）</h2>
+      <h2 className="flex items-center gap-3 text-base font-semibold text-white"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-xs">5</span>广告里的数字和说法<span className="text-xs font-normal text-neutral-500">可选</span></h2>
       <p className="mt-1 text-xs text-neutral-400">
         Hook 和字幕里写价格、原价、库存、评分、评论数、安全认证，都要先在这里填真实数字和依据。没依据的，导出时会拦下。不打算写就空着。
       </p>

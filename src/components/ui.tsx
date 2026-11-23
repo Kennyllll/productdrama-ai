@@ -5,7 +5,7 @@ export function PageHeader({ title, description, actions }: { title: string; des
     <div className="mb-6 flex flex-col gap-3 border-b border-white/10 pb-5 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-white">{title}</h1>
-        <p className="mt-1 max-w-3xl text-sm leading-relaxed text-neutral-300">{description}</p>
+        <p className="mt-1 max-w-3xl text-sm leading-relaxed text-neutral-400">{description}</p>
       </div>
       {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
     </div>
@@ -17,7 +17,7 @@ export function Card({ title, children, className = "", aside }: { title?: strin
     <section className={`rounded-xl border border-white/10 bg-neutral-900/70 p-5 ${className}`}>
       {title ? (
         <div className="mb-4 flex items-center justify-between gap-2">
-          <h2 className="text-base font-semibold text-amber-300">{title}</h2>
+          <h2 className="text-base font-semibold text-white">{title}</h2>
           {aside}
         </div>
       ) : null}

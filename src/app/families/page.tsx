@@ -1,5 +1,5 @@
 import { RevisionHistory } from "@/components/admin/RevisionHistory";
-import { Card, PageHeader } from "@/components/ui";
+import { PageHeader } from "@/components/ui";
 import { FamilyLibrary } from "@/components/shorts/FamilyLibrary";
 import { listFamilies, listFamilyLedger } from "@/lib/families-repo";
 
@@ -12,10 +12,14 @@ export default function FamiliesPage() {
   const total = ledger.reduce((s, e) => s + e.usd, 0);
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
-      <PageHeader title="家庭库" description="所有产品共用。短视频里每个人偶绑定一个成员：3D 按身高缩放，首帧提示词写这个人的长相和衣服（衣服跟着视频的节日），有定妆照就用定妆照认脸。" />
+      <PageHeader title="家庭库" description="所有产品共用的演员家庭。每个人有身高、长相和定妆照，出图时照着画，保证每一镜是同一个人。" />
       <FamilyLibrary families={listFamilies()} />
       <RevisionHistory entityType="family" />
-      <Card title="家庭库费用账本" className="mt-6" aside={<span className="text-sm text-white">{usd(total)}</span>}>
+      <details className="mt-6 rounded-xl border border-white/10 bg-neutral-900/70 p-5">
+        <summary className="cursor-pointer text-sm font-medium text-white">
+          定妆照费用 <span className="ml-1 font-normal text-neutral-400">{usd(total)} · {ledger.length} 张</span>
+        </summary>
+        <div className="mt-3">
         {ledger.length === 0 ? (
           <p className="text-sm text-neutral-400">还没有出过定妆照。</p>
         ) : (
@@ -45,7 +49,8 @@ export default function FamiliesPage() {
           </table>
         )}
         <p className="mt-2 text-xs text-neutral-500">只记成功出图的（失败不收费）。不计入任何产品项目的花费。</p>
-      </Card>
+        </div>
+      </details>
     </main>
   );
 }

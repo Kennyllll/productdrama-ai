@@ -627,6 +627,36 @@ export function ShortStudio({
         </div>
       </header>
 
+      {focus ? null : (() => {
+        const DO: Record<string, string> = {
+          draft: "确认构图（可以先去 3D 页摆好）",
+          comp_ok: "出首帧",
+          frame_ready: "看首帧，合格就点通过",
+          frame_ok: "出视频",
+          video_ready: "看视频，合格就点采用"
+        };
+        const todo = [...shots.filter((s) => !s.hook), ...shots.filter((s) => s.hook)].find((s) => s.stage !== "accepted");
+        const [text, go]: [string, string | null] = !shots.length
+          ? !v.concepts.length
+            ? ["点下面的「AI 出 4 个创意」", null]
+            : !v.conceptId
+              ? ["在下面 4 个创意里点选一个", null]
+              : ["点「按选中创意出分镜」", null]
+          : todo
+            ? [`${todo.hook ? "开头" : `#${shots.indexOf(todo) + 1}`}「${todo.beat}」：${DO[todo.stage] ?? ""}`, todo.id]
+            : ["镜头都采用了：到最下面「预览与导出」出成片", null];
+        return (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-3">
+            <span className="rounded-full bg-amber-400 px-2 py-0.5 text-xs font-semibold text-black">下一步</span>
+            <span className="text-sm text-amber-50">{text}</span>
+            {go ? (
+              <button className={`${primary} ml-auto`} onClick={() => setFocus(go)}>
+                去做这一镜 →
+              </button>
+            ) : null}
+          </div>
+        );
+      })()}
       <NearToast msg={msg} busy={busy} onClose={closeMsg} />
       {bgCap ? (
         <>

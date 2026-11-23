@@ -109,10 +109,10 @@ export function GuideRail({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="sticky top-14 mt-8 shrink-0 rounded-l-lg border border-r-0 border-amber-400/40 bg-neutral-900 px-1.5 py-3 text-xs text-amber-200 [writing-mode:vertical-rl]"
+        className="fixed right-4 top-2 z-30 rounded-full border border-amber-400/40 bg-neutral-900 px-3 py-1 text-xs text-amber-200 hover:bg-amber-400/10"
         title="打开 AI 大脑（⌘K / Ctrl+K）"
       >
-        AI 大脑 ‹
+        问 AI 大脑
       </button>
     );
   }

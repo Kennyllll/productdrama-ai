@@ -34,12 +34,12 @@ export default async function ShortsPage({ params }: { params: Promise<{ id: str
     <>
       <PageHeader
         title="产品短视频"
-        description={`一个产品下做多条短视频：每条选一个模板和创意，按镜头过关口生成。硬约束：成片每秒全部花费 ≤ $${MAX_USD_PER_SECOND}（含重做和废片）。`}
+        description="点一条视频继续做，或在右边新建一条。每条视频按镜头一步步出图、出视频。"
       />
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
-        <Card title={`这个产品的视频（${videos.length}）`} aside={<span className="text-xs text-neutral-400">产品累计已花 ${total.toFixed(2)}</span>}>
+        <Card title={`这个产品的视频（${videos.length}）`} className="self-start" aside={<span className="text-xs text-neutral-400">共花 ${total.toFixed(2)}</span>}>
           {videos.length === 0 ? (
-            <p className="text-sm text-neutral-400">还没有短视频，右侧新建第一条。</p>
+            <p className="py-6 text-center text-sm text-neutral-400">还没有短视频。在右边选模板和家庭，点「新建」。</p>
           ) : (
             <ul className="space-y-2">
               {videos.map((v) => {
@@ -60,7 +60,7 @@ export default async function ShortsPage({ params }: { params: Promise<{ id: str
                         <span className="text-neutral-300">
                           ${spent.toFixed(2)} / ${budgetOf(v).toFixed(2)}
                         </span>
-                        <Tag tone={per > MAX_USD_PER_SECOND ? "rose" : "emerald"}>${per.toFixed(2)}/秒</Tag>
+                        <span title={`成片每秒花费上限 $${MAX_USD_PER_SECOND}（含重做和废片）`}><Tag tone={per > MAX_USD_PER_SECOND ? "rose" : "neutral"}>每秒 ${per.toFixed(2)}{per > MAX_USD_PER_SECOND ? " · 超上限" : ""}</Tag></span>
                         {fs.existsSync(finalPath(v)) ? <Tag tone="amber">已出成片</Tag> : null}
                       </div>
                     </Link>
@@ -81,9 +81,9 @@ export default async function ShortsPage({ params }: { params: Promise<{ id: str
               families={listFamilies().map((f) => ({ id: f.id, name: f.name, who: f.members.map((m) => m.name).join("、") }))}
             />
           </Card>
-          <Card title="产品资料（长剧和短视频共用）">
+          <Card title="产品资料">
             <p className="text-sm text-neutral-300">{product?.name || "未填写产品名称"}</p>
-            <p className="mt-1 text-xs text-neutral-400">产品照 {photos} 张 · 首帧生成时作为参考图，保持外形、颜色和 Logo。没有产品照时用 3D 模型渲染的参考图。</p>
+            <p className="mt-1 text-xs text-neutral-400">产品照 {photos} 张，出图时用来保持车的外形、颜色和 Logo。</p>
             <ProductRefs projectId={id} modelUrl={model ? `/api/models/${model.id}` : null} urls={refUrls} />
             <Link href={`/projects/${id}/product`} className="mt-2 inline-block text-xs text-amber-300 hover:underline">
               编辑产品资料 →

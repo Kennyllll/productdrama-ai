@@ -41,11 +41,10 @@ export function BibleRow({ f, form }: { f: ProductBibleField; form: string }) {
         <input id={`bible-${f.key}`} form={form} name={`bible.${f.key}.value`} value={value} onChange={(e) => setValue(e.target.value)} maxLength={200} placeholder="待填写" className={inp} />
       )}
       <div className="flex flex-col items-start">
-        <label className={`flex items-center gap-1 text-xs ${filled ? "text-neutral-300" : "text-neutral-500"}`}>
+        <label title={filled ? "" : "先填内容才能勾"} className={`flex items-center gap-1 text-xs ${filled ? "text-neutral-300" : "invisible"}`}>
           <input type="checkbox" form={form} name={`bible.${f.key}.confirmed`} checked={ok} disabled={!filled} onChange={(e) => setChecked(e.target.checked)} />
           已确认
         </label>
-        {!filled ? <span className="text-[11px] text-neutral-500">先填{f.key === "age" ? "年龄" : "内容"}才能勾</span> : null}
       </div>
     </li>
   );

@@ -67,41 +67,23 @@ export function AppShell({ children, projects }: { children: ReactNode; projects
             Product<span className="text-amber-400">Drama</span> AI
           </Link>
           <Link href="/settings#identity" className={`mt-2 block w-fit rounded-full px-2.5 py-0.5 text-xs ${actor.role === "admin" ? "bg-amber-400 text-black" : "bg-white/10 text-neutral-300"}`} title="点这里切换新手 / 管理员">
-            {actor.role === "admin" ? "管理员" : "新手"} · {actor.name}
+            {actor.role === "admin" ? "管理员" : "新手"}
+            {actor.name && actor.name !== "新手" && actor.name !== "管理员" ? ` · ${actor.name}` : ""}
           </Link>
         </div>
         <nav aria-label="主导航" className="flex gap-1 overflow-x-auto px-3 pb-4 lg:flex-col lg:overflow-visible">
-          <Group>全局</Group>
           <NavLink href="/dashboard" active={pathname === "/dashboard"}>
             项目中心
           </NavLink>
-          <NavLink href="/easter-eggs" active={pathname.startsWith("/easter-eggs")}>
-            素材库
-          </NavLink>
-          <NavLink href="/families" active={pathname.startsWith("/families")}>
-            家庭库
-          </NavLink>
-          <NavLink href="/hooks" active={pathname.startsWith("/hooks")}>
-            Hook 库
-          </NavLink>
-          <NavLink href="/settings" active={pathname.startsWith("/settings")}>
-            设置
-          </NavLink>
-          <NavLink href="/logs" active={pathname.startsWith("/logs")}>
-            操作日志
-          </NavLink>
-          <NavLink href="/trash" active={pathname.startsWith("/trash")}>
-            回收站
-          </NavLink>
           {project ? (
             <>
-              <Group>当前产品 · {project.name}</Group>
+              <Group>{project.name}</Group>
               <NavLink href={href("product")} active={page === "product"}>
-                产品资料
+                ① 产品资料
               </NavLink>
               {!isDemo ? (
                 <NavLink href={href("shorts")} active={page === "shorts"}>
-                  短视频
+                  ② 短视频
                 </NavLink>
               ) : null}
               <button
@@ -109,7 +91,7 @@ export function AppShell({ children, projects }: { children: ReactNode; projects
                 onClick={() => setLongOpen(!showLong)}
                 aria-expanded={showLong}
                 className={`flex shrink-0 items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-white/5 ${
-                  onLong && !showLong ? "text-amber-200" : "text-neutral-300"
+                  onLong && !showLong ? "text-amber-200" : "text-neutral-400"
                 }`}
               >
                 长视频 <span className="text-xs text-neutral-500">{showLong ? "▾" : "▸"}</span>
@@ -144,6 +126,26 @@ export function AppShell({ children, projects }: { children: ReactNode; projects
               ) : null}
             </>
           ) : null}
+          <Group>所有产品共用</Group>
+          <NavLink href="/families" active={pathname.startsWith("/families")}>
+            家庭库
+          </NavLink>
+          <NavLink href="/hooks" active={pathname.startsWith("/hooks")}>
+            Hook 库
+          </NavLink>
+          <NavLink href="/easter-eggs" active={pathname.startsWith("/easter-eggs")}>
+            彩蛋角色
+          </NavLink>
+          <Group>管理</Group>
+          <NavLink href="/settings" active={pathname.startsWith("/settings")}>
+            设置
+          </NavLink>
+          <NavLink href="/logs" active={pathname.startsWith("/logs")}>
+            操作日志
+          </NavLink>
+          <NavLink href="/trash" active={pathname.startsWith("/trash")}>
+            回收站
+          </NavLink>
         </nav>
       </aside>
       <div className="min-w-0 flex-1">{children}</div>

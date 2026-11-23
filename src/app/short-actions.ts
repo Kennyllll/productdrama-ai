@@ -576,7 +576,7 @@ export async function setShotFrameModelAction(videoId: string, shotId: string, i
     if (from.id === to.id) return { result: state(videoId) };
     s.frameModel = to.id;
     saveShortVideo(v);
-    logAction(await currentActor(), { action: "frame_model", projectId: v.projectId, videoId, shotId, model: to.model, detail: `首帧模型 ${from.label} → ${to.label}` });
+    logAction(await currentActor(), { action: "换首帧模型", projectId: v.projectId, videoId, shotId, model: to.model, detail: `首帧模型 ${from.label} → ${to.label}` });
     return { result: state(videoId) };
   } catch (e) {
     return fail(e);
@@ -1069,7 +1069,7 @@ export async function shotStageAction(videoId: string, shotId: string, action: S
           const a = await currentActor();
           need(a.role === "admin", `产品和实物不一致：${fc.product.join("；")}。请重出首帧；确认是误报要管理员登录后放行`);
           need(note.trim().length >= 4, "写一句为什么放行（例如：靠背被孩子挡住，看不到孔）");
-          logAction(a, { action: "frame_product_override", projectId: v.projectId, videoId, shotId, detail: `${fc.product.join("；")} → ${note.trim()}` });
+          logAction(a, { action: "管理员放行车不一致", projectId: v.projectId, videoId, shotId, detail: `${fc.product.join("；")} → ${note.trim()}` });
         }
         s.stage = "frame_ok";
         break;
@@ -2040,7 +2040,7 @@ async function runInBackground(key: string, videoId: string, shotId: string, kin
         estUsd: p.quote.costUsd,
         reason: reason.trim().slice(0, 400),
       });
-    if (sent.length) logAction(null, { action: "job_refs", projectId: p.v.projectId, videoId, shotId, refId: job.id, model: job.model, detail: `发给供应商的参考图 ${sent.length} 张（存在 sent-refs/）：${sent.map((r) => `${r.name}=${r.sha256.slice(0, 16)}`).join("，")}` });
+    if (sent.length) logAction(null, { action: "参考图存档", projectId: p.v.projectId, videoId, shotId, refId: job.id, model: job.model, detail: `发给供应商的参考图 ${sent.length} 张（存在 sent-refs/）：${sent.map((r) => `${r.name}=${r.sha256.slice(0, 16)}`).join("，")}` });
     runs.set(key, { ...runs.get(key)!, step: "gen", jobId: job.id });
     await drive(job);
     runs.delete(key);

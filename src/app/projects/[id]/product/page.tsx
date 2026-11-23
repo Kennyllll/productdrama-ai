@@ -36,7 +36,7 @@ async function LocalProductPage({ id }: { id: string }) {
   if (pending) todo.push({ step: 4, text: `${pending} 项产品细节未确认` });
   return (
     <>
-      <PageHeader title="产品资料" description="按 1–4 步填，做完的步骤会自动收起。短视频和长视频都用这里的资料。" />
+      <PageHeader title="产品资料" description="按 1–4 步填完，就能做短视频。做完的步骤会自动收起，第 5 步可以不填。" />
       <LocalProductWorkbench
         projectId={id}
         product={product}

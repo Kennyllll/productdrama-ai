@@ -68,7 +68,7 @@ export function DeleteProjectButton({ id, name }: { id: string; name: string }) 
       }}
     >
       <input type="hidden" name="id" value={id} />
-      <button type="submit" className="rounded-lg border border-rose-400/40 px-3 py-1.5 text-sm text-rose-200 hover:bg-rose-400/10">
+      <button type="submit" className="rounded-lg px-2 py-1.5 text-xs text-neutral-500 hover:bg-rose-400/10 hover:text-rose-200">
         删除
       </button>
     </form>

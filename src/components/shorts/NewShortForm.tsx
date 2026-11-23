@@ -171,7 +171,7 @@ export function NewShortForm({
       {error ? <p className="text-sm text-rose-300">{error}</p> : null}
       <div className="flex flex-wrap items-center gap-2">
         <button disabled={pending || gaps.length > 0} className="rounded-lg bg-amber-400 px-3 py-1.5 text-sm font-medium text-black disabled:cursor-not-allowed disabled:opacity-50">
-          {pending ? "创建中…" : "新建"}
+          {pending ? "创建中…" : "新建短视频"}
         </button>
         {gaps.length ? (
           <span className="text-xs text-amber-300">

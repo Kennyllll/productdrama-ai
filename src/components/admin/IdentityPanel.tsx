@@ -36,7 +36,7 @@ export function IdentityPanel() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-semibold text-white">身份</h2>
         <span className={`rounded-full px-3 py-0.5 text-xs ${a.role === "admin" ? "bg-amber-400 text-black" : "bg-white/10 text-neutral-200"}`}>
-          现在是：{ROLE_LABEL[a.role]}（{a.name}）
+          现在是：{ROLE_LABEL[a.role]}{a.name && a.name !== ROLE_LABEL[a.role] ? `（${a.name}）` : ""}
         </span>
       </div>
       <p className="mt-1 text-xs text-neutral-400">新手能做视频、看所有东西；模型 Key、预算上限、规则库、Hook 模板、家庭库只有管理员能改。管理员 4 小时后自动退回新手。</p>

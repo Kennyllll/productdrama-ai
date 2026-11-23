@@ -4,6 +4,13 @@ import { listLogs, logFacets } from "@/lib/audit-repo";
 import { listLocalProjects } from "@/lib/repo";
 import { getShortVideoAny } from "@/lib/shorts-repo";
 
+const ACTION_LABEL: Record<string, string> = {
+  frame_model: "换首帧模型",
+  frame_product_override: "管理员放行车不一致",
+  job_refs: "参考图存档",
+  model_cad_calibrate: "2D 图纸校准模型"
+};
+
 export const dynamic = "force-dynamic";
 
 const field = "rounded-md border border-white/10 bg-black/40 px-2 py-1.5 text-sm text-white";
@@ -42,7 +49,7 @@ export default async function LogsPage({ searchParams }: { searchParams: Promise
           <select name="action" defaultValue={f.action} className={field}>
             <option value="">全部</option>
             {facets.actions.map((a) => (
-              <option key={a}>{a}</option>
+              <option key={a} value={a}>{ACTION_LABEL[a] ?? a}</option>
             ))}
           </select>
         </label>
@@ -51,7 +58,7 @@ export default async function LogsPage({ searchParams }: { searchParams: Promise
           <select name="actor" defaultValue={f.actor} className={field}>
             <option value="">全部</option>
             {facets.actors.map((a) => (
-              <option key={a}>{a}</option>
+              <option key={a} value={a}>{ACTION_LABEL[a] ?? a}</option>
             ))}
           </select>
         </label>
@@ -118,7 +125,7 @@ export default async function LogsPage({ searchParams }: { searchParams: Promise
                     ) : null}
                   </td>
                   <td className="text-xs">{r.shotLabel}</td>
-                  <td className="whitespace-nowrap">{r.action}</td>
+                  <td className="whitespace-nowrap">{ACTION_LABEL[r.action] ?? r.action}</td>
                   <td className="max-w-md text-xs text-neutral-300">{r.detail}</td>
                   <td className="whitespace-nowrap text-right text-xs">{r.usd == null ? "" : `${r.usd < 0 ? "-" : ""}$${Math.abs(r.usd).toFixed(2)}`}</td>
                   <td className="whitespace-nowrap px-3 text-xs text-neutral-400" title={r.model}>

@@ -408,7 +408,7 @@ export async function calibrateModelAction(projectId: string, input: { file: str
     }
     const cad: ModelCad = { file: input.file.slice(0, 200), lengthCm: input.lengthCm, widthCm: input.widthCm, heightCm: input.heightCm, devPct, ok: devPct <= CAD_MAX_DEV_PCT, lines, at: new Date().toISOString() };
     setModelCad(m.id, cad);
-    logAction(await currentActor(), { action: "model_cad_calibrate", projectId, detail: `${cad.file}：${lines.join("；")}` });
+    logAction(await currentActor(), { action: "2D 图纸校准模型", projectId, detail: `${cad.file}：${lines.join("；")}` });
     refresh(projectId);
     return { result: cad };
   } catch (e) {
