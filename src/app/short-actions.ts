@@ -1317,6 +1317,22 @@ async function runFrameCheck(videoId: string, shotId: string, jobId: string, byt
   saveShortVideo(v);
 }
 
+/** 检查规则更新后：用最新的看图检查重查这一镜现在的首帧（只看图，不重新出图） */
+export async function recheckFrameAction(videoId: string, shotId: string): Promise<Result<StudioState>> {
+  try {
+    const v = load(videoId);
+    const s = v.shots.find((x) => x.id === shotId);
+    if (!s) throw new Error("镜头不存在");
+    const job = s.frameJobId ? getJob(s.frameJobId) : null;
+    const file = job ? jobFilePath(job) : null;
+    if (!job || !file || !fs.existsSync(file)) throw new Error("这一镜还没有首帧");
+    await runFrameCheck(v.id, s.id, job.id, fs.readFileSync(file));
+    return { result: state(videoId) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 const execFileP = promisify(execFile);
 
 /** 视频出来后自动看：每 0.5 秒截一帧，对照产品照查变形；没 Key 或出错只记下来，让用户自己看 */

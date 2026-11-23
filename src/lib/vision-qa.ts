@@ -277,7 +277,9 @@ export async function reviewShortFrame(o: { image: Buffer; productName: string; 
     "1. People: the number of people and who they are (adult/child, boy/girl) match the 3D blocking; nobody extra, nobody missing, nobody duplicated.",
     `2. Poses: anyone riding sits on the saddle with both hands on the handlebar grips${o.facts3d.includes("pedal") ? " and both feet on the pedals" : ""}; standing, crouching or pointing people do what the blocking says.`,
     `3. The ${name} faces the way the blocking says (front toward camera / three-quarter / side) and is plausibly sized next to the people.`,
-    `4. Exactly one ${name}, with the correct structure (count the wheels, round wheels on axles, no melted or missing parts).`,
+    o.productRefs?.length && !o.cadRender && !o.car
+      ? `4. Exactly one ${name}, not duplicated; its parts and structure are judged only in "parts" (4b), never in "issues".`
+      : `4. Exactly one ${name}, with the correct structure (count the wheels, round wheels on axles, no melted or missing parts).`,
     ...(o.productRefs?.length
       ? [
           `4b. Compare the ${name} part by part with the real product in the reference photos (the images after the still, each labelled with its view; for each part use the photo whose view is closest to the still). Judge each part from THIS camera angle. Fill "parts" with one entry for each of: ${FRAME_PARTS}. visible = "clear" only if that part's shape is plainly visible in the still; a part seen edge-on, from behind, too small to make out, hidden by a person or cut by the frame edge is "partly" or "hidden": a backrest seen from the side shows only its edge, so its hole is not visible; when the product is under about a quarter of the frame height, small parts (pedals, cranks, holes, logo) are not "clear". Count every wheel, including any small extra wheel under the frame. same = "no" only if a clearly visible part is plainly different from the real product: missing, extra, wrong count or position, straight where the real one clearly bends, solid where the real one has a hole that faces the camera here. For each part first write "expect": how that part looks in the reference photo taken from the closest angle (e.g. the backrest is a ring with a big see-through oval hole, so the background shows through it), then "seen": how it looks in the still, then decide. A stem that rises straight and curves only near the top is a bent stem. Small differences in curvature, perspective, light or detail are "yes"; if not sure, "unsure".`,
@@ -307,7 +309,8 @@ export async function reviewShortFrame(o: { image: Buffer; productName: string; 
   // 逐零件：只有看得清、而且明显不一样的零件才算违反规则 #1；看不清、被挡、拿不准的不算
   const product = perPart ? frameProductIssues([data, ...more].map((d) => d.parts)) : strs(data.product);
   const issues = [...new Set([...strs(data.issues), ...product])];
-  return { pass: data.pass === true && issues.length === 0, issues, product };
+  // 逐零件投票时，第一遍的 pass 可能只是因为被投掉的零件问题，以投票后的问题清单为准
+  return { pass: (perPart || data.pass === true) && issues.length === 0, issues, product };
 }
 
 /** 短视频成片：按时间截的帧 + 真实产品照，查产品有没有变形、零件消失，人有没有变脸 */

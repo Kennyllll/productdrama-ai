@@ -44,6 +44,7 @@ import {
   fitShotActionsAction,
   setHookSelfieAction,
   setShotMoveAction,
+  recheckFrameAction,
 } from "@/app/short-actions";
 import {
   budgetOf,
@@ -155,6 +156,7 @@ export function ShortStudio({
   const [pending, setPending] = useState<Pending | null>(null);
   const [finalAt, setFinalAt] = useState(initialFinalAt);
   const [rw, setRw] = useState<{ shotId: string; text: string } | null>(null);
+  const [rechecking, setRechecking] = useState<string | null>(null);
   const [proposal, setProposal] = useState<{
     shotId: string;
     fields: Record<TextField, string>;
@@ -1509,7 +1511,22 @@ export function ShortStudio({
                                 <span className="self-center text-xs text-emerald-300">看图检查通过：图和提示词、3D 对得上</span>
                               ) : (
                                 <div className={`w-full rounded border p-2 text-xs ${fc.failed ? "border-amber-400/40 text-amber-200" : "border-rose-400/50 bg-rose-400/5 text-rose-200"}`}>
-                                  <p className="font-medium">{fc.failed ? "看图检查" : `看图检查发现 ${fc.issues.length} 个问题，先看图再决定`}</p>
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <p className="font-medium">{fc.failed ? "看图检查" : `看图检查发现 ${fc.issues.length} 个问题，先看图再决定`}</p>
+                                    <button
+                                      type="button"
+                                      className="rounded border border-white/20 px-2 py-0.5 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-40"
+                                      disabled={busy || runBusy || rechecking === s.id}
+                                      title="检查规则更新过：只重新看图，不重新出图，约 $0.01"
+                                      onClick={async () => {
+                                        setRechecking(s.id);
+                                        apply(await recheckFrameAction(v.id, s.id));
+                                        setRechecking(null);
+                                      }}
+                                    >
+                                      {rechecking === s.id ? "正在重新检查…" : "用最新规则重新检查（约 $0.01）"}
+                                    </button>
+                                  </div>
                                   {fc.product?.length ? (() => {
                                     const tries = rule1Tries(js, s.compFile);
                                     return (
