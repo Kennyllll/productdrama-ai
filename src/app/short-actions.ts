@@ -19,7 +19,7 @@ import { promisify } from "node:util";
 import { createHook, getHook } from "@/lib/hooks-repo";
 import { cleanHookValues, fillCaption, HOOK_ENTRIES } from "@/lib/hooks";
 import { isHookEffect } from "@/lib/hook-effects";
-import { hookParts, hooksOf, isExtraHook, shotSound } from "@/lib/shorts";
+import { hookParts, hooksOf, isExtraHook, needsComposite, shotSound } from "@/lib/shorts";
 import { applySelfie, buildHookLayout, cleanHookPeople, DEFAULT_STAGE, peopleText, renameText, VIEW_LABEL, type HookPerson, addNamedPeople } from "@/lib/hook-stage";
 import { shortConceptPrompt, shortShotsPrompt } from "@/lib/ai/short-prompts";
 import { deleteRequest, estimate, getStatus, HiggsfieldError, submit, uploadFile, type HfRequest } from "@/lib/higgsfield";
@@ -1082,7 +1082,7 @@ export async function shotStageAction(videoId: string, shotId: string, action: S
 }
 
 const FRAME_STYLE: Record<string, string> = {
-  ugc: "Vertical 9:16 smartphone photo, looks like a real parent filmed it with their phone: the natural light of the place (daylight outdoors, room light indoors), slight handheld angle, a candid moment caught in the middle of an action, people busy with each other or the product rather than posing or smiling for the photo, everyday clutter, everything in focus (no shallow depth of field), true-to-life skin and fabrics. Photorealistic, not staged, no cinematic grading.",
+  ugc: "Vertical 9:16 smartphone photo, looks like a real parent filmed it with their phone: the natural light of the place (daylight outdoors, room light indoors), slight handheld angle, a candid mid-action moment, not posed, everyday clutter, everything in focus (no shallow depth of field), true-to-life skin and fabrics. Photorealistic, not staged, no cinematic grading.",
   cinematic: "Vertical 9:16 cinematic film still, shot on cinema camera, motivated lighting, shallow depth of field, fine film grain. Photorealistic.",
 };
 
@@ -1165,7 +1165,7 @@ function refPlan(v: ShortVideo, s: ShortShot): RefPart[] {
   const comp = s.compFile ? path.join(videoDir(v.projectId, v.id), s.compFile) : null;
   if (comp) {
     out.push({
-      text: "is a 3D blocking render of this exact shot: match its camera angle, lens, framing and the product's position, size and orientation exactly; furniture stays where it is. Turn the untextured shapes into a real lived-in home as described; translucent mannequins or a capsule mark the people. Empty sky or flat ground at the edges is unfinished 3D: fill it from the location text.",
+      text: "is a 3D blocking render of this exact shot: match its camera angle, lens, framing and the product's position, size and orientation exactly; furniture stays put. Turn the untextured shapes into the real place described; translucent mannequins or a capsule mark the people; fill empty sky or flat ground from the location text.",
       file: async () => (fs.existsSync(comp) ? comp : null),
     });
     // 照片模型形状不准：不发灰模，3D 构图里车也是灰块，形状只照实物照
@@ -1524,7 +1524,7 @@ function framePromptOf(v: ShortVideo, s: ShortShot): string {
       ? `Product: ${p?.name || "the product"} — use the product reference photos: keep exact geometry, proportions, colors, materials and logo placement; do not redesign, recolor or add parts.${(() => { const st = (p?.bible.find((f) => f.key === "structure")?.value.trim() || p?.bible.find((f) => f.key === "geometry")?.value.trim())?.replace(/[（(]待确认[)）]/g, "").trim(); return st ? ` Exact structure: ${st}.` : ""; })()} Matte, even light on the product: no glare, sparkle or bright highlight spots.`
       : "",
     colorText(v),
-    s.compositeNote.trim() ? "Any screen, projection or printed graphic on the product is left plain/blank; it will be composited later." : "",
+    needsComposite(s.compositeNote) ? "Any screen, projection or printed graphic on the product is left plain/blank; it will be composited later." : "",
     findTemplate(v.templateId).needsPackaging
       ? "Any packaging must match the packaging reference photos exactly; do not invent box designs or print."
       : "The product appears fully assembled and out of any box. No cardboard boxes, shipping boxes, product packaging or unwrapping anywhere in the image.",
@@ -1556,6 +1556,13 @@ function framePromptOf(v: ShortVideo, s: ShortShot): string {
     const i = parts.indexOf(sc);
     const keep = sc.length - (out.length - FRAME_PROMPT_MAX) - 2;
     if (i >= 0) parts[i] = keep > 120 ? `${sc.slice(0, keep).replace(/\s+\S*$/, "")}…` : `${sc.split(/(?<=\.)\s/)[0]}`;
+    out = build();
+  }
+  // 还超：一张图用不到的「整段视频」句子删掉，最后删视线这类次要句，保证新手不会卡在字数上
+  for (const cut of [/\s*They stay behind the phone for the whole clip[^.]*\./, /^Nobody looks into the lens:.*$/]) {
+    if (out.length <= FRAME_PROMPT_MAX) break;
+    const k = parts.findIndex((x) => cut.test(x));
+    if (k >= 0) parts[k] = parts[k].replace(cut, "").trim();
     out = build();
   }
   return out;

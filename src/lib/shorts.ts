@@ -472,3 +472,9 @@ export function paramsKey(kind: JobKind, p: { prompt: string; seconds?: number; 
 
 /** 拍摄者入镜：露一点拍的人，画面更像家长自己拍的 */
 export { operatorPrompt } from "@/lib/shorts-operator";
+
+/** 后期合成备注是否真的要合成：AI 常写「无（…）」「没有」「none」，这些不算 */
+export const needsComposite = (note: string): boolean => {
+  const t = note.trim();
+  return !!t && !/^(无|没有|不需要|不用|none|no\b|n\/a)/i.test(t);
+};
