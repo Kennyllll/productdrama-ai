@@ -113,10 +113,10 @@ export default async function LogsPage({ searchParams }: { searchParams: Promise
                 <tr key={r.id} className="border-t border-white/5 align-top">
                   <td className="whitespace-nowrap px-3 py-1.5 text-xs text-neutral-400">{new Date(r.at).toLocaleString("zh-CN")}</td>
                   <td className="whitespace-nowrap text-xs">
-                    {r.actor}
-                    <span className={`ml-1 rounded px-1 ${r.role === "admin" ? "bg-amber-400/20 text-amber-200" : r.role === "system" ? "bg-white/5 text-neutral-500" : "bg-white/10 text-neutral-300"}`}>{r.role === "admin" ? "管理员" : r.role === "system" ? "系统" : "新手"}</span>
+                    {["新手", "管理员", "系统"].includes(r.actor) ? null : r.actor}
+                    <span className={`${["新手", "管理员", "系统"].includes(r.actor) ? "" : "ml-1 "}rounded px-1 ${r.role === "admin" ? "bg-amber-400/20 text-amber-200" : r.role === "system" ? "bg-white/5 text-neutral-500" : "bg-white/10 text-neutral-300"}`}>{r.role === "admin" ? "管理员" : r.role === "system" ? "系统" : "新手"}</span>
                   </td>
-                  <td className="text-xs">
+                  <td className="min-w-[10rem] text-xs">
                     {r.projectId ? <div className="text-neutral-400">{pName.get(r.projectId) ?? "—"}</div> : null}
                     {r.videoId ? (
                       <Link className="text-sky-300 underline" href={q({ video: r.videoId })}>

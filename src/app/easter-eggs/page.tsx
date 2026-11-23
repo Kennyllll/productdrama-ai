@@ -10,7 +10,7 @@ export default function EasterEggsPage() {
     <main className="mx-auto max-w-6xl px-6 py-8">
       <PageHeader
         title="彩蛋角色库"
-        description="工具级设置：添加宠物、吉祥物、玩偶等彩蛋角色并上传真实参考照。保存后可在任意本地项目的选角页选用或更换。"
+        description="宠物、吉祥物、玩偶这类小角色，偶尔在视频里露个脸。加好后所有产品都能用。"
       />
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
@@ -22,7 +22,7 @@ export default function EasterEggsPage() {
               <li key={r}>{r}</li>
             ))}
           </ul>
-          <p className="mt-3 text-xs text-neutral-500">参考照只保存在本机 uploads/_eggs/ 目录，不上传云端。</p>
+
         </Card>
       </div>
     </main>

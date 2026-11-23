@@ -40,13 +40,18 @@ export function TrashList({ items, projectNames }: { items: TrashItem[]; project
   return (
     <>
     {banner}
+    {admin ? null : (
+      <p className="mb-3 text-xs text-neutral-500">
+        永久删除只有管理员能做。<NeedAdmin />
+      </p>
+    )}
     <ul className="space-y-2">
       {items.map((t) => (
         <li key={t.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-neutral-900/70 px-4 py-3 text-sm">
           <span className="rounded bg-white/10 px-2 py-0.5 text-xs text-neutral-200">{KIND[t.kind] ?? t.kind}</span>
           <span className="min-w-0 flex-1">
             <span className="text-white">{t.label}</span>
-            <span className="ml-2 text-xs text-neutral-500">
+            <span className="ml-2 text-xs text-neutral-500" suppressHydrationWarning>
               {t.projectId ? `${projectNames[t.projectId] ?? ""} · ` : ""}
               {new Date(t.createdAt).toLocaleString("zh-CN")} · {t.actor}
             </span>
@@ -55,10 +60,11 @@ export function TrashList({ items, projectNames }: { items: TrashItem[]; project
           <button type="button" disabled={pending} onClick={() => restore(t)} className="rounded-lg bg-amber-400 px-3 py-1 text-xs font-medium text-black disabled:opacity-40">
             恢复
           </button>
-          <button type="button" disabled={pending || !admin} onClick={() => purge(t)} className="text-xs text-rose-300 underline disabled:opacity-40">
-            永久删除
-          </button>
-          <NeedAdmin />
+          {admin ? (
+            <button type="button" disabled={pending} onClick={() => purge(t)} className="text-xs text-neutral-500 hover:text-rose-300">
+              永久删除
+            </button>
+          ) : null}
           {msg?.id === t.id ? <span className={`w-full text-xs ${msg.err ? "text-rose-300" : "text-emerald-300"}`}>{msg.text}</span> : null}
         </li>
       ))}
