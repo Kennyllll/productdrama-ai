@@ -88,3 +88,13 @@ test("额外开头单独预算，不占正文预算；超了要勾超限", () =>
   assert.ok(over.blocked.some((b) => b.includes("这个开头的预算")));
   assert.ok(!quoteJob({ ...base, jobs: [...jobs, { ...job("h2", 1.5), kind: "frame", paramsHash: "old" }], overLimit: true }).blocked.some((b) => b.includes("预算")));
 });
+
+test("每秒成本超上限：给管理员放行框，不让新手卡死", () => {
+  const b1 = shot("b1", { useSeconds: 2, stage: "frame_ok", frameJobId: "f" });
+  const v = { ...video([b1]), budgetUsd: 50 };
+  const base = { kind: "video" as const, shot: b1, video: v, jobs: [job("b1", 0.9)], paramsHash: "new", unitUsd: 0.2647, seconds: 4, reason: "", overLimit: false };
+  const q = quoteJob(base);
+  assert.ok(q.blocked.some((b) => b.includes("每秒成本")), q.blocked.join("|"));
+  assert.ok(q.needsOverLimit);
+  assert.ok(!quoteJob({ ...base, overLimit: true }).blocked.some((b) => b.includes("每秒成本")));
+});

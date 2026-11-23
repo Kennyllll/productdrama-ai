@@ -425,16 +425,16 @@ export function quoteJob(q: QuoteInput): Quote {
   const rule1 = kind === "frame" && q.reason.startsWith(RULE1_REDO);
   const rule1Done = rule1Tries(sameKind, shot.compFile);
   if (rule1 && rule1Done >= RULE1_MAX) blocked.push(`因为车不对已经重出 ${rule1Done} 次：别再花钱重出。换一个能看清产品的 3D 角度、补同角度的实物照，或者向工厂要 STEP`);
-  if (attempt > DEFAULT_ATTEMPTS && !q.overLimit && !rule1) blocked.push(`本镜已经 ${charged.length} 次，超过默认上限（1 次 + 1 次重做）：先考虑剪辑或补短镜头；确实要重做请勾选“超限重新审批”`);
+  if (attempt > DEFAULT_ATTEMPTS && !q.overLimit && !rule1) blocked.push(`本镜已经 ${charged.length} 次，超过默认上限（1 次 + 1 次重做）：先考虑剪辑或补短镜头；确实要重做请在下面让管理员放行这一次`);
   if (overHook) {
-    if (!q.overLimit) blocked.push(`超出这个开头的预算 $${budget.toFixed(2)}（生成秒数 × $${MAX_USD_PER_SECOND}）：已花 $${videoSpent.toFixed(2)}，本次 $${costUsd.toFixed(2)}。确实要做请勾选“超限重新审批”`);
+    if (!q.overLimit) blocked.push(`超出这个开头的预算 $${budget.toFixed(2)}（生成秒数 × $${MAX_USD_PER_SECOND}）：已花 $${videoSpent.toFixed(2)}，本次 $${costUsd.toFixed(2)}。确实要做请在下面让管理员放行这一次`);
   } else if (videoSpent + costUsd > budget + 1e-9) blocked.push(`超出本条视频预算 $${budget.toFixed(2)}：已花 $${videoSpent.toFixed(2)}，本次 $${costUsd.toFixed(2)}。需要你主动提高预算`);
   else if (videoSpent + costUsd >= budget * BUDGET_WARN_RATIO) warnings.push(`花完这次将用掉预算的 ${Math.round(((videoSpent + costUsd) / budget) * 100)}%`);
   const perSecondAfter = r2((videoSpent + costUsd) / secs);
   if (!extraHook && perSecondAfter > MAX_USD_PER_SECOND) {
     const msg = `成片每秒成本将到 $${perSecondAfter.toFixed(2)}，超过 $${MAX_USD_PER_SECOND} 上限`;
     if (q.overLimit) warnings.push(msg);
-    else blocked.push(`${msg}：先考虑剪辑或少重做；确实要做请勾选“超限重新审批”`);
+    else blocked.push(`${msg}：先考虑剪辑或少重做；确实要做请在下面让管理员放行这一次`);
   }
   if (kind === "video" && q.seconds > shot.useSeconds + 1) warnings.push(`生成 ${q.seconds} 秒只用 ${shot.useSeconds} 秒，浪费 ${(q.seconds - shot.useSeconds).toFixed(1)} 秒`);
 
@@ -456,7 +456,7 @@ export function quoteJob(q: QuoteInput): Quote {
     conflicts: [],
     blocked,
     needsReason: attempt >= 2,
-    needsOverLimit: attempt > DEFAULT_ATTEMPTS || overHook,
+    needsOverLimit: attempt > DEFAULT_ATTEMPTS || overHook || (!extraHook && perSecondAfter > MAX_USD_PER_SECOND),
   };
 }
 
