@@ -1,4 +1,5 @@
 "use server";
+import { createHash } from "node:crypto";
 
 import fs from "node:fs";
 import { logoLock, shotClipPath } from "@/lib/logo-lock";
@@ -1756,9 +1757,17 @@ export async function saveShortAngleAction(videoId: string, shotId: string, data
   }
 }
 
-async function frameRefs(v: ShortVideo, s: ShortShot): Promise<string[]> {
+/** 发给供应商的每张参考图按内容哈希另存一份（不会被改），日志记哈希，事后能查到当时到底发了哪几张 */
+type SentRef = { name: string; sha256: string; file: string };
+async function frameRefs(v: ShortVideo, s: ShortShot, sent: SentRef[] = []): Promise<string[]> {
   const fm = frameModelOf(s);
-  const up = (bytes: Buffer, mime: string, name: string) => (fm.id === "sunburst" ? uploadFile(bytes, mime) : uploadToFalHost(bytes, mime, name));
+  const up = (bytes: Buffer, mime: string, name: string) => {
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    const file = `${sha256.slice(0, 16)}.${mime.split("/")[1]?.replace("jpeg", "jpg") || "bin"}`;
+    putFile(storageKey(v.projectId, "shorts", v.id, "sent-refs", file), bytes);
+    sent.push({ name, sha256, file });
+    return fm.id === "sunburst" ? uploadFile(bytes, mime) : uploadToFalHost(bytes, mime, name);
+  };
   const car = s.hook?.scene === "car";
   const files = car ? [] : await productRefFiles(v.projectId, v.colorId);
   if (!car && !files.length) throw new Error("没有产品参考图：先上传产品照，或在短视频列表页用 3D 模型渲染参考图（免费）");
@@ -1998,6 +2007,7 @@ export async function saveShortCompAction(videoId: string, shotId: string, dataU
 /** 后台跑：渲染 / 上传参考图 → 提交 → 等结果；页面不用一直等，进度从 state().running 轮询 */
 async function runInBackground(key: string, videoId: string, shotId: string, kind: JobKind, p: Prepared, reason: string) {
   try {
+    const sent: SentRef[] = [];
       const input: Record<string, unknown> =
         kind === "video"
           ? await (async () => {
@@ -2012,7 +2022,7 @@ async function runInBackground(key: string, videoId: string, shotId: string, kin
           : kind === "scene"
             ? { prompt: p.prompt, quality: "high", resolution: "2k", aspect_ratio: "9:16", enhance_prompt: false }
             : await (async () => {
-                const refs = await frameRefs(p.v, p.s);
+                const refs = await frameRefs(p.v, p.s, sent);
                 if (!refs.length) throw new Error("没有参考图：先在 3D 里点「保存」");
                 return frameModelOf(p.s).id === "sunburst"
                   ? { prompt: p.prompt, image_urls: refs, quality: "high", resolution: "2k", aspect_ratio: "9:16", enhance_prompt: false }
@@ -2030,6 +2040,7 @@ async function runInBackground(key: string, videoId: string, shotId: string, kin
         estUsd: p.quote.costUsd,
         reason: reason.trim().slice(0, 400),
       });
+    if (sent.length) logAction(null, { action: "job_refs", projectId: p.v.projectId, videoId, shotId, refId: job.id, model: job.model, detail: `发给供应商的参考图 ${sent.length} 张（存在 sent-refs/）：${sent.map((r) => `${r.name}=${r.sha256.slice(0, 16)}`).join("，")}` });
     runs.set(key, { ...runs.get(key)!, step: "gen", jobId: job.id });
     await drive(job);
     runs.delete(key);
