@@ -818,22 +818,19 @@ export function ShortStudio({
                     ? "先在上面点选一个创意；也可以点「+ 镜头」自己写"
                     : "先点上面的「AI 出 4 个创意」，再点选一个；也可以点「+ 镜头」自己写"
                   : st.jobs.some((j) => j.status !== "failed")
-                    ? "已经生成过画面，不能整体重出；可以逐镜修改"
+                    ? null
                     : null
               }
             />
-            <button
-              className={btn}
-              disabled={
-                busy ||
-                !aiReady ||
-                !v.conceptId ||
-                st.jobs.some((j) => j.status !== "failed")
-              }
-              onClick={() => act(() => aiShotsAction(v.id), "已生成分镜")}
-            >
-              {shots.length ? "按选中创意重出分镜" : "按选中创意出分镜"}
-            </button>
+            {st.jobs.some((j) => j.status !== "failed") ? null : (
+              <button
+                className={btn}
+                disabled={busy || !aiReady || !v.conceptId}
+                onClick={() => act(() => aiShotsAction(v.id), "已生成分镜")}
+              >
+                {shots.length ? "按选中创意重出分镜" : "按选中创意出分镜"}
+              </button>
+            )}
             {!aiReady ? <NeedKey name="DeepSeek" anchor="deepseek" /> : null}
             <button
               className={btn}
@@ -1065,13 +1062,13 @@ export function ShortStudio({
                   ) : null}
                   {s.hook && !s.hook.partOf ? (
                     <button
-                      className="mt-1 block text-xs text-rose-300 underline"
+                      className="mt-1 block text-xs text-neutral-500 hover:text-rose-300"
                       disabled={busy || dirty}
                       onClick={async () => {
                         if (await askConfirm(`删除开头「${s.hook?.name}」${v.shots.some((x) => x.hook?.partOf === s.id) ? "（连切镜后的第二段一起删）" : ""}？\n\n会丢掉 ${usd(shotsSpend(st.jobs, [s.id, ...v.shots.filter((x) => x.hook?.partOf === s.id).map((x) => x.id)]))} 的结果。删掉的开头进回收站，可以恢复。`)) act(() => deleteHookShotAction(v.id, s.id), "已删除开头，可在回收站恢复");
                       }}
                     >
-                      删除这个开头
+                      删除开头
                     </button>
                   ) : null}
                   {s.hook && !s.hook.partOf ? (
@@ -1088,7 +1085,7 @@ export function ShortStudio({
                           )
                         }
                       />
-                      导出
+                      导出时用
                     </label>
                   ) : null}
                 </li>,
@@ -1193,11 +1190,11 @@ export function ShortStudio({
                       className={`${input} w-32 py-1`}
                     />
                     <span
-                      className={`rounded px-2 py-0.5 text-xs ${s.stage === "accepted" ? "bg-emerald-500/20 text-emerald-200" : "bg-white/10 text-neutral-300"}`}
+                      className={`whitespace-nowrap rounded px-2 py-0.5 text-xs ${s.stage === "accepted" ? "bg-emerald-500/20 text-emerald-200" : "bg-white/10 text-neutral-300"}`}
                     >
                       {STAGE_LABELS[s.stage]}
                     </span>
-                    <span className="text-xs text-neutral-400">
+                    <span className="whitespace-nowrap text-xs text-neutral-400">
                       本镜已花 {usd(shotSpent)}
                     </span>
                   </div>
@@ -1800,7 +1797,7 @@ export function ShortStudio({
                                 <button
                                   className="rounded border border-white/15 px-1.5 py-0.5 text-[11px] text-neutral-300 hover:bg-white/5"
                                   disabled={busy}
-                                  title="点一下切换"
+                                  title="点一下切换：只管这一镜 / 后面的镜头也提醒"
                                   onClick={() =>
                                     act(() =>
                                       issueScopeAction(
@@ -1813,8 +1810,8 @@ export function ShortStudio({
                                   }
                                 >
                                   {it.scope === "video"
-                                    ? "整条视频都要注意"
-                                    : "只管这一镜"}
+                                    ? "范围：整条视频"
+                                    : "范围：只这一镜"}
                                 </button>
                                 {it.fromJobId ? (
                                   <a
@@ -1823,7 +1820,7 @@ export function ShortStudio({
                                     target="_blank"
                                     rel="noreferrer"
                                   >
-                                    旧版
+                                    看出问题的那版
                                   </a>
                                 ) : null}
                                 {canMark ? (

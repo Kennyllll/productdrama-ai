@@ -25,7 +25,8 @@ export default async function LedgerPage({ params, searchParams }: { params: Pro
   const all = every.filter((l) => (f === "shorts" ? l.episode === 0 && l.kind !== "usage_day" : f === "long" ? l.episode !== 0 || l.kind === "usage_day" : true));
   const jobs = all.filter((l) => l.kind !== "usage_day");
   const usage = all.filter((l) => l.kind === "usage_day");
-  const used = jobs.filter((l) => l.used);
+  const tracked = jobs.filter((l) => l.episode !== 0);
+  const used = tracked.filter((l) => l.used);
   const unknown = jobs.filter((l) => l.model === "kling").length;
   const byShot = new Map<string, LedgerEntry[]>();
   for (const j of jobs) byShot.set(j.shotCode || "（不属于镜头）", [...(byShot.get(j.shotCode || "（不属于镜头）") ?? []), j]);
@@ -33,7 +34,7 @@ export default async function LedgerPage({ params, searchParams }: { params: Pro
 
   return (
     <>
-      <PageHeader title="费用" description="每个生成任务一条记录：属于哪个镜头、用的什么模型、花了多少、最后有没有用上。" />
+      <PageHeader title="费用" description="每个生成任务一条记录：属于哪个镜头、用的什么模型、花了多少。" />
       <div className="mb-4 flex gap-1">
         {FILTERS.map(([k, label]) => (
           <Link key={k} href={k === "all" ? "?" : `?f=${k}`} className={`rounded-lg px-3 py-1 text-sm ${f === k ? "bg-amber-400/15 text-amber-200" : "text-neutral-400 hover:bg-white/5"}`}>
@@ -52,14 +53,22 @@ export default async function LedgerPage({ params, searchParams }: { params: Pro
               <p className="text-2xl text-white">{usd(sum(jobs))}</p>
               <p className="mt-1 text-xs text-neutral-400">{jobs.length} 个任务{unknown ? `，其中 ${unknown} 个 Kling 测试没有单价` : ""}</p>
             </Card>
-            <Card title="用上的素材">
-              <p className="text-2xl text-emerald-200">{usd(sum(used))}</p>
-              <p className="mt-1 text-xs text-neutral-400">{used.length} 个任务的结果进了定稿</p>
-            </Card>
-            <Card title="没用上（废片 / 测试）">
-              <p className="text-2xl text-rose-200">{usd(sum(jobs) - sum(used))}</p>
-              <p className="mt-1 text-xs text-neutral-400">占 {Math.round(((sum(jobs) - sum(used)) / Math.max(sum(jobs), 0.01)) * 100)}%</p>
-            </Card>
+            {tracked.length ? (
+              <>
+                <Card title="长视频：用上的">
+                  <p className="text-2xl text-emerald-200">{usd(sum(used))}</p>
+                  <p className="mt-1 text-xs text-neutral-400">{used.length} 个任务的结果进了定稿</p>
+                </Card>
+                <Card title="长视频：没用上">
+                  <p className="text-2xl text-rose-200">{usd(sum(tracked) - sum(used))}</p>
+                  <p className="mt-1 text-xs text-neutral-400">废片和测试，占长视频的 {Math.round(((sum(tracked) - sum(used)) / Math.max(sum(tracked), 0.01)) * 100)}%</p>
+                </Card>
+              </>
+            ) : (
+              <Card title="用上了多少">
+                <p className="text-sm text-neutral-300">短视频还不统计哪些任务用上了，先看合计和下面按镜头的花费。</p>
+              </Card>
+            )}
           </div>
 
           <details>
@@ -142,7 +151,7 @@ export default async function LedgerPage({ params, searchParams }: { params: Pro
                         );
                       })}
                       <td className="text-right">{usd(sum(xs))}</td>
-                      <td className="text-right text-emerald-200">{usd(sum(xs.filter((x) => x.used)))}</td>
+                      <td className="text-right text-emerald-200">{xs.some((x) => x.episode !== 0) ? usd(sum(xs.filter((x) => x.used))) : "—"}</td>
                     </tr>
                   ))}
               </tbody>
