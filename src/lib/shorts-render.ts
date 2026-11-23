@@ -9,6 +9,7 @@ import { bodyAss, hookAss } from "@/lib/hook-effects";
 import { hookEffectOf, hookParts, hooksOf, shotCuts, shotSound, type ShortShot, type ShortVideo } from "@/lib/shorts";
 import { finalPath, videoDir } from "@/lib/shorts-repo";
 import { shotClipPath } from "@/lib/logo-lock";
+import { handheldFilters } from "@/lib/handheld";
 
 const run = promisify(execFile);
 const FONTS = path.join(process.cwd(), "assets", "fonts");
@@ -60,7 +61,9 @@ export async function renderShort(v: ShortVideo, dest = finalPath(v), hookId?: s
     let at = 0;
     for (const [k, c] of shotCuts(s).entries()) {
       const zoom = c.zoom > 1 ? [`scale=${Math.round(1080 * c.zoom / 2) * 2}:${Math.round(1920 * c.zoom / 2) * 2}`, "crop=1080:1920"] : [];
-      const vf = ["scale=1080:1920:force_original_aspect_ratio=increase", "crop=1080:1920", ...zoom, "setsar=1", "fps=30"];
+      const move = s.layout?.move;
+      const shake = move?.kind === "handheld" ? handheldFilters(`${s.id}-${k}`, move.amount) : [];
+      const vf = ["scale=1080:1920:force_original_aspect_ratio=increase", "crop=1080:1920", ...zoom, ...shake, "setsar=1", "fps=30"];
       const fx = hookEffectOf(hook?.hook);
       const ass = v.captions === false ? null : inHook.has(s.id) ? (fx && hook ? hookAss(fx, hook.caption, hookLen, hookT + at, { line: hook.hook?.line, cut: parts[0]?.useSeconds }) : null) : bodyAss(fx, s.caption, s.useSeconds, at);
       if (ass) {

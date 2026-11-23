@@ -143,7 +143,7 @@ export function moveText(l: SetLayout | null | undefined): string {
   const amt = m.amount > 0.66 ? "strong" : m.amount > 0.33 ? "moderate" : "slight";
   const map: Record<SetMove["kind"], string> = {
     static: "Camera: locked off, no camera movement.",
-    handheld: `Camera: handheld phone held by a parent nearby, ${m.amount > 0.66 ? "strong" : m.amount > 0.33 ? "moderate" : "light but clearly visible"} hand shake with small drifts and re-framing as they follow the action, slight tilt; not stabilized, no gimbal smoothness.`,
+    handheld: "Camera: a parent holds the phone at this angle for the whole clip; the camera does not zoom, push in, pan or drift.",
     push: `Camera: ${amt} slow push-in toward the subject.`,
     pull: `Camera: ${amt} slow pull-back away from the subject.`,
     orbitL: `Camera: ${amt} orbit to the left around the subject, keeping it centered.`,
