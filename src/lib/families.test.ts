@@ -49,6 +49,8 @@ test("拿手机的人：镜头优先，none = 不指定；提示词写成员，�
   assert.equal(filmerScale(undefined), 1);
   assert.match(operatorPrompt("stand", null, "Emily, a 32-year-old woman"), /holding the phone and filming is Emily/);
   assert.doesNotMatch(operatorPrompt("stand", null), /Emily|holding the phone and filming is/);
+  assert.match(operatorPrompt("stand", null), /never walk into the frame/);
+  assert.match(operatorPrompt("stand+shadow", null), /only shadow from behind the camera/);
 });
 
 test("节日衣服每人一套：预置每家每个节日人人不同；旧的整家同款分给没写的人", () => {
