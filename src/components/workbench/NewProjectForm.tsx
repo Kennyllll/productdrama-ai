@@ -11,8 +11,10 @@ const inputClass =
 export function NewProjectForm() {
   const [state, action, pending] = useActionState<FormState, FormData>(createProjectAction, {});
   return (
-    <form action={action} className="space-y-3">
-      <fieldset className="grid grid-cols-2 gap-2 text-sm">
+    <form action={action} noValidate className="space-y-3">
+      <details className="text-sm">
+        <summary className="cursor-pointer select-none text-xs text-neutral-500">更多选项（默认做短视频）</summary>
+      <fieldset className="mt-2 grid grid-cols-2 gap-2 text-sm">
         <legend className="mb-1 text-neutral-400">主要做什么（以后两种都能做）</legend>
         <label className="flex cursor-pointer flex-col rounded-md border border-white/10 p-2 has-[:checked]:border-amber-400 has-[:checked]:bg-amber-400/10">
           <span className="text-white">
@@ -29,9 +31,10 @@ export function NewProjectForm() {
           <span className="text-xs text-neutral-500">一个产品，多条 15–30 秒竖屏</span>
         </label>
       </fieldset>
+      </details>
       <label className="block text-sm">
         <span className="text-neutral-400">产品名称 *</span>
-        <input name="name" required maxLength={60} placeholder="例如：KB002 儿童平衡车" className={inputClass} />
+        <input name="name" maxLength={60} placeholder="例如：KB002 儿童平衡车" className={inputClass} />
       </label>
       <label className="block text-sm">
         <span className="text-neutral-400">品牌</span>

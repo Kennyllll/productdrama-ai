@@ -22,6 +22,7 @@ export function ArkSettingsForm({ initial }: { initial: { configured: boolean; k
       if (res.info) {
         setInfo(res.info);
         setKey("");
+        if (key && !clear) setStatus(await testArkAction());
       }
     });
 
@@ -29,7 +30,7 @@ export function ArkSettingsForm({ initial }: { initial: { configured: boolean; k
     <Card title="视频生成 · 火山方舟（Seedance 2.5）">
       <div className="space-y-4">
         <p className="text-xs text-neutral-400">
-          在火山方舟控制台 →「API Key 管理」创建一个 Key。短视频的视频都用它调 Seedance 2.5（首帧仍走 Higgsfield）。开通 Seedance 2.x 要求账户余额超过 200 元。Key 只保存在本机数据库；每次生成前先弹审批框显示价格。
+          在火山方舟控制台 →「API Key 管理」创建一个 Key。只拍产品、没有人的镜头用它出视频；有人的镜头走 Higgsfield，不填方舟也能做有人的镜头。开通 Seedance 2.x 要求账户余额超过 200 元。Key 只保存在本机数据库；每次生成前先弹审批框显示价格。
         </p>
         <p className="text-sm text-neutral-400">
           状态：{info.configured ? <span className="text-emerald-300">已配置（{info.keyHint}）</span> : <span className="text-amber-200">未配置</span>}

@@ -26,6 +26,11 @@ export function HiggsfieldSettingsForm({ initial }: { initial: { configured: boo
         setInfo(res.info);
         setKeyId("");
         setSecret("");
+        if (!clear && (keyId || secret)) {
+          const t = await testHfAction();
+          setStatus(t);
+          setChecks(t.checks ?? []);
+        }
       }
     });
 

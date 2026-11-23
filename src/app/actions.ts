@@ -14,7 +14,7 @@ const text = (fd: FormData, key: string, max: number) => String(fd.get(key) ?? "
 export async function createProjectAction(_prev: FormState, fd: FormData): Promise<FormState> {
   const name = text(fd, "name", 60);
   const brand = text(fd, "brand", 60);
-  if (!name) return { error: "请填写项目名称" };
+  if (!name) return { error: "请先写产品名字，例如：KRIDDO TC003 儿童三轮车" };
   const kind = fd.get("kind") === "product" ? "product" : "series";
   const id = createProject(name, brand, kind);
   revalidatePath("/dashboard");

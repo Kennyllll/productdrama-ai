@@ -30,7 +30,14 @@ export default function DashboardPage() {
         <div className="space-y-4 lg:col-span-2">
           {projects.length === 0 ? (
             <Card>
-              <p className="text-sm text-neutral-500">还没有产品，在右侧新建一个。</p>
+              <p className="text-sm font-medium text-neutral-200">第一次用，按这 3 步走：</p>
+              <ol className="mt-2 space-y-1.5 text-sm text-neutral-400">
+                <li>
+                  ① 到 <Link href="/settings" className="text-amber-300 underline">设置</Link> 填 AI Key（页面顶部写了哪几个必须填）
+                </li>
+                <li>② 在右边写产品名字，点「创建，先填产品资料」</li>
+                <li>③ 按产品资料页的 4 步传照片、填卖点，然后就能做短视频</li>
+              </ol>
             </Card>
           ) : null}
           {projects.map((p) => {

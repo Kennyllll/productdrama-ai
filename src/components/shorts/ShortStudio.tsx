@@ -592,7 +592,7 @@ export function ShortStudio({
           </div>
           <div className="mt-1 flex justify-between">
             <span className="text-neutral-300">
-              已花 {usd(spent)} · 剩 {usd(Math.max(0, budget - spent))}
+              {v.shots.length ? `已花 ${usd(spent)} · 剩 ${usd(Math.max(0, budget - spent))}` : "出完分镜后按成片秒数自动算预算"}
             </span>
             <span
               className={
@@ -719,7 +719,7 @@ export function ShortStudio({
             value={brief}
             onChange={(e) => setBrief(e.target.value)}
             rows={2}
-            placeholder="可选：这条想要的节日、受众、卖点…"
+            placeholder="可选：还想强调什么，比如受众、卖点（节日在上面的视频设定里改）"
             className={input}
           />
           <button
@@ -976,7 +976,10 @@ export function ShortStudio({
                       className={btn}
                       disabled={busy || dirty}
                       title={dirty ? "先保存分镜" : ""}
-                      onClick={() => act(() => addHookAction(v.id), "已新建开头：先改文字，再去 3D 保存构图")}
+                      onClick={async () => {
+                        if (!(await askConfirm("再加一个开头？只是加一个镜头，现在不花钱；成片多一个版本，计划时长和预算会跟着增加。"))) return;
+                        act(() => addHookAction(v.id), "已新建开头：先改文字，再去 3D 保存构图");
+                      }}
                     >
                       ＋ 照抄第一个开头
                     </button>

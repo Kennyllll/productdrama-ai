@@ -40,6 +40,7 @@ export function AiSettingsForm({ initial }: { initial: AiPublicInfo }) {
       if (res.info) {
         setInfo(res.info);
         setApiKey("");
+        if (apiKey && !clearKey) setStatus(await testAiAction());
       }
     });
 
