@@ -1161,7 +1161,8 @@ function refPlan(v: ShortVideo, s: ShortShot): RefPart[] {
       text: "is a 3D blocking render of this exact shot: match its camera angle, lens, framing and the product's position, size and orientation exactly; furniture stays where it is. Turn the untextured shapes into a real lived-in home as described; translucent mannequins or a capsule mark the people. Empty sky or flat ground at the edges is unfinished 3D: fill it from the location text.",
       file: async () => (fs.existsSync(comp) ? comp : null),
     });
-    if (angleRefPath(v, s))
+    // 照片模型形状不准：不发灰模，3D 构图里车也是灰块，形状只照实物照
+    if (modelPrecision(modelFor(v.projectId, v.colorId)) === "exact" && angleRefPath(v, s))
       out.push({
         text:
           modelFor(v.projectId, v.colorId)?.source === "fal"
@@ -1175,9 +1176,17 @@ function refPlan(v: ShortVideo, s: ShortShot): RefPart[] {
       out.push({
         text: exact
           ? "is a real photo of the product from about this side: copy its colors, materials, logo and stickers; its shape matches the exact 3D render above"
-          : "is a real photo of the product from about this side: draw every part exactly like it (stem bend, backrest hole, baskets, cranks, frame tube, wheel sizes, logo spot); 3D images give only position, size and direction",
+          : "is a real photo of the product from about this side: draw every part exactly like it. The light-gray box in Image 1 only marks the product's place, size and direction",
         file: async () => ph,
       });
+    // 照片模型：再发两张细节实物照，盯住最容易画错的立管弯和靠背孔
+    if (!exact) {
+      const photos = listAssets(v.projectId).filter((a) => a.kind === "product_photo" && fs.existsSync(assetPath(a)));
+      const side = photos.find((a) => /side|侧/i.test(a.angle));
+      const seat = photos.find((a) => /seat|座/i.test(a.angle));
+      if (side && assetPath(side) !== ph) out.push({ text: "is a real side photo: copy every part; the white stem curves back toward the seat, never a straight post", file: async () => assetPath(side) });
+      if (seat) out.push({ text: "is a real seat close-up: copy the backrest and its hole", file: async () => assetPath(seat) });
+    }
   }
   const me = shotScene(v, s);
   const i = v.shots.indexOf(s);

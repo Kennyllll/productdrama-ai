@@ -44,6 +44,7 @@ export function ShortSet({
   modelId,
   stage,
   initialSel,
+  placeholderProduct,
 }: {
   projectId: string;
   videoId: string;
@@ -66,6 +67,7 @@ export function ShortSet({
   /** 摆放编辑器每镜要用的数据 */
   stage: Record<string, StageProps>;
   initialSel?: string;
+  placeholderProduct?: boolean;
 }) {
   const afterCapture = useRef<(() => void) | null>(null);
   const [code, setCode] = useState(shots.some((s) => s.code === initialCode) ? initialCode : shots[0]?.code ?? "");
@@ -271,6 +273,7 @@ export function ShortSet({
           </h2>
           <Set3D
             compact
+            placeholderProduct={placeholderProduct}
             activeCode={code}
             projectId={projectId}
             episode={0}

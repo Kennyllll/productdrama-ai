@@ -1,3 +1,4 @@
+import { modelPrecision } from "@/lib/model-repo";
 import { getBrainKey } from "@/lib/brain/kimi";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -113,6 +114,7 @@ export default async function ShortSetPage({ params, searchParams }: { params: P
           scenes={scenes}
           sceneItems={sceneItems}
           glbUrl={model ? `/api/models/${model.id}` : null}
+          placeholderProduct={modelPrecision(model) !== "exact"}
           modelId={base?.id ?? null}
           rig={base ? getRig(base.id) : null}
           initialCode={sp.shot ?? v.shots.find((s) => s.stage !== "accepted")?.id ?? ""}

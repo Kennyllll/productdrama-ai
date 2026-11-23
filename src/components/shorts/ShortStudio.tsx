@@ -72,6 +72,7 @@ import {
   videoTheme,
   waitingFor,
   RULE1_REDO,
+  rule1Tries,
   RULE1_MAX,
 } from "@/lib/shorts";
 import { THEMES } from "@/lib/shorts-scenes";
@@ -1510,7 +1511,7 @@ export function ShortStudio({
                                 <div className={`w-full rounded border p-2 text-xs ${fc.failed ? "border-amber-400/40 text-amber-200" : "border-rose-400/50 bg-rose-400/5 text-rose-200"}`}>
                                   <p className="font-medium">{fc.failed ? "看图检查" : `看图检查发现 ${fc.issues.length} 个问题，先看图再决定`}</p>
                                   {fc.product?.length ? (() => {
-                                    const tries = js.filter((j) => j.kind === "frame" && j.status !== "failed" && j.reason.startsWith(RULE1_REDO)).length;
+                                    const tries = rule1Tries(js, s.compFile);
                                     return (
                                       <div className="mt-1 space-y-1">
                                         <p className="font-semibold text-rose-100">车和实物不一样（规则 #1），不能直接通过</p>

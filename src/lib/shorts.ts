@@ -312,6 +312,11 @@ export type JobStatus = "submitting" | "submitted" | "completed" | "failed" | "u
 /** 首帧因为产品和实物不一致而重出：重做原因用这个开头 */
 export const RULE1_REDO = "产品和实物不一致";
 export const RULE1_MAX = 3;
+/** 这一镜因为车不对已经重出几次：重新截过 3D 构图就从 0 算 */
+export function rule1Tries(jobs: GenJob[], compFile: string | null | undefined) {
+  const compAt = Number(/-(\d{13})\.png$/.exec(compFile ?? "")?.[1] ?? 0);
+  return jobs.filter((j) => j.kind === "frame" && j.status !== "failed" && j.reason.startsWith(RULE1_REDO) && Date.parse(j.createdAt) > compAt).length;
+}
 
 export interface GenJob {
   id: string;
@@ -418,7 +423,7 @@ export function quoteJob(q: QuoteInput): Quote {
   if (attempt >= 2 && q.reason.trim().length < 4) blocked.push("这是重做：请写重做原因，这次改了什么、为什么（至少 4 个字）");
   // 规则 #1：车和实物不一致的首帧重出是必须的，不占默认次数，但最多 3 次
   const rule1 = kind === "frame" && q.reason.startsWith(RULE1_REDO);
-  const rule1Done = sameKind.filter((j) => j.status !== "failed" && j.reason.startsWith(RULE1_REDO)).length;
+  const rule1Done = rule1Tries(sameKind, shot.compFile);
   if (rule1 && rule1Done >= RULE1_MAX) blocked.push(`因为车不对已经重出 ${rule1Done} 次：别再花钱重出。换一个能看清产品的 3D 角度、补同角度的实物照，或者向工厂要 STEP`);
   if (attempt > DEFAULT_ATTEMPTS && !q.overLimit && !rule1) blocked.push(`本镜已经 ${charged.length} 次，超过默认上限（1 次 + 1 次重做）：先考虑剪辑或补短镜头；确实要重做请勾选“超限重新审批”`);
   if (overHook) {

@@ -68,6 +68,7 @@ export function Set3D({
   onSave,
   onCapture,
   onCaptureProduct,
+  placeholderProduct,
   onShotChange,
   rig,
   moveExtra,
@@ -95,6 +96,8 @@ export function Set3D({
   onCapture?: (code: string, png: string) => Promise<{ error?: string }>;
   /** 只拍产品、白底、从本镜机位方向看的同角度参考图（代替 Blender 渲染） */
   onCaptureProduct?: (code: string, png: string) => Promise<{ error?: string }>;
+  /** 照片模型形状不准：截 3D 构图时把车换成同尺寸的灰块，免得 AI 照着灰模画错零件 */
+  placeholderProduct?: boolean;
   onShotChange?: (code: string) => void;
   /** 产品接触点（按产品模型保存）；没有时按模型尺寸估算 */
   rig?: ProductRig | null;
@@ -126,6 +129,7 @@ export function Set3D({
   const [pending, start] = useTransition();
   const camCanvas = useRef<HTMLCanvasElement>(null);
   const productShotRef = useRef<(() => string | null) | null>(null);
+  const proxyRef = useRef<((on: boolean) => void) | null>(null);
   const [modelReady, setModelReady] = useState(!glbUrl);
   const mapCanvas = useRef<HTMLCanvasElement>(null);
   const layoutRef = useRef(layout);
@@ -225,6 +229,13 @@ export function Set3D({
         bike.remove(bikeStandIn);
         bike.add(obj);
         const s = box.getSize(new THREE.Vector3());
+        const proxy = new THREE.Mesh(new THREE.BoxGeometry(s.x, s.y, s.z), new THREE.MeshLambertMaterial({ color: "#d8d8d8", transparent: true, opacity: 0.4, depthWrite: false }));
+        proxy.position.y = s.y / 2;
+        proxyRef.current = (on) => {
+          obj.visible = !on;
+          if (on) bike.add(proxy);
+          else bike.remove(proxy);
+        };
         // KB002 等模型车头沿 x 轴：长 = x，宽 = z
         setAutoRig(estimateRig(s.x, s.z, s.y));
         setModelReady(true);
@@ -521,7 +532,12 @@ export function Set3D({
       if (data && onCapture) {
         previewRef.current = null;
         await new Promise((res) => requestAnimationFrame(() => res(null)));
+        if (placeholderProduct) {
+          proxyRef.current?.(true);
+          for (let i = 0; i < 2; i++) await new Promise((res) => requestAnimationFrame(() => res(null)));
+        }
         const png = camCanvas.current?.toDataURL("image/png");
+        proxyRef.current?.(false);
         const c = png ? await onCapture(code, png) : { error: "截图失败" };
         const pp = !c.error && onCaptureProduct ? productShotRef.current?.() : null;
         const p: { error?: string } = pp && onCaptureProduct ? await onCaptureProduct(code, pp) : {};
