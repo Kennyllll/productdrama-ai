@@ -86,7 +86,7 @@ import {
   updateJob,
   type JobRecord,
 } from "@/lib/shorts-repo";
-import { runKey, runningOf, runs, type RunInfo } from "@/lib/shorts-runs";
+import { reservedOf, runKey, runningOf, runs, withVideoLock, type RunInfo } from "@/lib/shorts-runs";
 import { currentActor, requireAdmin } from "@/lib/admin";
 import { logAction } from "@/lib/audit-repo";
 import { applyBudgetChange } from "@/lib/budget-change";
@@ -1674,7 +1674,8 @@ async function prepare(videoId: string, shotId: string, kind: JobKind, seconds: 
   const s = v.shots.find((x) => x.id === shotId);
   if (!s) throw new Error("镜头不存在");
   if (kind === "video" && s.hook?.selfie && !s.hook.line?.trim()) throw new Error("自拍台词必填：在「生成视频」旁边填");
-  const jobs = listJobs(videoId).map(toJobView);
+  const held: GenJob[] = reservedOf(videoId).map((r) => ({ id: `held-${r.shotId}`, videoId, shotId: r.shotId, kind: r.kind, model: "", paramsHash: "", seconds: 0, estUsd: r.usd, actualUsd: null, status: "submitting", requestId: null, reason: "", isTest: false, hasOutput: false, error: null, createdAt: new Date().toISOString() }));
+  const jobs = [...listJobs(videoId).map(toJobView), ...held];
   const secs = kind === "video" ? Math.round(seconds) : 0;
   const me = kind === "scene" ? shotScene(v, s) : null;
   if (kind === "scene" && !me) throw new Error("本镜还没有场地");
@@ -2055,14 +2056,17 @@ export async function runJobAction(
   approvedUsd: number,
 ): Promise<Result<StudioState>> {
   try {
-    const p = await prepare(videoId, shotId, kind, seconds, reason, overLimit);
-    if (p.quote.blocked.length) throw new Error(p.quote.blocked[0]);
-    if (Math.abs(p.quote.costUsd - approvedUsd) > 0.005) throw new Error(`价格变了（$${approvedUsd.toFixed(2)} → $${p.quote.costUsd.toFixed(2)}），请重新审批`);
-    const key = runKey(videoId, shotId);
-    const cur = runs.get(key);
-    if (cur && !cur.error) throw new Error("这一镜正在生成，等它完成");
-    const approval = overLimit ? gateOverLimit(videoId, shotId, kind, p.quote.costUsd) : "";
-    runs.set(key, { kind, startedAt: Date.now(), step: "prep" });
+    const { p, key, approval } = await withVideoLock(videoId, async () => {
+      const p = await prepare(videoId, shotId, kind, seconds, reason, overLimit);
+      if (p.quote.blocked.length) throw new Error(p.quote.blocked[0]);
+      if (Math.abs(p.quote.costUsd - approvedUsd) > 0.005) throw new Error(`价格变了（$${approvedUsd.toFixed(2)} → $${p.quote.costUsd.toFixed(2)}），请重新审批`);
+      const key = runKey(videoId, shotId);
+      const cur = runs.get(key);
+      if (cur && !cur.error) throw new Error("这一镜正在生成，等它完成");
+      const approval = overLimit ? gateOverLimit(videoId, shotId, kind, p.quote.costUsd) : "";
+      runs.set(key, { kind, startedAt: Date.now(), step: "prep", usd: p.quote.costUsd });
+      return { p, key, approval };
+    });
     await auditSubmit(p.v, p.s, kind, p.quote.costUsd, jobModelOf(kind, p.s), reason, approval);
     void runInBackground(key, videoId, shotId, kind, p, reason);
     return { result: state(videoId) };
