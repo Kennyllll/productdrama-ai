@@ -424,14 +424,14 @@ export function ShortStudio({
   return (
     <div className="mt-3 space-y-5 pb-24">
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-white/10 pb-4">
-        <div className="space-y-2">
+        <div className="min-w-0 max-w-full space-y-2">
           <input
             defaultValue={v.title}
             onBlur={(e) =>
               e.target.value !== v.title &&
               act(() => saveShortVideoAction(v.id, { title: e.target.value }))
             }
-            className="bg-transparent text-2xl font-semibold text-white outline-none"
+            className="w-full min-w-0 bg-transparent text-2xl font-semibold text-white outline-none"
           />
           <details className="text-xs text-neutral-400">
             <summary className="cursor-pointer select-none">
