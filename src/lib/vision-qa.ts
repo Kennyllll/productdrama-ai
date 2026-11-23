@@ -329,7 +329,7 @@ export async function reviewShortVideo(o: { frames: { t: number; img: Buffer }[]
         "1. In EVERY frame where the product is visible, compare it with the reference photo and with the first frame: count the wheels and how many are at the back; every part in the reference (baskets, seat and backrest, fender, pedals, handlebar) is still there; nothing melts, merges, bends, duplicates, disappears or changes size relative to the rest of the product; colors and logo stay the same.",
         "2. A part that is only hidden behind a person or cut by the frame edge is fine.",
         "3. People keep the same face, hair and clothes in every frame; nobody appears or vanishes; anatomy is correct.",
-        "4. No glowing spots, flashes, garbled text or watermarks. Do not report the logo or small printed text on the product as different: at this size it is never readable enough to judge.",
+        "4. No glowing spots, flashes, garbled text or watermarks. Logo text: if the logo on the product is large enough to read in the first frame, it must read the same letters in every later frame; report it if the letters change or turn into gibberish (e.g. KRIDDO becoming PNDDS). If it is too small to read, do not judge it.",
         "5. If the product moves, it only moves forward: front wheel first, in the direction its front end points. Judge it against the ground and background (when the camera follows it, the background slides the opposite way). Report it if it rolls backward (rear wheels leading) or slides sideways.",
         "6. The product stays in view: report it if a hand, arm or person covers most of the product for 1 second or longer (for example the filming person's hand moving in front of it), or if the product leaves the frame.",
       ]
