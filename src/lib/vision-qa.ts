@@ -97,6 +97,27 @@ export interface VisionReview {
   product?: string[];
 }
 
+/** 照片 / AI 建的模型：按每张实物照的角度截一张模型图，逐零件找形状不一样的地方 */
+export async function compareModelToPhotos(o: { productName: string; structure: string; pairs: { label: string; render: Buffer; photo: Buffer }[] }): Promise<{ label: string; issues: string[] }[]> {
+  const name = o.productName || "product";
+  const prompt = [
+    `Each pair below shows a 3D model render of the ${name} (gray or plain) and then a real photo of the same product from about the same angle.`,
+    o.structure ? `The real product is: ${o.structure}` : "",
+    "For every pair, compare the SHAPE part by part and list every part of the 3D model that differs from the real photo: missing, extra, merged, bent differently, wrong size or proportion, wrong position, a hole or cut-out that is missing or filled. Check the handlebar and its stem, the seat and backrest (holes), baskets, fenders, pedals and cranks, every frame tube and how it bends, every wheel and its size.",
+    "Ignore colors, materials, textures, logos, stickers, background, lighting and small differences of camera angle.",
+    'Return JSON only: {"pairs": [{"pair": number, "issues": string[]}]}. Each issue is ONE short sentence in Simplified Chinese naming the part (e.g. "车把立管是直的，实物向后弯"). Empty issues if the shape matches.',
+  ].filter(Boolean).join("\n");
+  const parts: Part[] = [{ text: prompt }];
+  for (const [i, p] of o.pairs.entries()) parts.push({ text: `Pair ${i + 1} (${p.label}): 3D model render, then real photo.` }, await jpegPart(p.render, 1024), await jpegPart(p.photo, 1024));
+  const data = (await generate(parts, 150_000)) as { pairs?: unknown };
+  const got = Array.isArray(data.pairs) ? (data.pairs as { pair?: unknown; issues?: unknown }[]) : [];
+  return o.pairs.map((p, i) => {
+    const r = got.find((x) => x.pair === i + 1);
+    const issues = Array.isArray(r?.issues) ? r.issues.filter((x): x is string => typeof x === "string" && x.trim() !== "").map((x) => x.trim()).slice(0, 8) : [];
+    return { label: p.label, issues };
+  });
+}
+
 export interface SupportSpot {
   support: string;
   /** 空场景里不该有的人 / 车（AI 没听话画进去了） */

@@ -49,7 +49,8 @@ import {
   reviewProductModel,
   updateModelJob,
 } from "@/lib/model-repo";
-import { addAsset, assetPath, deleteAsset, findLocalProject, getAsset, listAssets } from "@/lib/repo";
+import { addAsset, assetPath, deleteAsset, findLocalProject, getAsset, getProduct, listAssets } from "@/lib/repo";
+import { compareModelToPhotos } from "@/lib/vision-qa";
 import { listShortVideos } from "@/lib/shorts-repo";
 import type { AssetRecord, FormState } from "@/lib/types";
 
@@ -344,6 +345,27 @@ export async function reviewModelAction(modelId: string, ok: boolean, lengthCm: 
     if (g) saveRig(modelId, scaleRig(g, factor));
     refresh(m.projectId);
     return { result: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 审核时按每张实物照的角度截模型图，看图检查逐零件比形状（Gemini，几分钱） */
+export async function compareModelAction(modelId: string, shots: { photoId: string; label: string; dataUrl: string }[]): Promise<Result<{ label: string; issues: string[] }[]>> {
+  try {
+    const m = getProductModelById(modelId);
+    if (!m) throw new Error("模型不存在");
+    if (!shots.length) throw new Error("没有能对照的实物照：白底照要标正面、侧面、背面或 45° 这些角度");
+    const p = getProduct(m.projectId);
+    const structure = (p?.bible ?? []).filter((f) => /struct|结构/i.test(`${f.key} ${f.label}`) && f.value.trim()).map((f) => f.value.trim()).join(" ");
+    const pairs = shots.slice(0, 6).map((s) => {
+      const a = getAsset(s.photoId);
+      if (!a || a.projectId !== m.projectId) throw new Error("照片不属于这个产品");
+      const b64 = s.dataUrl.split(",")[1] ?? "";
+      if (!b64) throw new Error("模型截图是空的，等模型加载完再点");
+      return { label: s.label, render: Buffer.from(b64, "base64"), photo: fs.readFileSync(assetPath(a)) };
+    });
+    return { result: await compareModelToPhotos({ productName: p?.name ?? "", structure, pairs }) };
   } catch (e) {
     return fail(e);
   }

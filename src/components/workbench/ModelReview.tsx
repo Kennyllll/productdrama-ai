@@ -7,7 +7,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
-import { flipStepUpAction, reviewModelAction, turnModelAction } from "@/app/model-actions";
+import { compareModelAction, flipStepUpAction, reviewModelAction, turnModelAction } from "@/app/model-actions";
 import { Card, Tag } from "@/components/ui";
 import { RIDE_KINDS, RIG_KEYS, rigFrom, rigLocal, type ProductRig, type RideKind, type RigKey } from "@/lib/figures";
 import { measureRig } from "@/lib/rig-measure";
@@ -33,11 +33,13 @@ const VIEWS: Record<string, [number, number, number]> = {
 type RigState = { rig: ProductRig; how: "auto" | "guess" | "edit" | "saved" };
 type ViewerApi = { setView: (v: string) => void; setMarks: (g: ProductRig | null, sel: RigKey | null, edit: boolean) => void; remeasure: () => void };
 
-function Viewer({ url, view, kind, rig, onRig, sel, editRig, withRig }: { url: string; view: string; kind: RideKind; rig: ProductRig | null; onRig: (r: RigState) => void; sel: RigKey | null; editRig: boolean; withRig: boolean }) {
+function Viewer({ url, view, kind, rig, onRig, sel, editRig, withRig, capRef }: {
+  capRef?: { current: ((v: string) => string) | null };
+  url: string; view: string; kind: RideKind; rig: ProductRig | null; onRig: (r: RigState) => void; sel: RigKey | null; editRig: boolean; withRig: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const api = useRef<ViewerApi | null>(null);
-  const live = useRef({ rig, onRig, kind, sel, editRig });
-  live.current = { rig, onRig, kind, sel, editRig };
+  const live = useRef({ rig, onRig, kind, sel, editRig, view });
+  live.current = { rig, onRig, kind, sel, editRig, view };
   const [info, setInfo] = useState("加载模型中…");
 
   useEffect(() => {
@@ -109,6 +111,19 @@ function Viewer({ url, view, kind, rig, onRig, sel, editRig, withRig }: { url: s
       }
     };
     api.current = { setView, setMarks, remeasure };
+    // 截一张这个角度的模型图（不带接触点、箭头和格子），给看图检查和实物照对比
+    const extras: THREE.Object3D[] = [marks, helper];
+    if (capRef)
+      capRef.current = (v: string) => {
+        const was = extras.map((o) => o.visible);
+        extras.forEach((o) => (o.visible = false));
+        setView(v);
+        renderer.render(scene, camera);
+        const out = renderer.domElement.toDataURL("image/jpeg", 0.9);
+        extras.forEach((o, i) => (o.visible = was[i]));
+        setView(live.current.view);
+        return out;
+      };
     let raf = 0;
     const loop = () => {
       raf = requestAnimationFrame(loop);
@@ -126,8 +141,10 @@ function Viewer({ url, view, kind, rig, onRig, sel, editRig, withRig }: { url: s
         // 地面在模型自己的 y = 0：车轮应该正好落在格子上
         const grid = new THREE.GridHelper(radius * 6, 12, 0x555555, 0x999999);
         scene.add(grid);
+        extras.push(grid);
         const arrow = new THREE.ArrowHelper(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(center.x, box.max.y + radius * 0.08, center.z), radius * 1.6, 0xe11d48);
         scene.add(arrow);
+        extras.push(arrow);
         camera.near = radius / 100;
         camera.far = radius * 100;
         camera.updateProjectionMatrix();
@@ -231,6 +248,23 @@ export function ModelReview({
   const [pending, start] = useTransition();
   const [rigS, setRigS] = useState<RigState | null>(savedRig ? { rig: savedRig, how: "saved" } : null);
   const [sel, setSel] = useState<RigKey | null>(null);
+  const capRef = useRef<((v: string) => string) | null>(null);
+  const [cmp, setCmp] = useState<{ label: string; issues: string[] }[] | null>(null);
+  const [cmpErr, setCmpErr] = useState("");
+  const comparable = photos.filter((p) => VIEWS[p.label]);
+  const compare = () =>
+    start(async () => {
+      setCmpErr("");
+      const cap = capRef.current;
+      if (!cap) return setCmpErr("模型还没加载完");
+      const shots = comparable.slice(0, 6).map((p) => ({ photoId: p.id, label: p.label, dataUrl: cap(p.label) }));
+      const r = await compareModelAction(model.id, shots);
+      if (r.error) setCmpErr(r.error);
+      else setCmp(r.result ?? []);
+    });
+  const cmpBad = (cmp ?? []).filter((x) => x.issues.length);
+  // 规则 #1：有能对照的实物照时，先让看图检查逐角度比一遍形状再通过（没配看图 Key 报错时可以人工看）
+  const cmpDone = !comparable.length || cmp !== null || cmpErr !== "";
   const items = [
     "外形和白底照一致（车把、车轮、座椅、车架弯度）",
     "车头朝红色箭头方向",
@@ -282,6 +316,7 @@ export function ModelReview({
           sel={sel}
           editRig={editable && !model.isColor}
           withRig={!model.isColor}
+          capRef={capRef}
         />
         {editable ? (
           <div className="flex flex-wrap items-center gap-1 text-xs text-neutral-400">
@@ -366,6 +401,31 @@ export function ModelReview({
           </Card>
         ) : null}
         <Card title="审核" aside={<Tag tone={model.status === "approved" ? "emerald" : model.status === "review" ? "amber" : "rose"}>{model.status === "approved" ? "已通过，在用" : model.status === "review" ? "待审核" : model.status === "rejected" ? "不通过" : "已替换"}</Tag>}>
+          {comparable.length ? (
+            <div className="mb-3 rounded-md border border-white/10 p-2 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" className={btn} disabled={pending} onClick={compare}>
+                  {pending ? "对照中…" : cmp ? "重新对照" : `逐角度对照实物照（${Math.min(comparable.length, 6)} 个角度）`}
+                </button>
+                <span className="text-neutral-500">看图检查按每张实物照的角度截模型图，逐个零件比形状，几分钱</span>
+              </div>
+              {cmpErr ? <p className="mt-1 text-amber-200">{cmpErr}（请自己逐张对照右上角的实物照）</p> : null}
+              {cmp && !cmpBad.length ? <p className="mt-1 text-emerald-300">每个角度的形状都和实物照对得上</p> : null}
+              {cmpBad.length ? (
+                <div className="mt-1 text-rose-200">
+                  <p className="font-medium">
+                    模型和实物有 {cmpBad.reduce((a, x) => a + x.issues.length, 0)} 处不一样
+                    {model.source === "fal" ? "：照片建的模型只用来定位置和方向，车的样子出图时照实物照画；差得多就点「不行」重建" : "：工厂文件不该有这种差别，先确认是不是传错了文件或者朝向不对"}
+                  </p>
+                  {cmpBad.map((x) => (
+                    <p key={x.label}>
+                      · {x.label}：{x.issues.join("；")}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <fieldset disabled={!editable || pending} className="space-y-3 text-sm">
             {!model.isColor ? (
               <label className="block text-xs text-neutral-400">
@@ -388,7 +448,7 @@ export function ModelReview({
               <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={500} className={`${field} mt-1 block w-full`} />
             </label>
             <div className="flex flex-wrap gap-2">
-              <button type="button" className={primary} disabled={!allChecked} onClick={() => submit(true)} title={allChecked ? "" : "每一项都核对过才能通过"}>
+              <button type="button" className={primary} disabled={!allChecked || !cmpDone} onClick={() => submit(true)} title={!cmpDone ? "先点「逐角度对照实物照」" : allChecked ? "" : "每一项都核对过才能通过"}>
                 通过，以后都用它
               </button>
               <button type="button" className={btn} onClick={() => submit(false)}>
