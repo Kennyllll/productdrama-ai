@@ -34,7 +34,7 @@ export default async function ShortsPage({ params }: { params: Promise<{ id: str
     <>
       <PageHeader
         title="产品短视频"
-        description="点一条视频继续做，或在右边新建一条。每条视频按镜头一步步出图、出视频。"
+        description="点一条视频接着做，或者新建一条。每条视频按镜头一步步出图、出视频。"
       />
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <Card title={`这个产品的视频（${videos.length}）`} className="self-start" aside={<span className="text-xs text-neutral-400">共花 ${total.toFixed(2)}</span>}>
