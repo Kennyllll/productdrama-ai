@@ -1,0 +1,4 @@
+# Logo 锁定（scripts/video/logo_lock.py）用的 Python 包；部署时装好，运行时不装。
+# 只用现成安装包：OpenCV 5 只有 macOS 15 的包，4.13 支持 macOS 13+ / Linux / Windows，也支持 Python 3.14
+opencv-python-headless==4.13.0.92
+numpy

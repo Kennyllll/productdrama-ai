@@ -1,6 +1,7 @@
 "use server";
 
 import fs from "node:fs";
+import { logoLock, shotClipPath } from "@/lib/logo-lock";
 import { productPhotos } from "@/lib/product-photos";
 import { requireProductReady } from "@/lib/product-readiness-repo";
 import { getAdFacts } from "@/lib/ad-facts-repo";
@@ -1116,8 +1117,7 @@ interface RefPart {
 }
 
 const stillOf = async (v: ShortVideo, shot: ShortShot) => {
-  const j = getJob(shot.videoJobId!);
-  const src = j && jobFilePath(j);
+  const src = shotClipPath(v, shot);
   if (!src || !fs.existsSync(src)) throw new Error("参考镜头的视频文件不存在，无法做连续性参考");
   return lastFrame(src, path.join(videoDir(v.projectId, v.id), `last-${shot.videoJobId}.png`));
 };
@@ -1325,6 +1325,54 @@ async function runFrameCheck(videoId: string, shotId: string, jobId: string, byt
 }
 
 /** 检查规则更新后：用最新的看图检查重查这一镜现在的首帧（只看图，不重新出图） */
+/** Logo 锁定（服务器后台，免费）：视频里 Logo 字母变了，就把首帧里正确的 Logo 跟踪贴回每一帧 */
+async function runLogoLock(videoId: string, shotId: string, jobId: string) {
+  const v0 = getShortVideo(videoId);
+  const s0 = v0?.shots.find((x) => x.id === shotId);
+  if (!v0 || !s0 || s0.hook?.scene === "car") return;
+  const vj = getJob(jobId);
+  const fj = s0.frameJobId ? getJob(s0.frameJobId) : null;
+  const video = vj && jobFilePath(vj);
+  const frame = fj && jobFilePath(fj);
+  if (!video || !frame || !fs.existsSync(video) || !fs.existsSync(frame)) return;
+  const brand = listAssets(v0.projectId).find((a) => a.kind === "logo" && a.mime !== "image/svg+xml" && fs.existsSync(assetPath(a)));
+  const file = `logo-${jobId}.mp4`;
+  const r = brand ? await logoLock(video, frame, assetPath(brand), path.join(videoDir(v0.projectId, v0.id), file)) : { status: "no-brand-logo" as const };
+  const v = getShortVideo(videoId);
+  const s = v?.shots.find((x) => x.id === shotId);
+  if (!v || !s || s.videoJobId !== jobId) return;
+  s.logoLock = { jobId, status: r.status, at: new Date().toISOString(), ...(r.status === "locked" ? { file } : {}), ...("box" in r && r.box ? { box: r.box } : {}), ...("error" in r && r.error ? { note: r.error } : {}) };
+  saveShortVideo(v);
+  if (r.status === "locked") await auditStage(v, s, "自动锁定 Logo", "视频里 Logo 字母变了，已换回首帧里的 Logo");
+}
+
+/** 这个功能上线前出的视频：手动补做一次 */
+export async function logoLockAction(videoId: string, shotId: string): Promise<Result<StudioState>> {
+  try {
+    const s = load(videoId).shots.find((x) => x.id === shotId);
+    if (!s?.videoJobId) throw new Error("这一镜还没有视频");
+    await runLogoLock(videoId, shotId, s.videoJobId);
+    return { result: state(videoId) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** 管理员觉得锁定版不自然：改回原版（或再改回锁定版），记操作日志 */
+export async function setLogoLockOffAction(videoId: string, shotId: string, off: boolean): Promise<Result<StudioState>> {
+  try {
+    const v = load(videoId);
+    const s = v.shots.find((x) => x.id === shotId);
+    if (!s?.logoLock || s.logoLock.status !== "locked" || s.logoLock.jobId !== s.videoJobId) throw new Error("这一镜没有锁定版");
+    s.logoLock.off = off;
+    saveShortVideo(v);
+    await auditStage(v, s, off ? "改用原版（不锁 Logo）" : "改回 Logo 锁定版", "");
+    return { result: state(videoId) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 export async function recheckFrameAction(videoId: string, shotId: string): Promise<Result<StudioState>> {
   try {
     const v = load(videoId);
@@ -2128,6 +2176,7 @@ async function drive(job: JobRecord): Promise<void> {
       if (!isArkModel(job.model)) await deleteRequest(requestId).catch(() => undefined);
       if (v && s && job.kind === "frame") await runFrameCheck(v.id, s.id, job.id, bytes);
       if (v && s && job.kind === "video") await runVideoCheck(v.id, s.id, job.id, bytes);
+      if (v && s && job.kind === "video") await runLogoLock(v.id, s.id, job.id).catch(() => undefined);
       return;
     }
     if (r.status === "failed" || r.status === "nsfw" || r.status === "canceled") {

@@ -82,6 +82,7 @@ import { type TextField } from "@/lib/shorts-sync";
 import { DraftView, SyncNotice } from "@/components/shorts/RewriteUI";
 import type { Conflict } from "@/lib/shorts";
 import { PromptPreview } from "@/components/shorts/PromptPreview";
+import { LogoLockPanel } from "@/components/shorts/LogoLockPanel";
 import { ColorKits } from "@/components/workbench/ProductKit";
 import { ExportGate } from "@/components/shorts/ExportGate";
 import { NeedKey } from "@/components/shorts/NeedKey";
@@ -1674,6 +1675,9 @@ export function ShortStudio({
                           </>
                         );
                       })()}
+                      {(s.stage === "video_ready" || s.stage === "accepted") && s.videoJobId && s.frameJobId && s.hook?.scene !== "car" ? (
+                        <LogoLockPanel videoId={v.id} shot={s} busy={busy} onResult={apply} />
+                      ) : null}
                       {s.stage === "video_ready" && (s.issues ?? []).some((x) => x.status === "open") ? (
                         <span className="text-xs text-amber-300">先在下面逐条点「已解决」或「仍存在」，才能采用</span>
                       ) : null}

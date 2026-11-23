@@ -56,6 +56,8 @@ if (!fs.existsSync("node_modules")) {
   run(npm, ["install", "--no-audit", "--no-fund"]);
 }
 
+if (spawnSync(process.execPath, ["scripts/video/setup.mjs"], { stdio: "inherit", env }).status !== 0) say("Logo 锁定工具没装上，先跳过（下次启动会再试）。");
+
 if (needsBuild(root, DIST)) {
   say("程序有更新：重新打包（约 1–2 分钟）…");
   run(npm, ["exec", "--", "next", "build"]);

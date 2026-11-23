@@ -1,4 +1,5 @@
 import { fileResponse } from "@/lib/file-response";
+import { shotClipPath } from "@/lib/logo-lock";
 import path from "node:path";
 import { previewPath } from "@/lib/export-paths";
 import { getExportVersion, versionPath } from "@/lib/export-versions-repo";
@@ -36,6 +37,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ jobId: s
   }
   const j = getJob(jobId);
   const p = j && jobFilePath(j);
+  if (j && !new URL(req.url).searchParams.get("orig")) {
+    const v = getShortVideo(j.videoId);
+    const s = v?.shots.find((x) => x.videoJobId === jobId && x.logoLock?.jobId === jobId);
+    const locked = v && s ? shotClipPath(v, s) : null;
+    if (locked && locked !== p) return fileResponse(req, locked, "video/mp4", csp);
+  }
   if (!j || !p || !j.outputMime) return new Response("Not found", { status: 404 });
   return fileResponse(req, p, j.outputMime, csp);
 }

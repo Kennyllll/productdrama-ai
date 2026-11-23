@@ -7,7 +7,8 @@ import { promisify } from "node:util";
 import ffmpegPath from "ffmpeg-static";
 import { bodyAss, hookAss } from "@/lib/hook-effects";
 import { hookEffectOf, hookParts, hooksOf, shotCuts, shotSound, type ShortShot, type ShortVideo } from "@/lib/shorts";
-import { finalPath, getJob, jobFilePath, videoDir } from "@/lib/shorts-repo";
+import { finalPath, videoDir } from "@/lib/shorts-repo";
+import { shotClipPath } from "@/lib/logo-lock";
 
 const run = promisify(execFile);
 const FONTS = path.join(process.cwd(), "assets", "fonts");
@@ -52,8 +53,7 @@ export async function renderShort(v: ShortVideo, dest = finalPath(v), hookId?: s
   fs.mkdirSync(work, { recursive: true });
   const segs: string[] = [];
   for (const [i, s] of shots.entries()) {
-    const j = getJob(s.videoJobId!);
-    const src = j && jobFilePath(j);
+    const src = shotClipPath(v, s);
     if (!src || !fs.existsSync(src)) throw new Error(`镜头 ${i + 1} 的视频文件不存在`);
     // 声音关了的镜头用静音；开了但视频本身没声音（关着声音生成的）也用静音
     const sound = shotSound(v, s) && (await hasAudio(src));

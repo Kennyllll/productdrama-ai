@@ -164,6 +164,8 @@ export interface ShortShot {
   frameCheck?: { jobId: string; pass: boolean; issues: string[]; at: string; failed?: boolean; /** 产品和实物不一致的问题（规则 #1：只有管理员能放行） */ product?: string[] };
   /** 视频出来后自动看：每 0.5 秒一帧对照产品照查变形 */
   videoCheck?: { jobId: string; pass: boolean; issues: string[]; at: string; failed?: boolean };
+  /** 视频出来后自动做的 Logo 锁定（shorts 服务器后台）；jobId 不是当前视频就作废。off = 管理员改回原版 */
+  logoLock?: { jobId: string; status: LogoLockStatus; file?: string; box?: [number, number, number, number]; at: string; off?: boolean; note?: string };
   /** 本镜场地（场地库 id + 版本 + 节日主题）；确认构图后锁定版本。旧数据没有时按 video.room 迁移 */
   scene?: ShotScene;
   /** 第几个家庭（1 起）：同一家庭沿用演员和服装；换家庭时旧演员不当参考 */
@@ -177,6 +179,9 @@ export interface ShortShot {
   /** 谁拿手机：家庭成员 id；"none" = 不指定；空 = 跟视频设定 */
   filmer?: string;
 }
+
+/** locked = Logo 字变了、已换回；unchanged = 没变不用修；其他 = 没做成的原因 */
+export type LogoLockStatus = "locked" | "unchanged" | "no-logo" | "track-lost" | "no-tools" | "no-brand-logo" | "error";
 
 export interface ShotHook {
   name: string;
