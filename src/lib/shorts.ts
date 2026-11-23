@@ -13,12 +13,12 @@ export const DEFAULT_ATTEMPTS = 2;
 /** 视频：火山方舟 Seedance 2.5（直接调字节，不经 Higgsfield） */
 export const VIDEO_MODEL = "doubao-seedance-2-5-260628";
 export const FRAME_MODEL = "marketing-studio/image/sunburst";
-/** 短视频首帧：fal 上的 Seedream 4.5（$0.04/张，最多 10 张参考图）；家庭定妆照、场地图仍用 Sunburst */
+/** 短视频首帧默认：fal 上的 Seedream 4.5（$0.04/张，最多 10 张参考图）；每镜可改用 Sunburst。家庭定妆照、场地图只用 Sunburst */
 export const SHORT_FRAME_MODEL = "fal-ai/bytedance/seedream/v4.5/edit";
 export const SHORT_FRAME_USD = 0.04;
 export const SHORT_FRAME_MAX_REFS = 10;
-export const jobModelOf = (kind: "frame" | "video" | "scene", s: Pick<ShortShot, "hook" | "layout">) =>
-  kind === "video" ? videoModelOf(s) : kind === "frame" ? SHORT_FRAME_MODEL : FRAME_MODEL;
+export const jobModelOf = (kind: "frame" | "video" | "scene", s: Pick<ShortShot, "hook" | "layout" | "frameModel">) =>
+  kind === "video" ? videoModelOf(s) : kind === "frame" ? frameModelOf(s).model : FRAME_MODEL;
 /** 方舟官方价估算（美元/秒）：70 元/百万 token × 宽×高×24 帧/1024，按 7.1 换汇；完成后按方舟返回的实际 token 记账 */
 export const VIDEO_USD_PER_SEC = { "480p": 0.0958, "720p": 0.213 } as const;
 export type VideoResolution = keyof typeof VIDEO_USD_PER_SEC;
@@ -31,11 +31,19 @@ export function shotHasPeople(s: Pick<ShortShot, "hook" | "layout">): boolean {
 export const videoModelOf = (s: Pick<ShortShot, "hook" | "layout">) => (shotHasPeople(s) ? HF_VIDEO_MODEL : VIDEO_MODEL);
 export const videoUsdPerSec = (s: Pick<ShortShot, "hook" | "layout">, r: VideoResolution) => (shotHasPeople(s) ? HF_VIDEO_USD_PER_SEC : VIDEO_USD_PER_SEC)[r];
 export const videoModelLabel = (model: string) =>
-  model === VIDEO_MODEL ? "火山方舟 Seedance 2.5（只拍产品）" : model === HF_VIDEO_MODEL ? "Higgsfield Seedance 2.5（画面有人：方舟不收真人脸）" : model;
+  model === SHORT_FRAME_MODEL ? "Seedream 4.5（fal）" : model === FRAME_MODEL ? "Sunburst（Higgsfield）" : model === VIDEO_MODEL ? "火山方舟 Seedance 2.5（只拍产品）" : model === HF_VIDEO_MODEL ? "Higgsfield Seedance 2.5（画面有人：方舟不收真人脸）" : model;
 export const VIDEO_MIN_SEC = 4;
 export const VIDEO_MAX_SEC = 12;
 /** Sunburst 首帧实测平均约 $0.10/张；估价接口能返回金额时以接口为准 */
 export const FRAME_USD_FALLBACK = 0.1;
+
+/** 每镜可选的首帧模型：第一个是默认 */
+export const SHORT_FRAME_MODELS = [
+  { id: "seedream", model: SHORT_FRAME_MODEL, label: "Seedream 4.5", note: "便宜，默认", usd: SHORT_FRAME_USD, maxRefs: SHORT_FRAME_MAX_REFS },
+  { id: "sunburst", model: FRAME_MODEL, label: "Sunburst", note: "Logo 字和构图更准", usd: FRAME_USD_FALLBACK, maxRefs: 16 },
+] as const;
+export type ShortFrameModelId = (typeof SHORT_FRAME_MODELS)[number]["id"];
+export const frameModelOf = (s: Pick<ShortShot, "frameModel">) => SHORT_FRAME_MODELS.find((m) => m.id === s.frameModel) ?? SHORT_FRAME_MODELS[0];
 
 export interface ShortTemplate {
   id: string;
@@ -184,6 +192,8 @@ export interface ShortShot {
   hook?: ShotHook;
   /** 谁拿手机：家庭成员 id；"none" = 不指定；空 = 跟视频设定 */
   filmer?: string;
+  /** 首帧用哪个模型（SHORT_FRAME_MODELS）；空 = 默认 Seedream */
+  frameModel?: ShortFrameModelId;
 }
 
 /** locked = Logo 字变了、已换回；unchanged = 没变不用修；其他 = 没做成的原因 */

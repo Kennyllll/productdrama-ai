@@ -44,6 +44,7 @@ import {
   fitShotActionsAction,
   setHookSelfieAction,
   setShotMoveAction,
+  setShotFrameModelAction,
   recheckFrameAction,
 } from "@/app/short-actions";
 import {
@@ -63,6 +64,8 @@ import {
   HF_VIDEO_USD_PER_SEC,
   shotHasPeople,
   videoModelLabel,
+  frameModelOf,
+  SHORT_FRAME_MODELS,
   videoUsdPerSec,
   VIDEO_USD_PER_SEC,
   type GenJob,
@@ -1478,6 +1481,22 @@ export function ShortStudio({
                         "退回构图",
                         s.stage !== "draft" && s.stage !== "accepted",
                       )}
+                      {s.stage === "comp_ok" || s.stage === "frame_ready" ? (
+                      <select
+                        aria-label="首帧模型"
+                        title="首帧用哪个模型出图；只影响下一次出首帧"
+                        className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-xs text-neutral-100"
+                        value={frameModelOf(s).id}
+                        disabled={busy || runBusy}
+                        onChange={(e) => act(() => setShotFrameModelAction(v.id, s.id, e.target.value), "首帧模型已保存")}
+                      >
+                        {SHORT_FRAME_MODELS.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.label} · ${m.usd.toFixed(2)}/张 · {m.note}
+                          </option>
+                        ))}
+                      </select>
+                      ) : null}
                       {s.stage === "comp_ok" || s.stage === "frame_ready" ? (
                       <button
                         className={mainAct === "frame" ? primary : btn}
