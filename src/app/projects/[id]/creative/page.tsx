@@ -6,7 +6,7 @@ import { DemoNotice, PageHeader } from "@/components/ui";
 import { DEMO_PROJECT_ID } from "@/lib/mock/demo";
 import { findLocalProject, getCreative, getProduct, getScript } from "@/lib/repo";
 
-const description = "故事主题、电影视觉风格、产品在剧情中的角色是三个独立选项；然后从三个不同方向的提案中挑选。";
+const description = "先选故事主题、画面风格和产品在故事里的角色，再从 3 个方案里挑一个。";
 
 export default async function CreativePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

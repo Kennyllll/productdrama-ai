@@ -22,7 +22,7 @@ export default async function ScriptPage({ params }: { params: Promise<{ id: str
   const proposal = creative.proposals.find((p) => p.id === creative.selectedProposalId) ?? null;
   return (
     <>
-      <PageHeader title="剧本工作台" description="四集剧本，每集 45 秒。编辑节拍、场景与台词，保存在本机；电影感靠画面叙事，台词宜少。" />
+      <PageHeader title="剧本工作台" description="四集剧本，每集 45 秒。改节拍、场景和台词。电影感靠画面讲故事，台词尽量少。" />
       <LocalScriptWorkbench projectId={id} initial={getScript(id)} proposal={proposal} aiReady={aiPublicInfo().configured} />
     </>
   );

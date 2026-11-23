@@ -29,7 +29,7 @@ export function FalSettingsForm({ initial }: { initial: { configured: boolean; k
     <Card title="3D 建模 · fal.ai">
       <div className="space-y-4">
         <p className="text-xs text-neutral-400">
-          在 fal.ai 的 Dashboard → API Keys 创建一个 Key。用来把产品白底照建成白模、给白模贴颜色款。Key 只保存在本机数据库；每次建模前先弹审批框显示价格，你同意才提交。
+          在 fal.ai 的 Dashboard → API Keys 创建一个 Key。用来出短视频首帧（默认的 Seedream），也用来把产品白底照建成白模、给白模贴颜色款。Key 只保存在服务器的数据库里；每次建模前先弹审批框显示价格，你同意才提交。
         </p>
         <p className="text-sm text-neutral-400">
           状态：{info.configured ? <span className="text-emerald-300">已配置（{info.keyHint}）</span> : <span className="text-amber-200">未配置</span>}

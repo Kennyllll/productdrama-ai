@@ -125,7 +125,7 @@ export default async function LedgerPage({ params, searchParams }: { params: Pro
                     </th>
                   ))}
                   <th className="text-right">合计</th>
-                  <th className="text-right">用上的</th>
+                  {tracked.length ? <th className="text-right">用上的</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -151,7 +151,7 @@ export default async function LedgerPage({ params, searchParams }: { params: Pro
                         );
                       })}
                       <td className="text-right">{usd(sum(xs))}</td>
-                      <td className="text-right text-emerald-200">{xs.some((x) => x.episode !== 0) ? usd(sum(xs.filter((x) => x.used))) : "—"}</td>
+                      {tracked.length ? <td className="text-right text-emerald-200">{xs.some((x) => x.episode !== 0) ? usd(sum(xs.filter((x) => x.used))) : "—"}</td> : null}
                     </tr>
                   ))}
               </tbody>

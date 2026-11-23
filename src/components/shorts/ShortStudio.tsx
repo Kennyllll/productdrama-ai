@@ -881,13 +881,7 @@ export function ShortStudio({
           </p>
         ) : null}
         <p className={`mb-3 text-xs text-neutral-500 ${focus ? "hidden" : ""}`}>
-          每镜生成最少 {VIDEO_MIN_SEC} 秒：2–3
-          秒的节拍尽量和相邻同机位动作合成一镜，再剪开用。计划生成 {plannedGen}{" "}
-          秒，成片用 {secs} 秒
-          {plannedGen
-            ? `（利用率 ${Math.round((secs / plannedGen) * 100)}%）`
-            : ""}
-          。
+          计划生成 {plannedGen} 秒，成片用 {secs} 秒。每镜最少生成 {VIDEO_MIN_SEC} 秒，多出来的会剪掉。
         </p>
         <ol className={focus ? "space-y-4" : "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"}>
           {shots.map((s, i) => {
@@ -1056,23 +1050,13 @@ export function ShortStudio({
                   ) : null}
                   {s.hook ? (
                     <p className="mt-1 text-[11px] text-neutral-500">
-                      {s.hook.partOf ? "开头切镜后的第二段：字幕和效果跟着开头连着放" : s.hook.libId ? `Hook：${s.hook.libName}` : "模板自带的开头（没用 Hook 库）"}
+                      {s.hook.partOf ? "开头切镜后的第二段：字幕和效果跟着开头连着放" : s.hook.libId ? `Hook：${s.hook.libName}` : "模板自带的开头"}
                       {thumb && !s.frameJobId ? " · 图是 3D 构图，画面还没出" : ""}
                     </p>
                   ) : null}
                   {s.hook && !s.hook.partOf ? (
-                    <button
-                      className="mt-1 block text-xs text-neutral-500 hover:text-rose-300"
-                      disabled={busy || dirty}
-                      onClick={async () => {
-                        if (await askConfirm(`删除开头「${s.hook?.name}」${v.shots.some((x) => x.hook?.partOf === s.id) ? "（连切镜后的第二段一起删）" : ""}？\n\n会丢掉 ${usd(shotsSpend(st.jobs, [s.id, ...v.shots.filter((x) => x.hook?.partOf === s.id).map((x) => x.id)]))} 的结果。删掉的开头进回收站，可以恢复。`)) act(() => deleteHookShotAction(v.id, s.id), "已删除开头，可在回收站恢复");
-                      }}
-                    >
-                      删除开头
-                    </button>
-                  ) : null}
-                  {s.hook && !s.hook.partOf ? (
-                    <label className="mt-1 flex items-center gap-1 text-xs text-neutral-400">
+                    <div className="mt-1 flex items-center justify-between gap-2">
+<label className="flex items-center gap-1 text-xs text-neutral-400">
                       <input
                         type="checkbox"
                         checked={exp.includes(s.id)}
@@ -1087,6 +1071,16 @@ export function ShortStudio({
                       />
                       导出时用
                     </label>
+<button
+                      className="text-xs text-neutral-500 hover:text-rose-300"
+                      disabled={busy || dirty}
+                      onClick={async () => {
+                        if (await askConfirm(`删除开头「${s.hook?.name}」${v.shots.some((x) => x.hook?.partOf === s.id) ? "（连切镜后的第二段一起删）" : ""}？\n\n会丢掉 ${usd(shotsSpend(st.jobs, [s.id, ...v.shots.filter((x) => x.hook?.partOf === s.id).map((x) => x.id)]))} 的结果。删掉的开头进回收站，可以恢复。`)) act(() => deleteHookShotAction(v.id, s.id), "已删除开头，可在回收站恢复");
+                      }}
+                    >
+                      删除开头
+                    </button>
+                    </div>
                   ) : null}
                 </li>,
               ];

@@ -90,7 +90,7 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
   const header = (
     <PageHeader
       title="视频制作工作台"
-      description="按分镜逐镜头放入素材（未上传的用占位画面），在这台电脑上拼成每集 45 秒成片和四集总片。这里不调用 AI 生成视频，不花钱。"
+      description="每个镜头放一段素材（没放的用占位画面），平台拼成每集 45 秒成片和四集总片。这一步不调用 AI，不花钱。"
     />
   );
   const board = getStoryboard(id);

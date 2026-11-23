@@ -79,7 +79,7 @@ function Player({ projectId, render, label }: { projectId: string; render: Rende
     <div className="mt-3">
       <video key={src} src={src} controls preload="metadata" className="w-full rounded-lg bg-black" aria-label={label} />
       <p className="mt-1 flex flex-wrap items-center gap-3 text-xs text-neutral-500">
-        <span>
+        <span suppressHydrationWarning>
           合成于 {new Date(render.updatedAt).toLocaleString("zh-CN")} · {(render.size / 1024 / 1024).toFixed(1)} MB
         </span>
         <a href={`${src}&download=1`} className="text-amber-200 underline">
@@ -204,7 +204,7 @@ export function LocalVideoWorkbench({
           <span className="text-xs text-neutral-500">画幅和帧率取自分镜页的视觉规范；转场「淡出」做淡出，其余暂按硬切。声音页上传的分轨会自动混音（对白出现时压低音乐，响度 -14 LUFS）。</span>
         </div>
         <p className="mt-2 text-xs text-neutral-500">
-          每个镜头可上传 1 个视频（MP4 / MOV / WebM）或图片（PNG / JPG / WebP），最大 300 MB；未上传的镜头用占位画面。素材和成片只保存在本机 uploads/。
+          每个镜头可上传 1 个视频（MP4 / MOV / WebM）或图片（PNG / JPG / WebP），最大 300 MB；未上传的镜头用占位画面。
         </p>
         {orphans > 0 ? (
           <p className="mt-2 text-xs text-amber-200">有 {orphans} 个素材对应的镜头已不在当前分镜中（重新生成分镜后镜头会变），不会用于合成。</p>

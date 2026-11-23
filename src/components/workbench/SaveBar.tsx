@@ -34,7 +34,7 @@ export function SaveBar({
         ) : status.ok ? (
           <span className="text-emerald-300">{status.ok}</span>
         ) : (
-          <span className="text-neutral-500">已与本机数据库同步</span>
+          <span className="text-neutral-500">已保存</span>
         )}
       </span>
       {extra}

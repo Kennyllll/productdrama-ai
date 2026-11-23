@@ -25,7 +25,7 @@ export default async function SettingsPage() {
   const admin = (await currentActor()).role === "admin";
   return (
     <main className="mx-auto max-w-3xl px-6 py-8">
-      <PageHeader title="设置" description="先看「要填哪些 Key」：3 个必填都打勾，就能做短视频。Key 只有管理员能改。" />
+      <PageHeader title="设置" description="「必填」的 Key 都打勾，就能做短视频。Key 只有管理员能改。" />
       <div className="space-y-6">
         <div className="space-y-6">
           <IdentityPanel />
@@ -53,7 +53,7 @@ export default async function SettingsPage() {
         <details className="text-sm text-neutral-400">
           <summary className="cursor-pointer">Key 存在哪、会发什么数据</summary>
           <ul className="mt-2 list-inside list-disc space-y-1">
-            <li>API Key 只保存在本机数据库 data/productdrama.db，不进 git，页面只显示末 4 位。</li>
+            <li>API Key 只存在服务器的数据库里，页面只显示末 4 位。</li>
             <li>点 AI 按钮时，会把产品文字资料、创意选择、提案和选角文字档案发送给 DeepSeek；不发送照片。</li>
             <li>费用由你的 DeepSeek 账户承担，每次调用后显示 token 用量。</li>
             <li>AI 结果先预览，确认后才替换现有内容。</li>

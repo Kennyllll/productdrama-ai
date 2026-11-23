@@ -35,7 +35,7 @@ export function ElevenLabsSettingsForm({ initial }: { initial: { configured: boo
     <Card title="声音 · ElevenLabs">
       <div className="space-y-4">
         <p className="text-xs text-neutral-400">
-          在 elevenlabs.io → Developers → API Keys 创建 Key（勾选 Text to Speech、Music、Sound Effects、Voices 和 User: Read）。用于角色对白、旁白、配乐和音效。按字符 / 时长计费，由你的 ElevenLabs 账户承担。Key 只保存在本机数据库。
+          在 elevenlabs.io → Developers → API Keys 创建 Key（勾选 Text to Speech、Music、Sound Effects、Voices 和 User: Read）。用于角色对白、旁白、配乐和音效。按字符 / 时长计费，由你的 ElevenLabs 账户承担。Key 只保存在服务器的数据库里。
         </p>
         <p className="text-sm text-neutral-400">
           状态：{info.configured ? <span className="text-emerald-300">已配置（{info.keyHint}）</span> : <span className="text-amber-200">未配置</span>}

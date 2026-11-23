@@ -35,7 +35,7 @@ export function VisionSettingsForm({ initial }: { initial: { configured: boolean
     <Card title="视觉质检 · Gemini">
       <div className="space-y-4">
         <p className="text-xs text-neutral-400">
-          在 aistudio.google.com 创建 API Key。每张 CAD 关键帧生成后，会把最终画面和产品渲染图发给 Gemini 按清单检查（车辆结构、重复人物、产品是否靠空气、手是否握住、轮胎是否着地等），不合格自动重跑一次。每张约 $0.01–0.03。Key 只保存在本机数据库。
+          在 aistudio.google.com 创建 API Key。每张 CAD 关键帧生成后，会把最终画面和产品渲染图发给 Gemini 按清单检查（车辆结构、重复人物、产品是否靠空气、手是否握住、轮胎是否着地等），不合格自动重跑一次。每张约 $0.01–0.03。Key 只保存在服务器的数据库里。
         </p>
         <p className="text-sm text-neutral-400">
           状态：{info.configured ? <span className="text-emerald-300">已配置（{info.keyHint}）</span> : <span className="text-amber-200">未配置（关键帧只做像素自检，不做看图检查）</span>}

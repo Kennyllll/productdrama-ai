@@ -46,7 +46,7 @@ export function HiggsfieldSettingsForm({ initial }: { initial: { configured: boo
     <Card title="画面生成 · Higgsfield">
       <div className="space-y-4">
         <p className="text-xs text-neutral-400">
-          在 console.higgsfield.ai 创建 API 凭证（Key ID + Secret）。凭证只保存在本机数据库；生成时产品照和角色照会上传到 Higgsfield，结果下载回本机后从对方服务器删除。
+          在 console.higgsfield.ai 创建 API 凭证（Key ID + Secret）。凭证只保存在服务器的数据库里；生成时产品照和角色照会上传到 Higgsfield，结果下载回本机后从对方服务器删除。
         </p>
         <p className="text-sm text-neutral-400">
           状态：{info.configured ? <span className="text-emerald-300">已配置（Key ID {info.keyHint}）</span> : <span className="text-amber-200">未配置</span>}

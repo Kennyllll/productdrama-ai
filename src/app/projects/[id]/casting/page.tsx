@@ -10,8 +10,8 @@ export default async function CastingPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const header = (
     <PageHeader
-      title="选角工作台 · AI Casting Studio"
-      description="支持多位主角、配角、临时角色、群演、动物与幻想角色；建立 Character Bible 并追踪四集出场。"
+      title="选角"
+      description="定好每个角色是谁、长什么样、在哪几集出场。"
     />
   );
   if (id === DEMO_PROJECT_ID) {

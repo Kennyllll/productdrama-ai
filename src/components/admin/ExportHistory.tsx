@@ -26,7 +26,7 @@ export function ExportHistory({ videoId, refreshKey }: { videoId: string; refres
           <li key={x.id} className="rounded-md border border-white/5 bg-black/30 p-2">
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="font-semibold text-white">第 {x.n} 版</span>
-              <span className="text-neutral-400">{new Date(x.createdAt).toLocaleString("zh-CN")}</span>
+              <span className="text-neutral-400" suppressHydrationWarning>{new Date(x.createdAt).toLocaleString("zh-CN")}</span>
               <span className="text-neutral-400">操作人：{x.actor}</span>
               <span className="text-neutral-300">开头：{x.snapshot.hook?.name ?? "无"}</span>
               <span className="text-neutral-300">

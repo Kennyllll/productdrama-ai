@@ -35,7 +35,7 @@ export function BrainSettingsForm({ initial }: { initial: { configured: boolean;
     <Card title="项目大脑 · Kimi K3.1 Pro">
       <div className="space-y-4">
         <p className="text-xs text-neutral-400">
-          在 platform.kimi.ai 创建 API Key（账户至少充值 $1 才能用 K3 系列）。大脑读整个项目（产品、分镜、3D、首帧、预算），在项目对话框里给判断和建议；改东西前先问你，花钱照旧要你批准。每次判断约 $0.01–0.05。Key 只保存在本机数据库。
+          在 platform.kimi.ai 创建 API Key（账户至少充值 $1 才能用 K3 系列）。大脑读整个项目（产品、分镜、3D、首帧、预算），在项目对话框里给判断和建议；改东西前先问你，花钱照旧要你批准。每次判断约 $0.01–0.05。Key 只保存在服务器的数据库里。
         </p>
         <p className="text-sm text-neutral-400">
           状态：{info.configured ? <span className="text-emerald-300">已配置（{info.keyHint}）</span> : <span className="text-amber-200">未配置（大脑不可用）</span>}

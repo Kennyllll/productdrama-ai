@@ -39,7 +39,7 @@ export function IdentityPanel() {
           现在是：{ROLE_LABEL[a.role]}{a.name && a.name !== ROLE_LABEL[a.role] ? `（${a.name}）` : ""}
         </span>
       </div>
-      <p className="mt-1 text-xs text-neutral-400">新手能做视频、看所有东西；模型 Key、预算上限、规则库、Hook 模板、家庭库只有管理员能改。管理员 4 小时后自动退回新手。</p>
+      <p className="mt-1 text-xs text-neutral-400">新手能做视频。改 Key、预算、规则、Hook、家庭库要管理员。管理员 4 小时后自动退回新手。</p>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="你的名字（记进操作日志）" maxLength={20} className={`${field} w-56`} aria-label="操作人名字" />

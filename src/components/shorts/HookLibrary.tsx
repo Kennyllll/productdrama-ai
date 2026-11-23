@@ -45,7 +45,7 @@ function HookCard({ h, onDone }: { h: HookDef | null; onDone?: () => void }) {
       <button className="flex w-full items-center justify-between text-left" onClick={() => setOpen(!open)}>
         <span className="text-sm font-medium text-white">{d.name || "新 Hook"}</span>
         <span className="text-xs text-neutral-500">
-          {d.seconds} 秒 · {HOOK_ENTRIES.find((e) => e.id === d.entry)?.label} · {d.fields.length} 个属性 {open ? "▲" : "▼"}
+          {d.seconds} 秒 · 出场：{HOOK_ENTRIES.find((e) => e.id === d.entry)?.label}{d.fields.length ? ` · 每条视频填 ${d.fields.length} 项` : ""} {open ? "收起" : "展开"}
         </span>
       </button>
       {!open ? <p className="mt-1 text-xs text-neutral-400">{d.use}</p> : null}
@@ -80,7 +80,7 @@ function HookCard({ h, onDone }: { h: HookDef | null; onDone?: () => void }) {
             <input className={inp} value={d.use} onChange={(e) => set({ use: e.target.value })} />
           </label>
           <label className="block">
-            字幕模板（{"{属性代号}"} 换成视频里填的值，{"{product}"} 换成产品名）
+            字幕模板（{"{代号}"} 换成视频里填的值，{"{product}"} 换成产品名）
             <input className={inp} value={d.caption} onChange={(e) => set({ caption: e.target.value })} />
           </label>
           <div className="flex flex-wrap items-end gap-2">
@@ -123,7 +123,7 @@ function HookCard({ h, onDone }: { h: HookDef | null; onDone?: () => void }) {
             </label>
           ) : null}
           <div className="space-y-1">
-            <p>专属属性（示例值只是提示，实际值在每条视频里填）</p>
+            <p>每条视频要填的内容（示例值只是提示）</p>
             {d.fields.map((f, i) => (
               <div key={i} className="grid items-center gap-2 md:grid-cols-[7rem_10rem_1fr_auto_auto]">
                 <input className={inp} value={f.key} placeholder="代号，如 price" onChange={(e) => setF(i, { key: e.target.value })} />
@@ -133,13 +133,13 @@ function HookCard({ h, onDone }: { h: HookDef | null; onDone?: () => void }) {
                   <input type="checkbox" checked={f.visual} onChange={(e) => setF(i, { visual: e.target.checked })} />
                   影响画面
                 </label>
-                <button className="text-rose-300" onClick={() => set({ fields: d.fields.filter((_, k) => k !== i) })}>
-                  删
+                <button className="text-neutral-500 hover:text-rose-300" onClick={() => set({ fields: d.fields.filter((_, k) => k !== i) })}>
+                  删这项
                 </button>
               </div>
             ))}
             <button className="rounded border border-white/10 px-2 py-1 text-neutral-200" onClick={() => set({ fields: [...d.fields, { key: "", label: "", example: "", visual: false }] })}>
-              ＋ 属性
+              ＋ 加一项
             </button>
           </div>
           <div className="flex items-center gap-3 pt-1">
@@ -147,7 +147,7 @@ function HookCard({ h, onDone }: { h: HookDef | null; onDone?: () => void }) {
               {h ? "保存" : "新建"}
             </button>
             {h ? (
-              <button className="text-rose-300" disabled={pending} onClick={del}>
+              <button className="ml-auto text-neutral-500 hover:text-rose-300" disabled={pending} onClick={del}>
                 删除这个 Hook
               </button>
             ) : null}

@@ -13,7 +13,7 @@ const NAME: Record<RevEntity, string> = { rule: "规则", hook: "Hook 模板", f
 function summary(type: RevEntity, d: unknown): string {
   const x = (d ?? {}) as Record<string, unknown>;
   if (type === "rule") return `${x.level === "warn" ? "提醒" : "必须修"}：${String(x.text ?? "")}`;
-  if (type === "hook") return `${String(x.name ?? "")} · ${String(x.seconds ?? "")} 秒 · ${(x.fields as unknown[] | undefined)?.length ?? 0} 个属性 · 字幕「${String(x.caption ?? "")}」`;
+  if (type === "hook") return `${String(x.name ?? "")} · ${String(x.seconds ?? "")} 秒 · 每条视频填 ${(x.fields as unknown[] | undefined)?.length ?? 0} 项 · 字幕「${String(x.caption ?? "")}」`;
   const ms = (x.members as { name?: string; age?: number }[] | undefined) ?? [];
   return `${String(x.name ?? "")} · ${ms.map((m) => `${m.name ?? ""} ${m.age ?? ""} 岁`).join("、")}`;
 }
@@ -46,7 +46,7 @@ export function RevisionHistory({ entityType, projectId }: { entityType: RevEnti
       <ul className="mt-2 space-y-1 text-xs">
         {list?.map((r) => (
           <li key={r.id} className="flex flex-wrap items-center gap-2 border-t border-white/5 py-1">
-            <span className="w-36 text-neutral-500">{new Date(r.createdAt).toLocaleString("zh-CN")}</span>
+            <span className="w-36 text-neutral-500" suppressHydrationWarning>{new Date(r.createdAt).toLocaleString("zh-CN")}</span>
             <span className={`rounded px-1.5 ${r.op === "delete" ? "bg-rose-500/20 text-rose-200" : r.op === "revert" ? "bg-sky-500/20 text-sky-200" : "bg-white/10 text-neutral-200"}`}>{OP[r.op]}</span>
             <span className="text-neutral-400">{r.actor}</span>
             <span className="min-w-0 flex-1 truncate text-neutral-200" title={summary(entityType, r.data)}>
