@@ -906,12 +906,12 @@ export function ShortStudio({
                 {label}
               </button>
             );
-            const open = (kind: JobKind) =>
+            const open = (kind: JobKind, reason = "") =>
               setPending({
                 shotId: s.id,
                 kind,
                 seconds: kind === "video" ? s.genSeconds : 0,
-                reason: "",
+                reason,
                 overLimit: false,
                 quote: null,
               });
@@ -1507,7 +1507,30 @@ export function ShortStudio({
                               ) : (
                                 <div className={`w-full rounded border p-2 text-xs ${fc.failed ? "border-amber-400/40 text-amber-200" : "border-rose-400/50 bg-rose-400/5 text-rose-200"}`}>
                                   <p className="font-medium">{fc.failed ? "看图检查" : `看图检查发现 ${fc.issues.length} 个问题，先看图再决定`}</p>
-                                  {fc.product?.length ? <p className="font-semibold text-rose-100">车和实物不一样（规则 #1）：请点「首帧不行」重出，不能直接通过</p> : null}
+                                  {fc.product?.length ? (() => {
+                                    const tries = js.filter((j) => j.kind === "frame" && j.status === "completed").length;
+                                    return (
+                                      <div className="mt-1 space-y-1">
+                                        <p className="font-semibold text-rose-100">车和实物不一样（规则 #1），不能直接通过</p>
+                                        {tries < 3 ? (
+                                          <button
+                                            type="button"
+                                            className={primary}
+                                            disabled={busy || runBusy || s.stage !== "frame_ready"}
+                                            onClick={async () => {
+                                              const r = await shotStageAction(v.id, s.id, "frame_reject");
+                                              apply(r);
+                                              if (!r.error) open("frame", `产品和实物不一致：${fc.product!.join("；")}`.slice(0, 300));
+                                            }}
+                                          >
+                                            车不对，重出首帧（第 {tries + 1}/3 次）
+                                          </button>
+                                        ) : (
+                                          <p className="text-rose-100">已经出了 {tries} 次车还是不对：别再花钱重出。换一个能看清产品的 3D 角度、补同角度的实物照，或者向工厂要 STEP</p>
+                                        )}
+                                      </div>
+                                    );
+                                  })() : null}
                                   {fc.issues.map((x, i) => (
                                     <p key={i}>· {x}</p>
                                   ))}
