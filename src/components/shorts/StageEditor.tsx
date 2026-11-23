@@ -807,6 +807,10 @@ export function StageEditor({
                   <span className="text-white">{Math.round(deg(selFig.custom?.[k] ?? base[k]))}°</span>
                 </span>
                 <input type="range" min={k === "lean" ? -30 : -80} max={k === "lean" ? 60 : 80} step={1} value={Math.round(deg(selFig.custom?.[k] ?? base[k]))} onChange={(e) => patchFig({ custom: { ...selFig.custom, [k]: rad(Number(e.target.value)) } })} className="w-full accent-amber-400" />
+                <span className="flex justify-between text-[11px] text-neutral-500">
+                  <span>{k === "lean" ? "← 后仰" : "← 向右看"}</span>
+                  <span>{k === "lean" ? "前倾 →" : "向左看 →"}</span>
+                </span>
               </label>
             ))}
             <div className="flex gap-2">

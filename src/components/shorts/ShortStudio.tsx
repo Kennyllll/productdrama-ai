@@ -1270,6 +1270,7 @@ export function ShortStudio({
                       <>
                         拍摄者（先选姿态，露什么按机位自动算）
                         {locked ? " · 改了要先“退回构图”" : ""}
+                        <span className="ml-1 text-[11px] text-neutral-500">· 和 3D 页右栏是同一个设置，改哪边都行</span>
                         <div className="mt-1">
                           <OperatorPicker
                             value={s.operator ?? ""}
@@ -1601,7 +1602,7 @@ export function ShortStudio({
                       ）
                     </p>
                     {s.layout ? (
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400" title="和 3D 页的运镜是同一个设置，改哪边都行">
                         运镜
                         <select
                           className="rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-xs text-neutral-100"

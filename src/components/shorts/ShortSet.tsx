@@ -22,6 +22,8 @@ export interface StageProps {
   members?: CastOption[];
   /** 填了 Kimi Key 没有（没填就不让点「让大脑调」） */
   brainReady?: boolean;
+  /** 场地和文字对不上（服务端算好） */
+  sceneWarn?: string;
 }
 import type { CastOption } from "@/lib/families";
 import { activeItems, type Scene, type SceneItem } from "@/lib/shorts-scenes";
@@ -72,6 +74,13 @@ export function ShortSet({
   const afterCapture = useRef<(() => void) | null>(null);
   const [code, setCode] = useState(shots.some((s) => s.code === initialCode) ? initialCode : shots[0]?.code ?? "");
   const [draft, setDraft] = useState<SceneItem[] | null>(null);
+  const [sceneOpen, setSceneOpen] = useState(false);
+  const jump = (id: string) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    el.animate?.([{ boxShadow: "0 0 0 3px rgba(251,191,36,.8)" }, { boxShadow: "0 0 0 0 rgba(251,191,36,0)" }], { duration: 1200 });
+  };
   const [live, setLive] = useState<{ figures: FigureSpec[]; bike?: [number, number]; bikeYaw: number; bikeLift: number; bikePitch: number; bikeRoll: number; bikeGround: number; items: SceneItem[] } | null>(null);
   const [cap, setCap] = useState(0);
   const [reopening, setReopening] = useState(false);
@@ -222,14 +231,26 @@ export function ShortSet({
         </p>
       ) : tip ? (
         <p className="flex items-center gap-3 rounded-lg border border-sky-400/30 bg-sky-400/5 px-3 py-2 text-sm text-sky-100">
-          <span>① 左边「模型」：点人或车，拖箭头、选姿势　② 右边「镜头」：拖地图上的黄点调机位　③ 点「保存」</span>
+          <span>
+            <button type="button" className="underline decoration-dotted" onClick={() => jump("pd-3d-model")}>① 左边「模型」</button>：点人或车，拖箭头、选姿势　
+            <button type="button" className="underline decoration-dotted" onClick={() => jump("pd-3d-camera")}>② 右边「镜头」</button>：拖地图上的黄点调机位　③ 点「保存」
+          </span>
           <button type="button" onClick={() => (localStorage.setItem("pd-3d-tip", "1"), setTip(false))} className="ml-auto text-xs text-neutral-400 hover:text-white">
             知道了
           </button>
         </p>
       ) : null}
+      {b && st?.sceneWarn ? (
+        <p className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
+          ⚠ {st.sceneWarn}
+          <button type="button" onClick={() => setSceneOpen(true)} className="rounded border border-amber-400/50 px-2 py-0.5 text-amber-100">
+            换场地
+          </button>
+          <span className="text-xs text-amber-200/70">或者回镜头把文字改成和场地一致</span>
+        </p>
+      ) : null}
       {b && st ? (
-        <details className="rounded-xl border border-white/10 bg-neutral-900/60">
+        <details open={sceneOpen} onToggle={(e) => setSceneOpen((e.currentTarget as HTMLDetailsElement).open)} className="rounded-xl border border-white/10 bg-neutral-900/60">
           <summary className="cursor-pointer select-none px-3 py-2 text-sm text-neutral-300">
             场地：{st.scene.name} v{st.scene.v} · 主题：{st.scene.themeLabel} · 家庭 {b.family} <span className="ml-1 text-amber-300">更改</span>
           </summary>
@@ -237,7 +258,7 @@ export function ShortSet({
         </details>
       ) : null}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <section className="min-w-0 rounded-xl border border-white/10 p-3">
+        <section id="pd-3d-model" className="min-w-0 rounded-xl border border-white/10 p-3">
           <h2 className="mb-2 text-sm font-medium text-white">
             模型 <span className="text-xs font-normal text-neutral-400">人、车、家具放在哪、什么姿势</span>
           </h2>
@@ -267,7 +288,7 @@ export function ShortSet({
             />
           ) : null}
         </section>
-        <section className="min-w-0 space-y-3 rounded-xl border border-sky-400/20 p-3">
+        <section id="pd-3d-camera" className="min-w-0 space-y-3 rounded-xl border border-sky-400/20 p-3">
           <h2 className="text-sm font-medium text-white">
             镜头 <span className="text-xs font-normal text-neutral-400">摄影机放在哪、拍成什么样</span>
           </h2>

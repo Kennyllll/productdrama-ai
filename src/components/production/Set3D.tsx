@@ -526,6 +526,7 @@ export function Set3D({
 
   const save = (data: SetLayout | null) =>
     start(async () => {
+      if (data && dirty) data = { ...data, source: `手动调整（${new Date().toLocaleString("zh-CN", { hour12: false })}）` };
       const r = onSave ? await onSave(code, data) : await saveSetLayoutAction(projectId, episode, code, data);
       if (r.error) return setMsg(r.error);
       // 短视频：保存机位时同时截下 3D 构图，少一步也不会忘
@@ -541,7 +542,7 @@ export function Set3D({
         const c = png ? await onCapture(code, png) : { error: "截图失败" };
         const pp = !c.error && onCaptureProduct ? productShotRef.current?.() : null;
         const p: { error?: string } = pp && onCaptureProduct ? await onCaptureProduct(code, pp) : {};
-        setMsg(c.error ?? p.error ?? "机位和 3D 构图都已保存，可以回工作台确认构图");
+        setMsg(c.error ?? p.error ?? "机位和 3D 构图都已保存。点左上「← 回到镜头」确认构图，或点上面的下一镜接着摆");
         setDirty(false);
         router.refresh();
         return;
@@ -731,7 +732,7 @@ export function Set3D({
                 {prev.code} 的角度差 {diff.toFixed(0)}°{diff >= 30 ? "，够了" : "：不到 30°，直接切会像跳帧（除非景别差 2 倍以上）"}
               </p>
             ) : null}
-            <p className="text-neutral-500">数据来源：{shot.original.source}</p>
+            <p className="text-neutral-500">数据来源：{shot.edited ? shot.edited.source || "手动调整" : shot.original.source}</p>
           </div>
           <div className="flex flex-wrap gap-2 border-t border-white/10 pt-3">
             <button type="button" disabled={(!dirty && !(onSave && (!shot.edited || shot.needsCapture))) || pending || Boolean(shot.locked)} onClick={() => save(layout)} className="rounded-lg bg-amber-400 px-3 py-1 text-sm font-medium text-black disabled:opacity-40">
