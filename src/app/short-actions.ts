@@ -248,10 +248,12 @@ function cleanShot(s: Partial<ShortShot>, prev?: ShortShot): ShortShot {
   };
 }
 
+const EN_STALE = "en-stale";
+
 async function englishFromChinese(s: ShortShot): Promise<{ framePrompt?: string; motionPrompt?: string }> {
   const { data } = await chatJson({
     system: "The user edited the Chinese description and camera of one shot of a phone-filmed TikTok product video. Rewrite the two English prompts to match them. framePrompt: only facial expression and gaze, light, mood and small details of the first frame; no positions, poses, shot size, close-ups, camera, clothes, age, hair or ethnicity. Only say what IS there: never write negatives (no \"no film grain\", \"not cinematic\") and never use the words sparkle, glow, shine, film grain, cinematic or bokeh. motionPrompt: what happens during the clip in one or two plain sentences (people's actions and reactions, handheld phone movement); people never look straight into the lens; say what each person looks at (the handlebar, the product, another person), never just \"ahead\" or \"forward\". Use the people's names as written. Output json: {\"framePrompt\":\"\",\"motionPrompt\":\"\"}",
-    user: JSON.stringify({ description: s.description, camera: s.camera, oldFramePrompt: s.framePrompt, oldMotionPrompt: s.motionPrompt }),
+    user: JSON.stringify({ description: s.description, camera: s.camera, productState: s.productNote, oldFramePrompt: s.framePrompt, oldMotionPrompt: s.motionPrompt }),
     maxTokens: 800,
     thinking: false,
     timeoutMs: 60_000,
@@ -296,8 +298,13 @@ export async function saveShortVideoAction(
       // 只改了中文画面 / 机位：英文出图和动作提示词跟着改，否则生成时还用旧的
       for (const s of v.shots) {
         const p = old.find((x) => x.id === s.id);
-        if (p && (p.description !== s.description || p.camera !== s.camera) && p.framePrompt === s.framePrompt && p.motionPrompt === s.motionPrompt)
-          Object.assign(s, await englishFromChinese(s).catch(() => ({})));
+        if (p && (p.description !== s.description || p.camera !== s.camera || p.productNote !== s.productNote) && p.framePrompt === s.framePrompt && p.motionPrompt === s.motionPrompt) {
+          const en = await englishFromChinese(s).catch(() => englishFromChinese(s)).catch(() => ({}));
+          const ok = Object.keys(en).length > 0;
+          Object.assign(s, en);
+          s.issues = (s.issues ?? []).filter((x) => x.id !== EN_STALE);
+          if (!ok) s.issues.push({ id: EN_STALE, text: "改了中文，英文提示词没跟着改成（文字模型没回应）：再点一次「保存分镜」，或在「高级」里手动改英文", fromJobId: null, status: "open" });
+        }
       }
       // 文字改过（或第一次保存）：记下这份文字对应的 3D
       for (const s of v.shots) {

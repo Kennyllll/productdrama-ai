@@ -105,7 +105,7 @@ const KID = /\b(boy|girl|kid|child|toddler|son|daughter)\b|男孩|女孩|孩子|
 /** 去掉否定说法（no dad / 不要爸爸），免得“画面里不要爸爸”被当成提到了爸爸 */
 /** 去掉写拿手机的人的句子（爸爸蹲着用手机拍 / Dad filming）：拍摄者不是 3D 里的人偶 */
 export const stripFilmer = (t: string) =>
-  t.split(/(?<=[。；;.!?！？])|[，,]/).filter((c) => !/用手机拍|拿着?手机|手机拍|在拍|拍摄者|拿手机的人|\bfilm(?:s|ing)\b|holding the phone|behind the (?:phone|camera)|person filming/i.test(c)).join("，");
+  t.split(/(?<=[。；;.!?！？])|[，,]/).filter((c) => !/用手机拍|拿着?手机|手机拍|手机后面|镜头后面|在拍|拍摄者|拿手机的人|['’]s shadow|\bfilm(?:s|ing)\b|holding the phone|behind the (?:phone|camera)|person filming/i.test(c)).join("，");
 
 export const stripNeg = (t: string) => t.replace(/\b(no|without|never|not)\b[^.;!?]*/gi, " ").replace(/(不要|没有|不出现|不能有|别让|看不到|看不见)[^，。；,.;]*/g, " ");
 

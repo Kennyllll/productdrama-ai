@@ -1,5 +1,6 @@
 import { filmerId, filmerScale } from "@/lib/families";
 import { operatorPrompt } from "@/lib/shorts-operator";
+import { stripFilmer } from "@/lib/shorts-sync";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cleanFamily, DAILY, memberKind, memberText, portraitFor, portraitState, PRESET_FAMILIES, WEAR_THEMES, type FamilyMember } from "@/lib/families";
@@ -78,4 +79,10 @@ test("定妆照：长相改了作废；节日用自己那张，没有就拿平�
   assert.equal(portraitFor(leo, "christmas")!.outfit, true);
   leo.look = { zh: "黑发", en: "black hair" };
   assert.equal(portraitFor(leo, "christmas"), null);
+});
+
+test("filmer sentences are not counted as people in 3D", () => {
+  assert.doesNotMatch(stripFilmer("Maya 蹲着，爸爸 Marcus 在手机后面拍，画面里看不到他"), /Marcus/);
+  assert.doesNotMatch(stripFilmer("Zoe smiles. Marcus's shadow falls on the path."), /Marcus/);
+  assert.match(stripFilmer("Maya 蹲着，爸爸 Marcus 在旁边鼓掌"), /Marcus/);
 });
