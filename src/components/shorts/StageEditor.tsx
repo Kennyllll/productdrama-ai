@@ -58,6 +58,9 @@ function Range({ label, value, min, max, step, unit, onChange }: { label: string
   );
 }
 type Mode = "translate" | "rotate" | "scale";
+// 保存后编辑器会重建：记住每一镜上次选中的东西和视角，重建后接着用
+const lastSel = new Map<string, string | null>();
+const lastView = new Map<string, [number, number, number, number, number, number]>();
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
 const wrap = (d: number) => ((((d + 180) % 360) + 360) % 360) - 180;
@@ -90,6 +93,7 @@ export function StageEditor({
   propsSlot,
   cameraSelected = false,
   onCamera,
+  shotCamLive,
 }: {
   /** 三栏 3D 页：场景列表、属性栏渲染到页面左右两栏 */
   listSlot?: HTMLElement | null;
@@ -97,6 +101,8 @@ export function StageEditor({
   /** 左边列表里选中了「相机」：属性栏显示机位设置 */
   cameraSelected?: boolean;
   onCamera?: (on: boolean) => void;
+  /** 相机栏里还没保存的机位：视窗里的相机框跟着动 */
+  shotCamLive?: Pick<SetLayout, "camPos" | "lookAt" | "lens"> | null;
   brainReady?: boolean;
   videoId: string;
   /** 这一镜家庭的成员（家庭库）；人偶可以绑定 */
@@ -129,7 +135,7 @@ export function StageEditor({
   const [doc, setDoc] = useState<Doc>(init.current);
   const [past, setPast] = useState<Doc[]>([]);
   const [future, setFuture] = useState<Doc[]>([]);
-  const [sel, setSel] = useState<string | null>(initialSel && figuresOf(layout).some((f) => f.id === initialSel) ? `fig:${initialSel}` : compact && layout.bike ? "product" : null);
+  const [sel, setSel] = useState<string | null>(lastSel.has(shotCode) ? (lastSel.get(shotCode) ?? null) : initialSel && figuresOf(layout).some((f) => f.id === initialSel) ? `fig:${initialSel}` : compact && layout.bike ? "product" : null);
   const [mode, setMode] = useState<Mode>("translate");
   const [rigMode, setRigMode] = useState(false);
   const [shotView, setShotView] = useState(false);
@@ -144,6 +150,13 @@ export function StageEditor({
   const [thinking, setThinking] = useState(false);
   const [pending, start] = useTransition();
   const canvas = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    lastSel.set(shotCode, sel);
+  }, [shotCode, sel]);
+  const placeCam = useRef<((c: Pick<SetLayout, "camPos" | "lookAt" | "lens">) => void) | null>(null);
+  useEffect(() => {
+    if (shotCamLive) placeCam.current?.(shotCamLive);
+  }, [shotCamLive]);
   const api = useRef<{ sync: () => void; zoom: (f: number) => void; home: () => void; focus: () => void } | null>(null);
   const ro = Boolean(compact && locked);
   const st = useRef({ doc, sel, mode, rigMode, shotView, autoRig, ro, editSite });
@@ -197,12 +210,18 @@ export function StageEditor({
     const b0 = st.current.doc.bike ?? [0, 0];
     cam.position.set(b0[0] + 2.4, 1.8, -b0[1] + 2.6);
     const orbit = new OrbitControls(cam, el);
+    orbit.maxPolarAngle = Math.PI / 2 - 0.03;
     // 普通滚轮留给页面滚动；按住 Ctrl / ⌘ / Alt 再滚才缩放 3D（触控板双指捏合也带 Ctrl）
     const wheelGate = (e: WheelEvent) => {
       orbit.enableZoom = e.ctrlKey || e.metaKey || e.altKey;
     };
     el.addEventListener("wheel", wheelGate, { capture: true });
     orbit.target.set(b0[0], 0.4, -b0[1]);
+    const v0 = lastView.get(shotCode);
+    if (v0) {
+      cam.position.set(v0[0], v0[1], v0[2]);
+      orbit.target.set(v0[3], v0[4], v0[5]);
+    }
     orbit.update();
     // 滚轮默认滚页面；点过画布（鼠标还在画布上）或按住 Ctrl 才缩放
     orbit.enableZoom = false;
@@ -245,11 +264,14 @@ export function StageEditor({
     const camHelper = new THREE.CameraHelper(shotCam);
     s3.add(camHelper);
     const toV = (p: [number, number, number]) => new THREE.Vector3(p[0], p[2], -p[1]);
-    shotCam.position.copy(toV(layout.camPos));
-    shotCam.lookAt(toV(layout.lookAt));
-    shotCam.fov = (2 * Math.atan(Math.tan(Math.atan(18 / layout.lens)) / (9 / 16)) * 180) / Math.PI;
-    shotCam.updateProjectionMatrix();
-    camHelper.update();
+    placeCam.current = (c) => {
+      shotCam.position.copy(toV(c.camPos));
+      shotCam.lookAt(toV(c.lookAt));
+      shotCam.fov = (2 * Math.atan(Math.tan(Math.atan(18 / c.lens)) / (9 / 16)) * 180) / Math.PI;
+      shotCam.updateProjectionMatrix();
+      camHelper.update();
+    };
+    placeCam.current(layout);
 
     const tc = new TransformControls(cam, el);
     tc.setSize(0.8);
@@ -364,8 +386,8 @@ export function StageEditor({
       }
     };
 
-    const finishDrag = () => {
-      const o = tc.object;
+    const finishDrag = (obj?: THREE.Object3D) => {
+      const o = obj ?? tc.object;
       const key = o?.userData.key as string | undefined;
       if (!o || !key) return;
       const d = st.current.doc;
@@ -417,6 +439,42 @@ export function StageEditor({
       const pick = keys.find((k) => k.startsWith("joint:") || k.startsWith("rig:")) ?? keys[0] ?? null;
       setSelRef.current(pick);
     };
+    // 手脚球、接触点：按住球直接拖，不用先点选再拖箭头；拖空白处才转视角
+    let grab: { o: THREE.Object3D; plane: THREE.Plane } | null = null;
+    const ndc = (e: PointerEvent) => {
+      const r = el.getBoundingClientRect();
+      const vp = viewport();
+      return new THREE.Vector2(((e.clientX - r.left - vp.x) / vp.w) * 2 - 1, -(((e.clientY - r.top - vp.y) / vp.h) * 2 - 1));
+    };
+    const onGrab = (e: PointerEvent) => {
+      if (st.current.ro || e.button !== 0) return;
+      const active = st.current.shotView ? shotCam : cam;
+      ray.setFromCamera(ndc(e), active);
+      const hit = ray.intersectObjects([world, rigMarks], true).find((h) => /^(joint|rig):/.test(String(h.object.userData.key ?? "")));
+      if (!hit) return;
+      e.stopPropagation();
+      down = null;
+      const o = hit.object;
+      grab = { o, plane: new THREE.Plane().setFromNormalAndCoplanarPoint(active.getWorldDirection(new THREE.Vector3()), o.getWorldPosition(new THREE.Vector3())) };
+      tc.detach();
+      el.setPointerCapture(e.pointerId);
+    };
+    const onGrabMove = (e: PointerEvent) => {
+      if (!grab) return;
+      ray.setFromCamera(ndc(e), st.current.shotView ? shotCam : cam);
+      const pt = ray.ray.intersectPlane(grab.plane, new THREE.Vector3());
+      if (pt && grab.o.parent) grab.o.position.copy(grab.o.parent.worldToLocal(pt));
+    };
+    const onGrabUp = () => {
+      if (!grab) return;
+      const o = grab.o;
+      grab = null;
+      finishDrag(o);
+      setSelRef.current(o.userData.key as string);
+    };
+    el.addEventListener("pointerdown", onGrab, { capture: true });
+    el.addEventListener("pointermove", onGrabMove);
+    el.addEventListener("pointerup", onGrabUp);
     el.addEventListener("pointerdown", onDown);
     el.addEventListener("pointerup", onUp);
 
@@ -457,6 +515,9 @@ export function StageEditor({
       cancelAnimationFrame(raf);
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointerdown", onGrab, { capture: true });
+      el.removeEventListener("pointermove", onGrabMove);
+      el.removeEventListener("pointerup", onGrabUp);
       el.removeEventListener("wheel", onWheel);
       el.removeEventListener("pointerdown", arm);
       el.removeEventListener("pointerleave", disarm);
@@ -466,6 +527,7 @@ export function StageEditor({
       s3.remove(helper);
       helper.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
       el.removeEventListener("wheel", wheelGate, { capture: true });
+      lastView.set(shotCode, [cam.position.x, cam.position.y, cam.position.z, orbit.target.x, orbit.target.y, orbit.target.z]);
       orbit.dispose();
       renderer.dispose();
     };

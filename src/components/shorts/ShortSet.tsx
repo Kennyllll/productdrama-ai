@@ -82,6 +82,7 @@ export function ShortSet({
   const [camSlot, setCamSlot] = useState<HTMLElement | null>(null);
   const [camSel, setCamSel] = useState(false);
   const [live, setLive] = useState<{ figures: FigureSpec[]; bike?: [number, number]; bikeYaw: number; bikeLift: number; bikePitch: number; bikeRoll: number; bikeGround: number; items: SceneItem[] } | null>(null);
+  const [camLive, setCamLive] = useState<Pick<SetLayout, "camPos" | "lookAt" | "lens"> | null>(null);
   const [cap, setCap] = useState(0);
   const [reopening, setReopening] = useState(false);
   const [reopenMsg, setReopenMsg] = useState("");
@@ -261,7 +262,7 @@ export function ShortSet({
           <SceneEditor projectId={projectId} videoId={videoId} shot={b} scenes={scenes} onDraft={onDraft} />
         </details>
       ) : null}
-      {code ? <ShotSyncBox videoId={videoId} shotId={code} label={b?.label ?? ""} figIds={(st?.layout.figures ?? []).map((f) => f.id)} layout={st?.layout} saved={Boolean(cur?.edited)} live={live} members={st?.members} rig={rig} filmerId={fv[code] === "none" ? undefined : fv[code] || filmers[code]?.video || undefined} /> : null}
+      {code ? <ShotSyncBox videoId={videoId} shotId={code} label={b?.label ?? ""} figIds={(st?.layout.figures ?? []).map((f) => f.id)} layout={st?.layout} saved={Boolean(cur?.edited)} live={live} cam={camLive} members={st?.members} rig={rig} filmerId={fv[code] === "none" ? undefined : fv[code] || filmers[code]?.video || undefined} /> : null}
       <div className="grid gap-3 xl:grid-cols-[170px_minmax(0,1fr)_300px] 2xl:grid-cols-[200px_minmax(0,1fr)_340px]">
         <aside ref={setListSlot} aria-label="场景列表" className="self-start rounded-xl border border-white/10 bg-neutral-900/60 p-2 xl:sticky xl:top-28" />
         <section className="min-w-0 space-y-3">
@@ -292,6 +293,7 @@ export function ShortSet({
               propsSlot={propsSlot}
               cameraSelected={camSel}
               onCamera={setCamSel}
+              shotCamLive={camLive}
             />
           ) : null}
           <Set3D
@@ -308,7 +310,7 @@ export function ShortSet({
             rig={rig}
             initialCode={code}
             codePrefix="#"
-            onShotChange={(c) => (setCode(c), setDraft(null), setLive(null), setStageDirty(false), window.history.replaceState(window.history.state, "", `?shot=${c}`))}
+            onShotChange={(c) => (setCode(c), setDraft(null), setLive(null), setCamLive(null), setStageDirty(false), window.history.replaceState(window.history.state, "", `?shot=${c}`))}
             onSave={(c, layout) => saveShortLayoutAction(videoId, c, layout)}
             onCapture={async (c, png) => {
               const r = await saveShortCompAction(videoId, c, png);
@@ -342,6 +344,7 @@ export function ShortSet({
             live={liveLayout}
             captureSignal={cap}
             onDirty={setCamDirty}
+            onCam={setCamLive}
             otherDirty={stageDirty}
           />
           {cur ? (

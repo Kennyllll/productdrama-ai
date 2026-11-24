@@ -78,6 +78,7 @@ export function Set3D({
   live,
   captureSignal = 0,
   onDirty,
+  onCam,
   otherDirty = false,
   compact = false,
   activeCode,
@@ -117,6 +118,8 @@ export function Set3D({
   captureSignal?: number;
   /** 机位有没有没保存的改动（同页离开提醒用） */
   onDirty?: (dirty: boolean) => void;
+  /** 机位还没保存时也告诉外面（3D 视窗里的相机框、摆法检查跟着变） */
+  onCam?: (c: Pick<SetLayout, "camPos" | "lookAt" | "lens">) => void;
   /** 同页别的编辑器有没保存的改动：切镜头时一起提醒 */
   otherDirty?: boolean;
   /** 合并 3D 页用：镜头切换、保存都放在页面顶部，次要设置收起 */
@@ -576,6 +579,9 @@ export function Set3D({
     onDirty?.(dirty);
   }, [dirty, onDirty]);
   useEffect(() => {
+    onCam?.({ camPos: layout.camPos, lookAt: layout.lookAt, lens: layout.lens });
+  }, [layout.camPos, layout.lookAt, layout.lens, onCam]);
+  useEffect(() => {
     if (!live) return;
     setLayout((l) => ({ ...l, figures: live.figures, figure: live.figures.length > 0, bike: live.bike, bikeYaw: live.bikeYaw, ...(live.bikeLift === undefined ? {} : { bikeLift: live.bikeLift, bikePitch: live.bikePitch, bikeRoll: live.bikeRoll, bikeGround: live.bikeGround }) }));
   }, [live]);
@@ -624,7 +630,7 @@ export function Set3D({
         <fieldset disabled={Boolean(compact && shot.locked)} className={`min-w-0 space-y-3 rounded-xl border border-white/10 bg-neutral-900/70 p-4 ${compact && shot.locked ? "opacity-60" : ""}`}>
           {compact ? <p className="text-sm font-medium text-white">相机</p> : null}
           <Slider label="焦段" value={layout.lens} min={12} max={200} step={1} unit="mm" onChange={(v) => update({ lens: v })} />
-          <Slider label="机位高度" value={camHeight} min={0.05} max={12} step={0.05} unit="米" onChange={(v) => update({ camPos: [layout.camPos[0], layout.camPos[1], v] })} />
+          <Slider label="机位高度" value={camHeight} min={0.05} max={Math.max(4, Math.ceil(camHeight))} step={0.05} unit="米" onChange={(v) => update({ camPos: [layout.camPos[0], layout.camPos[1], v] })} />
           {compact ? (
             <>
               <Slider label="看向点高度" value={layout.lookAt[2]} min={-2} max={20} step={0.05} unit="米" onChange={(v) => update({ lookAt: [layout.lookAt[0], layout.lookAt[1], v] })} />

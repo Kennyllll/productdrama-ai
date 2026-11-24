@@ -24,6 +24,7 @@ export function ShotSyncBox({
   layout,
   saved = true,
   live,
+  cam,
   members = [],
   rig,
   filmerId,
@@ -40,6 +41,8 @@ export function ShotSyncBox({
   saved?: boolean;
   /** 编辑器里还没保存的摆法：有它就按它在浏览器里查（免费） */
   live?: StagePose | null;
+  /** 还没保存的机位 */
+  cam?: Pick<SetLayout, "camPos" | "lookAt" | "lens"> | null;
   members?: CastOption[];
   rig?: ProductRig | null;
 }) {
@@ -60,7 +63,9 @@ export function ShotSyncBox({
   const texts0 = st?.texts;
   const now = useMemo(() => {
     if (!layout || !texts0) return null;
-    const l: SetLayout = live ? { ...layout, figures: live.figures, bike: live.bike, bikeYaw: live.bikeYaw, bikeLift: live.bikeLift, bikePitch: live.bikePitch, bikeRoll: live.bikeRoll, bikeGround: live.bikeGround } : layout;
+    let l: SetLayout = live ? { ...layout, figures: live.figures, bike: live.bike, bikeYaw: live.bikeYaw, bikeLift: live.bikeLift, bikePitch: live.bikePitch, bikeRoll: live.bikeRoll, bikeGround: live.bikeGround } : layout;
+    const camMoved = !!cam && JSON.stringify([cam.camPos, cam.lookAt, cam.lens]) !== JSON.stringify([layout.camPos, layout.lookAt, layout.lens]);
+    if (camMoved) Object.assign(l === layout ? (l = { ...layout }) : l, cam);
     const d: StagePose = { figures: figuresOf(l), bike: l.bike, bikeYaw: l.bikeYaw ?? 0, bikeLift: l.bikeLift ?? 0, bikePitch: l.bikePitch ?? 0, bikeRoll: l.bikeRoll ?? 0, bikeGround: l.bikeGround ?? 0 };
     const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
     const changed = !!live && !(same(live.figures, figuresOf(layout)) && same(live.bike, layout.bike) && same(live.bikeYaw, layout.bikeYaw ?? 0) && same(live.bikeLift, layout.bikeLift ?? 0) && same(live.bikePitch, layout.bikePitch ?? 0) && same(live.bikeRoll, layout.bikeRoll ?? 0));
@@ -68,8 +73,8 @@ export function ShotSyncBox({
     const s = { ...texts0, layout: l } as unknown as ShortShot;
     const full = [...shotChecks(s, basisOf(s, null)), ...promptConflicts(s, rig ?? KB002_RIG).map((c) => c.msg)];
     const extra = [...stageRuleIssues(d, members, filmerId), ...castTextIssues(stripFilmer(text), members, d.figures)];
-    return { moved: changed, stale: changed || !saved, figs: d.figures.length, full: [...new Set([...full, ...extra])], extra, notes: stageTextNotes(text, d) };
-  }, [layout, texts0, live, saved, members, rig, filmerId]);
+    return { moved: changed || camMoved, stale: changed || camMoved || !saved, figs: d.figures.length, full: [...new Set([...full, ...extra])], extra, notes: stageTextNotes(text, d) };
+  }, [layout, texts0, live, cam, saved, members, rig, filmerId]);
   if (!st) return null;
   const { sync, draft, texts } = st;
   const liveBox = now ? (
