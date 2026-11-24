@@ -723,6 +723,7 @@ export function StageEditor({
     <>
         {selFig && base ? (
           <div className="space-y-2 rounded-xl border border-amber-400/30 bg-neutral-900/70 p-3">
+            <p className="text-white">{members.find((m) => m.id === selFig.memberId)?.name ?? figName(doc.figures, selFig, members)} · 姿势</p>
             <div className="flex flex-wrap gap-1">
               {FIGURE_POSES.filter((p) => (p.id !== "ride" && !isCarry(p.id)) || doc.bike).map((p) => {
                 const why = p.id === "ride" ? rideBlock(doc, selFig, members) : isCarry(p.id) ? carryBlock(doc, selFig, members) : "";
@@ -1081,7 +1082,7 @@ export function StageEditor({
     const viewport = (
       <div className="relative text-xs">
         <canvas ref={canvas} className="h-[62vh] min-h-[420px] w-full touch-none rounded-xl border border-white/10 bg-black" />
-        <div className="absolute left-2 top-2 flex flex-wrap gap-1">
+        <div className={`absolute left-2 top-2 flex flex-wrap gap-1 ${shotView ? "right-2" : "right-32"}`}>
           {ro ? null : (
             <>
               <button type="button" title="移动（W）" className={tool(mode === "translate")} onClick={() => setMode("translate")}>

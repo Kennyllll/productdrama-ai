@@ -61,6 +61,7 @@ export default async function ShortSetPage({ params, searchParams }: { params: P
     sceneItems[s.id] = activeItems(ver.items, sh.theme);
     stage[s.id] = {
       locked: s.stage !== "draft" ? "构图已确认：要改人偶和产品位置，先回镜头点“退回构图”" : undefined,
+      accepted: s.stage === "accepted",
       layout: s.layout ?? autoLayout(s, i),
       scene: { id: sc.id, name: sc.name, v: ver.v, theme: sh.theme, themeLabel: findTheme(sh.theme).label },
       items: ver.items,

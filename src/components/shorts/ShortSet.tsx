@@ -16,6 +16,8 @@ import { StageEditor } from "@/components/shorts/StageEditor";
 
 export interface StageProps {
   locked?: string;
+  /** 视频已采用：3D 页不能直接退回构图，要先回镜头「退回返工」 */
+  accepted?: boolean;
   layout: SetLayout;
   scene: { id: string; name: string; v: number; theme: string; themeLabel: string };
   items: SceneItem[];
@@ -185,7 +187,7 @@ export function ShortSet({
   const saveAll = () => (stageDirty ? setStageSave((n) => n + 1) : setCap((n) => n + 1));
   return (
     <div className="space-y-3">
-      <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-neutral-950/95 p-2 backdrop-blur">
+      <div className="sticky top-11 z-20 flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-neutral-950/95 p-2 backdrop-blur">
         <Link href={`/projects/${projectId}/shorts/${videoId}?shot=${code}`} className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-neutral-200 hover:bg-white/5">
           ← 回到镜头
         </Link>
@@ -198,7 +200,7 @@ export function ShortSet({
               className={`rounded-lg border px-3 py-1 text-sm ${s.code === code ? "border-amber-400/60 bg-amber-400/10 text-amber-200" : "border-white/10 text-neutral-400 hover:bg-white/5"}`}
             >
               {s.label ?? s.code}
-              {s.locked ? <span className="ml-1 text-[10px] text-neutral-500">已确认</span> : null}
+              {s.locked ? <span className="ml-1 text-[10px] text-neutral-500">{stage[s.code]?.accepted ? "已采用" : "已确认"}</span> : null}
             </button>
           ))}
         </div>
@@ -207,7 +209,14 @@ export function ShortSet({
           保存
         </button>
       </div>
-      {lockedMsg ? (
+      {lockedMsg && st?.accepted ? (
+        <p className="flex flex-wrap items-center gap-2 rounded-lg bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
+          这一镜的视频已采用，这里只能看。要改：回镜头点「退回返工」，写一句哪里不对。
+          <Link href={`/projects/${projectId}/shorts/${videoId}?shot=${code}`} className="rounded border border-amber-400/50 px-2 py-0.5 text-amber-100 hover:bg-amber-400/10">
+            回镜头
+          </Link>
+        </p>
+      ) : lockedMsg ? (
         <p className="flex flex-wrap items-center gap-2 rounded-lg bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
           这一镜已确认，只能看。
           <button
@@ -253,8 +262,8 @@ export function ShortSet({
         </details>
       ) : null}
       {code ? <ShotSyncBox videoId={videoId} shotId={code} label={b?.label ?? ""} figIds={(st?.layout.figures ?? []).map((f) => f.id)} layout={st?.layout} saved={Boolean(cur?.edited)} live={live} members={st?.members} rig={rig} filmerId={fv[code] === "none" ? undefined : fv[code] || filmers[code]?.video || undefined} /> : null}
-      <div className="grid gap-3 xl:grid-cols-[200px_minmax(0,1fr)_340px]">
-        <aside ref={setListSlot} aria-label="场景列表" className="self-start rounded-xl border border-white/10 bg-neutral-900/60 p-2 xl:sticky xl:top-16" />
+      <div className="grid gap-3 xl:grid-cols-[170px_minmax(0,1fr)_300px] 2xl:grid-cols-[200px_minmax(0,1fr)_340px]">
+        <aside ref={setListSlot} aria-label="场景列表" className="self-start rounded-xl border border-white/10 bg-neutral-900/60 p-2 xl:sticky xl:top-28" />
         <section className="min-w-0 space-y-3">
           {st ? (
             <StageEditor
@@ -342,7 +351,7 @@ export function ShortSet({
             </details>
           ) : null}
         </section>
-        <aside aria-label="属性" className="min-w-0 self-start xl:sticky xl:top-16">
+        <aside aria-label="属性" className="min-w-0 self-start xl:sticky xl:top-28">
           <div ref={setPropsSlot} className={camSel ? "hidden" : ""} />
           <div ref={setCamSlot} className={camSel ? "" : "hidden"} />
         </aside>
