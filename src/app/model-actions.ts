@@ -13,7 +13,7 @@ import { glbSizeRaw, grayGlb, groundGlb, realSizeFactor, scaleGlb, turnGlb } fro
 import { cleanRig, scaleRig } from "@/lib/figures";
 import { getRig, saveRig } from "@/lib/product-rig-repo";
 import { keyFromPath, putFile, readFile } from "@/lib/storage";
-import { installCadTools, stepLengthCm, stepToGlb } from "@/lib/step-import";
+import { stepLengthCm, stepToGlb } from "@/lib/step-import";
 import {
   buildInput,
   COLOR_REQUIRED,
@@ -276,16 +276,6 @@ export async function clearUnknownJobAction(jobId: string): Promise<Result<true>
   updateModelJob(j.id, { status: "failed", error: `${j.error ?? ""}（用户确认没提交成功）` });
   refresh(j.projectId);
   return { result: true };
-}
-
-/** 安装本机 CAD 转换工具（STEP / DXF 用，免费） */
-export async function installCadToolsAction(): Promise<Result<true>> {
-  try {
-    await installCadTools();
-    return { result: true };
-  } catch (e) {
-    return fail(e);
-  }
 }
 
 /** 工厂 STEP 转出来车是躺着的：换朝上的轴（z ↔ y）重新转换（免费） */

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { findLocalProject } from "@/lib/repo";
-import { cadToolsReady, isDwg, isDxf, MAX_DXF_BYTES, NEED_CAD_TOOLS, readDxf } from "@/lib/step-import";
+import { cadToolsReady, ensureCadTools, isDwg, isDxf, MAX_DXF_BYTES, NEED_CAD_TOOLS, readDxf } from "@/lib/step-import";
 import { putFile, storageKey } from "@/lib/storage";
 
 const fail = (message: string, status: number) => Response.json({ error: message }, { status });
@@ -21,7 +21,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const bytes = Buffer.from(await file.arrayBuffer());
   if (isDwg(bytes)) return fail(`${file.name} 是 DWG：请让工厂（或用 CAD 软件）「另存为 DXF」再传`, 400);
   if (!isDxf(bytes)) return fail(`${file.name}：只支持 DXF 图纸`, 400);
-  if (!cadToolsReady()) return Response.json({ error: NEED_CAD_TOOLS, needTools: true }, { status: 409 });
+  if (!cadToolsReady()) {
+    ensureCadTools();
+    return fail(NEED_CAD_TOOLS, 503);
+  }
   try {
     const { info, png } = await readDxf(bytes);
     const drawingId = randomUUID();

@@ -1,5 +1,5 @@
 // 工厂 3D STEP → GLB：本机 OpenCASCADE（cadquery-ocp）转换，免费、不联网。
-// 转换工具装在 ~/.productdrama/cad-python（约 1 GB，第一次用时在产品页一键安装）。
+// 转换工具装在服务器的 ~/.productdrama/cad-python（约 1 GB）：部署 / 启动时由 scripts/cad/setup.mjs 装；没装好时第一次上传会在后台补装。
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -11,7 +11,7 @@ const win = process.platform === "win32";
 const envPython = () => path.join(ENV_DIR, win ? "Scripts" : "bin", win ? "python.exe" : "python");
 
 export const MAX_STEP_BYTES = 300 * 1024 * 1024;
-export const NEED_CAD_TOOLS = "第一次导入 STEP 要先安装 CAD 转换工具：点「安装转换工具」（免费，约 1 GB，几分钟）";
+export const NEED_CAD_TOOLS = "服务器正在准备 3D 文件转换（第一次要几分钟），过 5 分钟再传一次";
 
 /** STEP 文件头：ISO-10303-21 */
 export const isStep = (buf: Buffer) => buf.subarray(0, 200).toString("latin1").includes("ISO-10303-21");
@@ -40,13 +40,22 @@ export async function installCadTools(): Promise<void> {
       // 换下一个名字再试
     }
   }
-  if (!made) throw new Error("这台电脑没有 Python 3：先从 python.org 安装 Python 3.10 以上，再点安装");
+  if (!made) throw new Error("服务器没有 Python 3，转换工具装不上：请管理员在服务器上装 Python 3.10 以上");
   try {
     await run(envPython(), ["-m", "pip", "install", "-q", "cadquery-ocp", "ezdxf"], 30 * 60_000);
   } catch (e) {
     fs.rmSync(ENV_DIR, { recursive: true, force: true });
     throw new Error(`安装转换工具失败（检查网络后重试）：${String((e as { stderr?: string }).stderr ?? e).slice(-300)}`);
   }
+}
+
+let installing: Promise<void> | null = null;
+/** 转换工具没装好：后台补装一次（同时只跑一个），不用用户操作 */
+export function ensureCadTools() {
+  if (cadToolsReady() || installing) return;
+  installing = installCadTools()
+    .catch((e) => console.error("[cad] 转换工具安装失败", e))
+    .finally(() => (installing = null));
 }
 
 export interface StepInfo {

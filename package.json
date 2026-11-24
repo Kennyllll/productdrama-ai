@@ -8,6 +8,7 @@
     "start": "next start -H 127.0.0.1",
     "app": "node scripts/app.mjs",
     "setup:video": "node scripts/video/setup.mjs",
+    "setup:cad": "node scripts/cad/setup.mjs",
     "lint": "eslint",
     "test": "tsx --test 'src/**/*.test.ts'"
   },

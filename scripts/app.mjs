@@ -57,6 +57,7 @@ if (!fs.existsSync("node_modules")) {
 }
 
 if (spawnSync(process.execPath, ["scripts/video/setup.mjs"], { stdio: "inherit", env }).status !== 0) say("Logo 锁定工具没装上，先跳过（下次启动会再试）。");
+if (spawnSync(process.execPath, ["scripts/cad/setup.mjs"], { stdio: "inherit", env }).status !== 0) say("工厂 3D 文件转换工具没装上，先跳过（下次启动会再试）。");
 
 if (needsBuild(root, DIST)) {
   say("程序有更新：重新打包（约 1–2 分钟）…");

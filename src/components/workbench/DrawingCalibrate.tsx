@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { calibrateModelAction, installCadToolsAction } from "@/app/model-actions";
+import { calibrateModelAction } from "@/app/model-actions";
 import type { ModelCad } from "@/lib/model-repo";
 
 const ghost = "rounded-md border border-white/15 px-2.5 py-1 text-xs text-neutral-200 hover:border-amber-400/60 disabled:cursor-not-allowed disabled:opacity-40";
@@ -19,7 +19,6 @@ export function DrawingCalibrate({ projectId, hasModel, cad, source }: { project
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
-  const [needTools, setNeedTools] = useState(false);
   const [d, setD] = useState<Drawing | null>(null);
   const [len, setLen] = useState("");
   const [wid, setWid] = useState("");
@@ -35,8 +34,7 @@ export function DrawingCalibrate({ projectId, hasModel, cad, source }: { project
     fd.append("file", f);
     try {
       const r = await fetch(`/api/projects/${projectId}/drawings`, { method: "POST", body: fd });
-      const data = (await r.json()) as Drawing & { error?: string; needTools?: boolean };
-      setNeedTools(!!data.needTools);
+      const data = (await r.json()) as Drawing & { error?: string };
       if (!r.ok) return setMsg({ tone: "error", text: data.error ?? "读取失败" });
       setD(data);
       setLen(cm(data.suggest.lengthMm));
@@ -47,18 +45,6 @@ export function DrawingCalibrate({ projectId, hasModel, cad, source }: { project
       setMsg({ tone: "error", text: "上传失败，检查网络后再试" });
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function install() {
-    setBusy(true);
-    setMsg({ tone: "ok", text: "正在安装 CAD 转换工具，几分钟，别关页面…" });
-    const r = await installCadToolsAction();
-    setBusy(false);
-    if (r.error) setMsg({ tone: "error", text: r.error });
-    else {
-      setNeedTools(false);
-      setMsg({ tone: "ok", text: "装好了，再点一次「读图纸」" });
     }
   }
 
@@ -74,18 +60,13 @@ export function DrawingCalibrate({ projectId, hasModel, cad, source }: { project
 
   return (
     <div className="space-y-2 text-xs text-neutral-300">
-      {!hasModel ? <p className="text-amber-200">先在 A 或 B 有一个审核通过的模型，再用图纸校准。</p> : null}
+      {!hasModel ? <p className="text-amber-200">先有一个审核通过的模型，再用图纸校准。</p> : null}
       {source && source !== "fal" ? <p className="text-neutral-500">现在用的是工厂文件，本来就精确；图纸可以用来再核对一次尺寸。</p> : null}
       <div className="flex flex-wrap items-center gap-2">
         <input ref={input} type="file" accept=".dxf,.dwg" className="text-xs text-neutral-300" aria-label="DXF 图纸" />
         <button type="button" className={ghost} disabled={busy || !hasModel} onClick={upload}>
           {busy ? "处理中…" : "读图纸"}
         </button>
-        {needTools ? (
-          <button type="button" className={ghost} disabled={busy} onClick={install}>
-            安装转换工具
-          </button>
-        ) : null}
       </div>
       {msg ? <p className={msg.tone === "error" ? "text-rose-300" : "text-emerald-300"}>{msg.text}</p> : null}
       {d ? (
