@@ -202,7 +202,7 @@ function cleanHook(h: unknown, useSeconds: number): ShotHook {
       : {};
   const fx = {
     ...(isHookEffect(x.effect) ? { effect: x.effect } : {}),
-    ...(x.selfie ? { selfie: true, line: str(x.line, 200).trim(), ...(x.scene === "car" ? { scene: "car" as const } : {}), ...(typeof x.who === "string" && x.who ? { who: x.who.slice(0, 60) } : {}) } : {}),
+    ...(x.selfie ? { selfie: true, line: str(x.line, 200).trim(), ...(str(x.lineZh, 200).trim() ? { lineZh: str(x.lineZh, 200).trim() } : {}), ...(x.scene === "car" ? { scene: "car" as const } : {}), ...(typeof x.who === "string" && x.who ? { who: x.who.slice(0, 60) } : {}) } : {}),
     ...(typeof x.partOf === "string" && x.partOf ? { partOf: x.partOf.slice(0, 60) } : {}),
   };
   return { name: str(x.name, 30).trim() || "开头", cut, zoomB: cut ? Math.round(clampNum(x.zoomB, 1, 1.5, 1) * 100) / 100 : undefined, ...lib, ...fx };
@@ -421,7 +421,7 @@ export async function draftHookAction(videoId: string, libId: string, values: Re
 }
 
 /** 采用 Hook 剧本：新建开头（或重写 replaceId 这个开头）。3D 摆位先抄第一个开头，家庭和场地跟正文第一镜（免费） */
-export async function adoptHookAction(videoId: string, libId: string, values: Record<string, string>, entry: string, draft: Partial<Record<TextField, string>>, replaceId?: string, people?: unknown, opts?: { selfie?: boolean; line?: string; who?: string; second?: { draft: Partial<Record<TextField, string>>; people?: unknown } }): Promise<Result<StudioState & { shotId: string; secondId?: string; fixed?: string[] }>> {
+export async function adoptHookAction(videoId: string, libId: string, values: Record<string, string>, entry: string, draft: Partial<Record<TextField, string>>, replaceId?: string, people?: unknown, opts?: { selfie?: boolean; line?: string; lineZh?: string; who?: string; second?: { draft: Partial<Record<TextField, string>>; people?: unknown } }): Promise<Result<StudioState & { shotId: string; secondId?: string; fixed?: string[] }>> {
   try {
     const v = load(videoId);
     const lib = getHook(libId);
@@ -446,7 +446,7 @@ export async function adoptHookAction(videoId: string, libId: string, values: Re
       captionTpl: lib.caption,
       visualKeys: lib.fields.filter((f) => f.visual).map((f) => f.key),
       effect: lib.effect,
-      ...(lib.scene === "car" || (opts ? opts.selfie : old?.hook?.selfie) ? { selfie: true, line: str(opts ? opts.line : old?.hook?.line, 200).trim(), ...(lib.scene === "car" ? { scene: "car" as const } : {}), ...((opts?.who ?? old?.hook?.who) ? { who: str(opts?.who ?? old?.hook?.who, 60) } : {}) } : {}),
+      ...(lib.scene === "car" || (opts ? opts.selfie : old?.hook?.selfie) ? { selfie: true, line: str(opts ? opts.line : old?.hook?.line, 200).trim(), ...(str(opts ? opts.lineZh : old?.hook?.lineZh, 200).trim() ? { lineZh: str(opts ? opts.lineZh : old?.hook?.lineZh, 200).trim() } : {}), ...(lib.scene === "car" ? { scene: "car" as const } : {}), ...((opts?.who ?? old?.hook?.who) ? { who: str(opts?.who ?? old?.hook?.who, 60) } : {}) } : {}),
     };
     const caption = fillCaption(lib.caption, vals, getProduct(v.projectId)?.name ?? "");
     const s = old
@@ -525,11 +525,13 @@ export async function setHookSelfieAction(videoId: string, shotId: string, selfi
     if (!selfie && s.hook.scene === "car") throw new Error("车里自拍必须是自拍");
     if (Boolean(s.hook.selfie) !== selfie && (s.stage !== "draft" || s.frameJobId)) throw new Error("这个开头已经出过首帧或确认了构图：要改自拍，先点“退回构图”");
     if (listJobs(videoId).some((j) => j.shotId === s.id && (j.status === "submitting" || j.status === "submitted"))) throw new Error("这个开头正在生成，等生成完再改");
-    const { selfie: _s, line: _l, ...rest } = s.hook;
+    const { selfie: _s, line: _l, lineZh: _z, ...rest } = s.hook;
     void _s;
     void _l;
     const toggled = Boolean(s.hook.selfie) !== selfie;
-    s.hook = selfie ? { ...rest, selfie: true, line: str(line, 200).trim() } : rest;
+    const nl = str(line, 200).trim();
+    // 手改了台词，AI 写的中文意思就对不上了，清掉
+    s.hook = selfie ? { ...rest, selfie: true, line: nl, ...(_z && nl === (_l ?? "").trim() ? { lineZh: _z } : {}) } : rest;
     // 3D 跟着改：开自拍 = 拿手机的人摆到镜头前；关自拍 = 去掉他，摄影机回到 Hook 预设机位
     if (toggled && s.layout) {
       const stage = (s.hook.libId ? getHook(s.hook.libId)?.stage : undefined) ?? DEFAULT_STAGE;

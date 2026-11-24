@@ -56,7 +56,7 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
   const adopt = () =>
     start(async () => {
       if (!draft) return;
-      const r = await adoptHookAction(videoId, libId, values, entry, draft.draft, shot?.id ?? targetId, draft.people, { selfie: selfie || car, line: draft.line || line, who, second: draft.second ? { draft: draft.second.draft, people: draft.second.people } : undefined });
+      const r = await adoptHookAction(videoId, libId, values, entry, draft.draft, shot?.id ?? targetId, draft.people, { selfie: selfie || car, line: draft.line || line, lineZh: draft.line ? draft.lineZh : undefined, who, second: draft.second ? { draft: draft.second.draft, people: draft.second.people } : undefined });
       const fixed = r.result?.fixed ?? [];
       onDone(r, `已换好开头${fixed.length ? `。AI 写的动作有 ${fixed.length} 处 3D 做不到，程序已改好：${fixed.join("；")}` : ""}。${car ? "第一段在车里不用 3D；" : ""}3D 构图正在后台自动保存，不用离开这页，保存好卡片上会出现构图缩略图`);
       // 采用后留在视频页：3D 构图在后台自动保存（先存切镜后的第二段，再存第一段；车里自拍第一段不用 3D）

@@ -216,6 +216,8 @@ export interface ShotHook {
   selfie?: boolean;
   /** 自拍时说的台词（英文）；空 = 用字幕 */
   line?: string;
+  /** 台词的中文意思（AI 写剧本时一起写；手改台词后清空） */
+  lineZh?: string;
   /** 车里自拍：第一段在停着的汽车里，产品不入镜、不用 3D */
   scene?: "car";
   /** 自拍出镜的人（家庭成员 id）；空 = 视频设定里拿手机的人 */

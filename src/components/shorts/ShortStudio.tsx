@@ -558,7 +558,7 @@ export function ShortStudio({
             </select>
             <label className="flex items-center gap-1 text-xs text-neutral-300" title="开不开声音价格一样">
               <input type="checkbox" checked={v.sound === true} disabled={busy} onChange={(e) => act(() => saveShortVideoAction(v.id, { sound: e.target.checked }))} />
-              声音（只有环境音和动作声效；自拍开头强制开）
+              声音（只有环境音和动作声效）{v.shots.some((x) => x.hook?.selfie) ? "：自拍开头那一镜不管这里，总是带声音和台词" : ""}
             </label>
             <span>
               9:16 竖版 · 不用 1080p（$0.65/秒，超出每秒上限）·
@@ -1292,7 +1292,7 @@ export function ShortStudio({
                   <div className="text-xs text-neutral-400 md:col-span-2">
                     {s.hook?.selfie ? (
                       <p className="text-amber-200">
-                        拍摄者：自拍（强制开声音）
+                        拍摄者：{cast.find((m) => m.id === (s.layout?.figures?.find((f) => f.id === "self")?.memberId ?? s.hook?.who))?.name ?? "出镜的人"}自己拿手机自拍入镜，对着镜头说台词（强制开声音）
                       </p>
                     ) : (
                       <>
@@ -1679,6 +1679,7 @@ export function ShortStudio({
                         }}
                       />
                       </label>
+                      {s.hook.lineZh ? <p className="text-xs text-neutral-500">中文意思：{s.hook.lineZh}</p> : s.hook.line?.trim() ? <p className="text-xs text-neutral-500">台词改过了，中文意思要自己对一下</p> : null}
                       {(() => {
                         // 按约 2.6 个英文词 / 秒估算：台词比这一段用的秒数长，切镜时会被切断
                         const words = (s.hook?.line ?? "").trim().split(/\s+/).filter(Boolean).length;
