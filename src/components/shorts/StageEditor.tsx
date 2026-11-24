@@ -274,7 +274,7 @@ export function StageEditor({
     placeCam.current(layout);
 
     const tc = new TransformControls(cam, el);
-    tc.setSize(0.8);
+    tc.setSize(1.2);
     const helper = tc.getHelper();
     s3.add(helper);
     tc.addEventListener("dragging-changed", (e) => {
@@ -364,7 +364,7 @@ export function StageEditor({
         }
         mount.add(root);
         byKey.set(root.userData.key, root);
-        if (!rm && (s === root.userData.key || s?.startsWith(`joint:${f.id}:`))) {
+        if (!rm && !st.current.ro && (s === root.userData.key || s?.startsWith(`joint:${f.id}:`))) {
           const base = presetPose(f.kind, effPose(f, Boolean(d.bike)), rideOf(rg), f.h);
           for (const j of JOINTS) {
             const p = f.custom?.[j.id] ?? base[j.id];
@@ -447,7 +447,7 @@ export function StageEditor({
       return new THREE.Vector2(((e.clientX - r.left - vp.x) / vp.w) * 2 - 1, -(((e.clientY - r.top - vp.y) / vp.h) * 2 - 1));
     };
     const onGrab = (e: PointerEvent) => {
-      if (st.current.ro || e.button !== 0) return;
+      if (st.current.ro || e.button !== 0 || (tc.object && tc.axis)) return;
       const active = st.current.shotView ? shotCam : cam;
       ray.setFromCamera(ndc(e), active);
       const hit = ray.intersectObjects([world, rigMarks], true).find((h) => /^(joint|rig):/.test(String(h.object.userData.key ?? "")));
@@ -1193,7 +1193,15 @@ export function StageEditor({
           </div>
         )}
         <p className="pointer-events-none absolute bottom-2 left-2 rounded bg-black/60 px-2 py-0.5 text-[11px] text-neutral-300">
-          {shotView ? "相机视角：看到的就是首帧构图" : "点选物件，拖箭头 / 圆环 · 左键拖空白处转视角 · 右键平移 · Ctrl+滚轮缩放"}
+          {ro
+            ? "这一镜只能看：可以转视角、缩放，不能拖动"
+            : shotView
+              ? "相机视角：看到的就是首帧构图"
+              : sel?.startsWith("fig:") && doc.bike && doc.figures.find((f) => `fig:${f.id}` === sel)?.onProduct
+                ? "骑在车上的人跟着车走：要挪位置就选「产品」，拖蓝球改手脚"
+                : sel === "product" && carrierOf(doc)
+                  ? "车被人拿着，跟着人走：要挪位置就选那个人"
+                  : "点选物件，拖箭头 / 圆环 · 左键拖空白处转视角 · 右键平移 · Ctrl+滚轮缩放"}
         </p>
       </div>
     );
