@@ -2,6 +2,7 @@
 
 import { askConfirm } from "@/components/ConfirmHost";
 import { useRouter } from "next/navigation";
+import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -80,7 +81,10 @@ export function Set3D({
   otherDirty = false,
   compact = false,
   activeCode,
+  controlsSlot,
 }: {
+  /** 三栏 3D 页：机位设置渲染到右边属性栏 */
+  controlsSlot?: HTMLElement | null;
   projectId: string;
   episode: number;
   shots: SetShot[];
@@ -616,68 +620,9 @@ export function Set3D({
           ) : null}
     </>
   );
-  return (
-    <div className="space-y-4">
-      {compact ? null : (
-        <>
-      <div className="flex flex-wrap gap-2">
-        {shots.map((s) => (
-          <button
-            key={s.code}
-            type="button"
-            onClick={() => pick(s)}
-            className={`rounded-lg border px-3 py-1 text-sm ${s.code === code ? "border-amber-400/60 bg-amber-400/10 text-amber-200" : "border-white/10 text-neutral-400 hover:bg-white/5"}`}
-          >
-            {s.label ?? `${codePrefix}${s.code}`}
-            {s.edited ? <span className="ml-1 text-[10px] text-sky-300">已改</span> : null}
-            {s.locked ? <span className="ml-1 text-[10px] text-neutral-500">锁</span> : null}
-          </button>
-        ))}
-      </div>
-      <p className="text-sm text-neutral-300">{shot.title}</p>
-      {shot.locked ? <p className="rounded-md bg-amber-400/10 px-3 py-1.5 text-xs text-amber-200">{shot.locked}</p> : null}
-        </>
-      )}
-
-      <div className={compact ? "space-y-3" : "grid gap-4 xl:grid-cols-2"}>
-        <figure>
-          <figcaption className="mb-1 text-xs text-neutral-400">摄影机画面（按当时的机位、焦段实时算）</figcaption>
-          <canvas ref={camCanvas} className={`${layout.aspect < 1 ? "mx-auto max-w-sm" : ""} w-full rounded-lg border border-white/10 bg-black`} style={{ aspectRatio: String(layout.aspect) }} />
-        </figure>
-        <figure>
-          <figcaption className="mb-1 text-xs text-neutral-400">
-            俯视地图：拖<span className="text-amber-300">黄点</span>挪机位，拖<span className="text-sky-300">蓝点</span>改看向哪里
-            {layout.bike ? <>，拖<span className="text-rose-300">红点</span>挪车</> : null}；拖空白处平移。缩放：按住 Ctrl 滚轮，或点右上角 + / −。上方是北
-          </figcaption>
-          <div className="relative">
-            <canvas ref={mapCanvas} className={`aspect-[2.33] w-full cursor-crosshair touch-none rounded-lg border bg-black ${camOut ? "border-rose-500" : "border-white/10"}`} />
-            <div className="absolute right-2 top-2 flex gap-1 text-xs">
-              <button type="button" aria-label="放大地图" className="rounded bg-black/70 px-2 py-1 text-white hover:bg-black" onClick={() => (viewRef.current.span = Math.max(3, viewRef.current.span / 1.25))}>
-                +
-              </button>
-              <button type="button" aria-label="缩小地图" className="rounded bg-black/70 px-2 py-1 text-white hover:bg-black" onClick={() => (viewRef.current.span = Math.min(400, viewRef.current.span * 1.25))}>
-                −
-              </button>
-              <button type="button" className="rounded bg-black/70 px-2 py-1 text-white hover:bg-black" onClick={() => recenter(layout)}>
-                回到全景
-              </button>
-            </div>
-          </div>
-          {camOut ? (
-            <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-rose-300">
-              {camOut}
-              {outside && !(compact && shot.locked) ? (
-                <button type="button" className="rounded border border-rose-400/50 px-2 py-0.5 text-rose-200" onClick={() => update({ camPos: [outside.inside[0], outside.inside[1], layout.camPos[2]] })}>
-                  放回房间里
-                </button>
-              ) : null}
-            </p>
-          ) : null}
-        </figure>
-      </div>
-
-      <div className={compact ? "space-y-3" : "grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]"}>
+  const controls = (
         <fieldset disabled={Boolean(compact && shot.locked)} className={`min-w-0 space-y-3 rounded-xl border border-white/10 bg-neutral-900/70 p-4 ${compact && shot.locked ? "opacity-60" : ""}`}>
+          {compact ? <p className="text-sm font-medium text-white">相机</p> : null}
           <Slider label="焦段" value={layout.lens} min={12} max={200} step={1} unit="mm" onChange={(v) => update({ lens: v })} />
           <Slider label="机位高度" value={camHeight} min={0.05} max={12} step={0.05} unit="米" onChange={(v) => update({ camPos: [layout.camPos[0], layout.camPos[1], v] })} />
           {compact ? (
@@ -759,6 +704,69 @@ export function Set3D({
           </p>
           )}
         </fieldset>
+  );
+  return (
+    <div className="space-y-4">
+      {compact ? null : (
+        <>
+      <div className="flex flex-wrap gap-2">
+        {shots.map((s) => (
+          <button
+            key={s.code}
+            type="button"
+            onClick={() => pick(s)}
+            className={`rounded-lg border px-3 py-1 text-sm ${s.code === code ? "border-amber-400/60 bg-amber-400/10 text-amber-200" : "border-white/10 text-neutral-400 hover:bg-white/5"}`}
+          >
+            {s.label ?? `${codePrefix}${s.code}`}
+            {s.edited ? <span className="ml-1 text-[10px] text-sky-300">已改</span> : null}
+            {s.locked ? <span className="ml-1 text-[10px] text-neutral-500">锁</span> : null}
+          </button>
+        ))}
+      </div>
+      <p className="text-sm text-neutral-300">{shot.title}</p>
+      {shot.locked ? <p className="rounded-md bg-amber-400/10 px-3 py-1.5 text-xs text-amber-200">{shot.locked}</p> : null}
+        </>
+      )}
+
+      <div className={compact ? "grid items-start gap-3 md:grid-cols-[minmax(0,220px)_minmax(0,1fr)]" : "grid gap-4 xl:grid-cols-2"}>
+        <figure>
+          <figcaption className="mb-1 text-xs text-neutral-400">摄影机画面（按当时的机位、焦段实时算）</figcaption>
+          <canvas ref={camCanvas} className={`${layout.aspect < 1 ? "mx-auto max-w-sm" : ""} w-full rounded-lg border border-white/10 bg-black`} style={{ aspectRatio: String(layout.aspect) }} />
+        </figure>
+        <figure>
+          <figcaption className="mb-1 text-xs text-neutral-400">
+            俯视地图：拖<span className="text-amber-300">黄点</span>挪机位，拖<span className="text-sky-300">蓝点</span>改看向哪里
+            {layout.bike ? <>，拖<span className="text-rose-300">红点</span>挪车</> : null}；拖空白处平移。缩放：按住 Ctrl 滚轮，或点右上角 + / −。上方是北
+          </figcaption>
+          <div className="relative">
+            <canvas ref={mapCanvas} className={`aspect-[2.33] w-full cursor-crosshair touch-none rounded-lg border bg-black ${camOut ? "border-rose-500" : "border-white/10"}`} />
+            <div className="absolute right-2 top-2 flex gap-1 text-xs">
+              <button type="button" aria-label="放大地图" className="rounded bg-black/70 px-2 py-1 text-white hover:bg-black" onClick={() => (viewRef.current.span = Math.max(3, viewRef.current.span / 1.25))}>
+                +
+              </button>
+              <button type="button" aria-label="缩小地图" className="rounded bg-black/70 px-2 py-1 text-white hover:bg-black" onClick={() => (viewRef.current.span = Math.min(400, viewRef.current.span * 1.25))}>
+                −
+              </button>
+              <button type="button" className="rounded bg-black/70 px-2 py-1 text-white hover:bg-black" onClick={() => recenter(layout)}>
+                回到全景
+              </button>
+            </div>
+          </div>
+          {camOut ? (
+            <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-rose-300">
+              {camOut}
+              {outside && !(compact && shot.locked) ? (
+                <button type="button" className="rounded border border-rose-400/50 px-2 py-0.5 text-rose-200" onClick={() => update({ camPos: [outside.inside[0], outside.inside[1], layout.camPos[2]] })}>
+                  放回房间里
+                </button>
+              ) : null}
+            </p>
+          ) : null}
+        </figure>
+      </div>
+
+      <div className={compact ? "space-y-3" : "grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]"}>
+        {controlsSlot ? createPortal(controls, controlsSlot) : controls}
         <details open={!compact} className="min-w-0">
           <summary className="mb-2 cursor-pointer select-none text-xs text-neutral-400">{compact ? "历史结果" : "当时按这个布景出来的结果（对照看 3D 数据怎么变成画面）"}</summary>
           <div className="flex gap-3 overflow-x-auto pb-2">

@@ -75,12 +75,10 @@ export function ShortSet({
   const [code, setCode] = useState(shots.some((s) => s.code === initialCode) ? initialCode : shots[0]?.code ?? "");
   const [draft, setDraft] = useState<SceneItem[] | null>(null);
   const [sceneOpen, setSceneOpen] = useState(false);
-  const jump = (id: string) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "start" });
-    el.animate?.([{ boxShadow: "0 0 0 3px rgba(251,191,36,.8)" }, { boxShadow: "0 0 0 0 rgba(251,191,36,0)" }], { duration: 1200 });
-  };
+  const [listSlot, setListSlot] = useState<HTMLElement | null>(null);
+  const [propsSlot, setPropsSlot] = useState<HTMLElement | null>(null);
+  const [camSlot, setCamSlot] = useState<HTMLElement | null>(null);
+  const [camSel, setCamSel] = useState(false);
   const [live, setLive] = useState<{ figures: FigureSpec[]; bike?: [number, number]; bikeYaw: number; bikeLift: number; bikePitch: number; bikeRoll: number; bikeGround: number; items: SceneItem[] } | null>(null);
   const [cap, setCap] = useState(0);
   const [reopening, setReopening] = useState(false);
@@ -154,7 +152,7 @@ export function ShortSet({
   };
   const operatorBox = (c: string, locked: boolean, api: { layout: SetLayout; setCamH: (h: number) => void }) => (
     <div className="block">
-      拍摄者（先选姿态，露什么按机位自动算）<span className="ml-1 text-[11px] text-neutral-500">· 选完马上自动保存（左边「撤销」撤不回这一项）</span>
+      拍摄者（先选姿态，露什么按机位自动算）<span className="ml-1 text-[11px] text-neutral-500">· 选完马上自动保存（「撤销」撤不回这一项）</span>
       {filmers[c]?.options.length ? (
         <label className="mt-1 flex items-center gap-1">
           谁拿手机：
@@ -231,10 +229,7 @@ export function ShortSet({
         </p>
       ) : tip ? (
         <p className="flex items-center gap-3 rounded-lg border border-sky-400/30 bg-sky-400/5 px-3 py-2 text-sm text-sky-100">
-          <span>
-            <button type="button" className="underline decoration-dotted" onClick={() => jump("pd-3d-model")}>① 模型</button>：点人或车，拖箭头、选姿势　
-            <button type="button" className="underline decoration-dotted" onClick={() => jump("pd-3d-camera")}>② 镜头</button>：拖地图上的黄点调机位　③ 点右上角「保存」
-          </span>
+          <span>左边选人、车或相机 → 在画面里拖（W 移动 · E 旋转 · F 对准 · C 相机视角）→ 右边改属性 → 右上角「保存」</span>
           <button type="button" onClick={() => (localStorage.setItem("pd-3d-tip", "1"), setTip(false))} className="ml-auto text-xs text-neutral-400 hover:text-white">
             知道了
           </button>
@@ -258,11 +253,9 @@ export function ShortSet({
         </details>
       ) : null}
       {code ? <ShotSyncBox videoId={videoId} shotId={code} label={b?.label ?? ""} figIds={(st?.layout.figures ?? []).map((f) => f.id)} layout={st?.layout} saved={Boolean(cur?.edited)} live={live} members={st?.members} rig={rig} filmerId={fv[code] === "none" ? undefined : fv[code] || filmers[code]?.video || undefined} /> : null}
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <section id="pd-3d-model" className="min-w-0 rounded-xl border border-white/10 p-3">
-          <h2 className="mb-2 text-sm font-medium text-white">
-            ① 模型 <span className="text-xs font-normal text-neutral-400">人、车、家具放在哪、什么姿势</span>
-          </h2>
+      <div className="grid gap-3 xl:grid-cols-[200px_minmax(0,1fr)_340px]">
+        <aside ref={setListSlot} aria-label="场景列表" className="self-start rounded-xl border border-white/10 bg-neutral-900/60 p-2 xl:sticky xl:top-16" />
+        <section className="min-w-0 space-y-3">
           {st ? (
             <StageEditor
               key={stageKey}
@@ -286,14 +279,14 @@ export function ShortSet({
               onDocChange={onDocChange}
               onSaved={() => setCap((n) => n + 1)}
               onDirty={setStageDirty}
+              listSlot={listSlot}
+              propsSlot={propsSlot}
+              cameraSelected={camSel}
+              onCamera={setCamSel}
             />
           ) : null}
-        </section>
-        <section id="pd-3d-camera" className="min-w-0 space-y-3 rounded-xl border border-sky-400/20 p-3">
-          <h2 className="text-sm font-medium text-white">
-            ② 镜头 <span className="text-xs font-normal text-neutral-400">摄影机放在哪、拍成什么样</span>
-          </h2>
           <Set3D
+            controlsSlot={camSlot}
             compact
             placeholderProduct={placeholderProduct}
             activeCode={code}
@@ -349,6 +342,10 @@ export function ShortSet({
             </details>
           ) : null}
         </section>
+        <aside aria-label="属性" className="min-w-0 self-start xl:sticky xl:top-16">
+          <div ref={setPropsSlot} className={camSel ? "hidden" : ""} />
+          <div ref={setCamSlot} className={camSel ? "" : "hidden"} />
+        </aside>
       </div>
     </div>
   );

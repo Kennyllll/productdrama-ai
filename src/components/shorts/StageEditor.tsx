@@ -4,6 +4,7 @@ import { askConfirm } from "@/components/ConfirmHost";
 import type { CastOption } from "@/lib/families";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -85,7 +86,17 @@ export function StageEditor({
   saveSignal = 0,
   members = [],
   brainReady = true,
+  listSlot,
+  propsSlot,
+  cameraSelected = false,
+  onCamera,
 }: {
+  /** 三栏 3D 页：场景列表、属性栏渲染到页面左右两栏 */
+  listSlot?: HTMLElement | null;
+  propsSlot?: HTMLElement | null;
+  /** 左边列表里选中了「相机」：属性栏显示机位设置 */
+  cameraSelected?: boolean;
+  onCamera?: (on: boolean) => void;
   brainReady?: boolean;
   videoId: string;
   /** 这一镜家庭的成员（家庭库）；人偶可以绑定 */
@@ -133,7 +144,7 @@ export function StageEditor({
   const [thinking, setThinking] = useState(false);
   const [pending, start] = useTransition();
   const canvas = useRef<HTMLCanvasElement>(null);
-  const api = useRef<{ sync: () => void; zoom: (f: number) => void; home: () => void } | null>(null);
+  const api = useRef<{ sync: () => void; zoom: (f: number) => void; home: () => void; focus: () => void } | null>(null);
   const ro = Boolean(compact && locked);
   const st = useRef({ doc, sel, mode, rigMode, shotView, autoRig, ro, editSite });
   st.current = { doc, sel, mode, rigMode, shotView, autoRig, ro, editSite };
@@ -206,6 +217,18 @@ export function StageEditor({
       const b = st.current.doc.bike ?? [0, 0];
       cam.position.set(b[0] + 2.4, 1.8, -b[1] + 2.6);
       orbit.target.set(b[0], 0.4, -b[1]);
+      orbit.update();
+    };
+    // F：把视角对准选中的东西（没选就对准产品）
+    const focus = () => {
+      const s = st.current.sel;
+      const o = (s && byKey.get(s.startsWith("joint:") ? `fig:${s.split(":")[1]}` : s)) || (bike.visible ? bike : null);
+      if (!o) return home();
+      const p = o.getWorldPosition(new THREE.Vector3());
+      p.y = Math.max(p.y, 0.5);
+      const off = cam.position.clone().sub(orbit.target).setLength(2.6);
+      orbit.target.copy(p);
+      cam.position.copy(p).add(off);
       orbit.update();
     };
     const onWheel = (e: WheelEvent) => {
@@ -428,7 +451,7 @@ export function StageEditor({
       raf = requestAnimationFrame(frame);
     };
     frame();
-    api.current = { sync, zoom, home };
+    api.current = { sync, zoom, home, focus };
     sync();
     return () => {
       cancelAnimationFrame(raf);
@@ -466,14 +489,22 @@ export function StageEditor({
         e.preventDefault();
         if (e.shiftKey) undoRef.current.redo();
         else undoRef.current.undo();
-      } else if (e.key === "w") setMode("translate");
-      else if (e.key === "e") setMode("rotate");
-      else if (e.key === "r") setMode("scale");
+      } else if (e.metaKey || e.ctrlKey || e.altKey) return;
+      else if (e.key.toLowerCase() === "w") setMode("translate");
+      else if (e.key.toLowerCase() === "e") setMode("rotate");
+      else if (e.key.toLowerCase() === "r") setMode("scale");
+      else if (e.key.toLowerCase() === "f") api.current?.focus();
+      else if (e.key.toLowerCase() === "c") setShotView((v) => !v);
       else if (e.key === "Escape") setSel(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  useEffect(() => {
+    if (sel && cameraSelected) onCamera?.(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel]);
 
   const selFig = doc.figures.find((f) => sel === `fig:${f.id}` || sel?.startsWith(`joint:${f.id}:`)) ?? null;
   const selItem = doc.items.find((i) => sel === `item:${i.id}`) ?? null;
@@ -750,8 +781,7 @@ export function StageEditor({
               </button>
             </div>
             <p className="text-[11px] text-neutral-500">
-              {selFig.onProduct && doc.bike ? "骑在产品上：跟着产品走；车侧躺、竖起、提起来时会自动下车。" : "拖人偶脚下的箭头挪位置，切到「转向」拖圆环转身。"}拖<span className="text-sky-300">蓝球</span>（手、脚）和<span className="text-pink-300">粉球</span>
-              （臀部），膝盖和手肘自动弯。
+              {selFig.onProduct && doc.bike ? "骑在车上，跟着车走。" : ""}拖<span className="text-sky-300">蓝球</span>（手脚）、<span className="text-pink-300">粉球</span>（臀部）改姿势，膝盖手肘自动弯。
             </p>
             {!(selFig.onProduct && doc.bike) && doc.bike ? (
               <div className="space-y-1 text-neutral-400">
@@ -783,13 +813,13 @@ export function StageEditor({
             ) : null}
             {!(selFig.onProduct && doc.bike) ? (
               <details className="text-neutral-400">
-              <summary className="cursor-pointer text-[11px]">精确调整（米 / 度）</summary>
+              <summary className="cursor-pointer text-[11px]">高级：精确位置</summary>
               <div className="flex gap-1 text-neutral-400">
                 {(
                   [
-                    ["dx", "离车往东（地图右）米", 0.05],
-                    ["dy", "往北（地图上）米", 0.05],
-                    ["yaw", "面朝 °", 5],
+                    ["dx", "左右（米）", 0.05],
+                    ["dy", "前后（米）", 0.05],
+                    ["yaw", "朝向（°）", 5],
                   ] as const
                 ).map(([k, label, step]) => (
                   <label key={k} className="flex-1">
@@ -800,6 +830,8 @@ export function StageEditor({
               </div>
               </details>
             ) : null}
+            <details className="text-neutral-400">
+            <summary className="cursor-pointer text-[11px]">高级：身体前倾、头转向</summary>
             {(["lean", "head"] as const).map((k) => (
               <label key={k} className="block text-neutral-400">
                 <span className="flex justify-between">
@@ -813,6 +845,7 @@ export function StageEditor({
                 </span>
               </label>
             ))}
+            </details>
             <div className="flex gap-2">
               <button type="button" disabled={!selFig.custom} onClick={() => patchFig({ custom: undefined })} className={`${btn(false)} disabled:opacity-40`}>
                 恢复预设姿态
@@ -862,9 +895,11 @@ export function StageEditor({
           <>
         <Range label="朝向" value={Math.round(wrap(doc.bikeYaw))} min={-180} max={180} step={1} unit="°" onChange={(v) => commit((d) => ({ ...d, bikeYaw: v }))} />
         <Range label="离地高度（0 = 贴着地面）" value={clear} min={0} max={1.5} step={0.05} unit="米" onChange={(v) => commit((d) => ({ ...d, bikeLift: r2(d.bikeGround + v) }))} />
-        <Range label="俯仰（+ = 车头抬起）" value={doc.bikePitch} min={-90} max={90} step={1} unit="°" onChange={(v) => setBikeAngles(v, doc.bikeRoll)} />
-        <Range label="侧倾（+ = 往左倒）" value={doc.bikeRoll} min={-180} max={180} step={1} unit="°" onChange={(v) => setBikeAngles(doc.bikePitch, v)} />
-        <p className="text-[11px] text-neutral-500">水平位置：在 3D 里拖箭头。转向：点上方「转向」再拖圆环，或拖上面的「朝向」。</p>
+        <details className="text-neutral-400">
+          <summary className="cursor-pointer text-[11px]">高级：车头抬起、往左倒</summary>
+          <Range label="车头抬起" value={doc.bikePitch} min={-90} max={90} step={1} unit="°" onChange={(v) => setBikeAngles(v, doc.bikeRoll)} />
+          <Range label="往左倒（负数 = 往右）" value={doc.bikeRoll} min={-180} max={180} step={1} unit="°" onChange={(v) => setBikeAngles(doc.bikePitch, v)} />
+        </details>
           </>
         )}
       </div>
@@ -972,38 +1007,156 @@ export function StageEditor({
     </div>
   );
   if (compact) {
-    return (
-      <div className="space-y-2 text-xs text-neutral-300">
-        <div className="grid gap-2 md:grid-cols-2">
-          {vView}
-          {ro ? null : vObjects}
+    const pick = (k: string) => (setSel(k), onCamera?.(false));
+    const row = (on: boolean) => `flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${on ? "bg-amber-400/15 text-amber-100" : "text-neutral-300 hover:bg-white/5"}`;
+    const furniture = activeItems(doc.items, scene.theme).filter((i) => editSite || !isStructure(i));
+    const list = (
+      <div className="space-y-3 text-xs">
+        <div className="space-y-0.5">
+          <p className="px-2 pb-1 text-[11px] text-neutral-500">场景</p>
+          {doc.bike ? (
+            <button type="button" className={row(sel === "product" && !cameraSelected)} onClick={() => pick("product")}>
+              <span className="h-2 w-2 rounded-full bg-rose-400" />
+              产品
+            </button>
+          ) : null}
+          {doc.figures.map((f, i) => (
+            <button key={f.id} type="button" className={row(selFig?.id === f.id && !cameraSelected)} onClick={() => pick(`fig:${f.id}`)}>
+              <span className="h-2 w-2 rounded-full bg-sky-400" />
+              {members.find((m) => m.id === f.memberId)?.name ?? `${f.kind === "adult" ? "大人" : "小孩"} ${i + 1}`}
+              {f.onProduct && doc.bike ? <span className="ml-auto text-[10px] text-neutral-500">骑车</span> : null}
+            </button>
+          ))}
+          <button type="button" className={row(cameraSelected)} onClick={() => (setSel(null), onCamera?.(true))}>
+            <span className="h-2 w-2 rounded-full bg-amber-400" />
+            相机
+          </button>
         </div>
-        {vBrain}
-        <div className="relative">
-          <canvas ref={canvas} className="h-[70vh] w-full touch-none rounded-xl border border-white/10 bg-black" />
-          {shotView ? null : (
-            <div className="absolute right-2 top-2 flex gap-1 text-xs">
-              <button type="button" aria-label="放大" className="rounded bg-black/70 px-2 py-1 text-white hover:bg-black" onClick={() => api.current?.zoom(1 / 1.25)}>
-                +
+        {furniture.length ? (
+          <div className="space-y-0.5">
+            <p className="px-2 pb-1 text-[11px] text-neutral-500">家具</p>
+            <div className="max-h-48 space-y-0.5 overflow-y-auto">
+              {furniture.map((i) => (
+                <button key={i.id} type="button" className={row(sel === `item:${i.id}` && !cameraSelected)} onClick={() => pick(`item:${i.id}`)}>
+                  {itemLabel(i, doc.items)}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {ro ? null : (
+          <div className="space-y-1 border-t border-white/10 pt-2">
+            <div className="flex gap-1">
+              <button type="button" className={btn(false)} onClick={() => (addFig("child"), onCamera?.(false))}>
+                + 小孩
               </button>
-              <button type="button" aria-label="缩小" className="rounded bg-black/70 px-2 py-1 text-white hover:bg-black" onClick={() => api.current?.zoom(1.25)}>
-                −
-              </button>
-              <button type="button" className="rounded bg-black/70 px-2 py-1 text-white hover:bg-black" onClick={() => api.current?.home()}>
-                回到全景
+              <button type="button" className={btn(false)} onClick={() => (addFig("adult"), onCamera?.(false))}>
+                + 大人
               </button>
             </div>
+            <select value="" onChange={(e) => e.target.value && (addItem(e.target.value), onCamera?.(false))} className="w-full rounded border border-white/10 bg-neutral-950 px-1 py-1 text-white">
+              <option value="">+ 加家具…</option>
+              {ITEM_TYPES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+            <label className="flex items-center gap-1 text-[11px] text-neutral-500" title="默认锁住墙和地板，防止误删">
+              <input
+                type="checkbox"
+                checked={editSite}
+                onChange={(e) => {
+                  setEditSite(e.target.checked);
+                  if (!e.target.checked && selItem && isStructure(selItem)) setSel(null);
+                }}
+              />
+              也能选墙和地板
+            </label>
+          </div>
+        )}
+      </div>
+    );
+    const tool = (on: boolean) => `rounded px-2 py-1 disabled:opacity-40 ${on ? "bg-amber-400 text-black" : "bg-black/70 text-white hover:bg-black"}`;
+    const viewport = (
+      <div className="relative text-xs">
+        <canvas ref={canvas} className="h-[62vh] min-h-[420px] w-full touch-none rounded-xl border border-white/10 bg-black" />
+        <div className="absolute left-2 top-2 flex flex-wrap gap-1">
+          {ro ? null : (
+            <>
+              <button type="button" title="移动（W）" className={tool(mode === "translate")} onClick={() => setMode("translate")}>
+                移动 W
+              </button>
+              <button type="button" title="旋转（E）" className={tool(mode === "rotate")} onClick={() => setMode("rotate")}>
+                旋转 E
+              </button>
+              {sel?.startsWith("item:") ? (
+                <button type="button" title="改大小（R）" className={tool(mode === "scale")} onClick={() => setMode("scale")}>
+                  大小 R
+                </button>
+              ) : null}
+              <span className="w-2" />
+            </>
           )}
-          <p className="pointer-events-none absolute bottom-2 left-2 rounded bg-black/60 px-2 py-0.5 text-[11px] text-neutral-300">按住 Ctrl 滚轮缩放；不按就滚动页面</p>
+          <button type="button" title="对准选中的东西（F）" disabled={shotView} className={tool(false)} onClick={() => api.current?.focus()}>
+            对准 F
+          </button>
+          <button type="button" title="看相机拍到的画面（C）" className={tool(shotView)} onClick={() => setShotView((v) => !v)}>
+            相机视角 C
+          </button>
+          {ro ? null : (
+            <>
+              <span className="w-2" />
+              <button type="button" title="撤销（Ctrl+Z）" disabled={!past.length} onClick={undo} className={tool(false)}>
+                撤销
+              </button>
+              <button type="button" title="重做（Ctrl+Shift+Z）" disabled={!future.length} onClick={redo} className={tool(false)}>
+                重做
+              </button>
+            </>
+          )}
         </div>
-        <fieldset disabled={ro} className={`grid min-w-0 gap-2 md:grid-cols-2 ${ro ? "opacity-60" : ""}`}>
+        {shotView ? null : (
+          <div className="absolute right-2 top-2 flex gap-1">
+            <button type="button" aria-label="放大" className={tool(false)} onClick={() => api.current?.zoom(1 / 1.25)}>
+              +
+            </button>
+            <button type="button" aria-label="缩小" className={tool(false)} onClick={() => api.current?.zoom(1.25)}>
+              −
+            </button>
+            <button type="button" className={tool(false)} onClick={() => api.current?.home()}>
+              全景
+            </button>
+          </div>
+        )}
+        <p className="pointer-events-none absolute bottom-2 left-2 rounded bg-black/60 px-2 py-0.5 text-[11px] text-neutral-300">
+          {shotView ? "相机视角：看到的就是首帧构图" : "点选物件，拖箭头 / 圆环 · 左键拖空白处转视角 · 右键平移 · Ctrl+滚轮缩放"}
+        </p>
+      </div>
+    );
+    const props = (
+      <div className="space-y-2 text-xs text-neutral-300">
+        <fieldset disabled={ro} className={`min-w-0 space-y-2 ${ro ? "opacity-60" : ""}`}>
           {vProduct}
           {vSel}
-          {ro ? null : vRig}
-          {!vProduct && !selFig && !selItem ? <p className="text-neutral-500">点 3D 里的人、车或家具选中它，这里会出现它的位置和姿势。</p> : null}
+          {!vProduct && !selFig && !selItem ? <p className="rounded-xl border border-dashed border-white/10 p-3 text-neutral-500">在左边列表或画面里点人、车或家具，这里显示它的属性。</p> : null}
         </fieldset>
+        {ro ? null : vRig}
         {msg ? <p className="text-neutral-300">{msg}</p> : null}
+        {vBrain ? (
+          <details className="rounded-xl border border-violet-400/30">
+            <summary className="cursor-pointer select-none px-3 py-2 text-violet-200">问 AI 大脑帮你摆</summary>
+            <div className="[&>div]:border-0 [&>div]:bg-transparent">{vBrain}</div>
+          </details>
+        ) : null}
       </div>
+    );
+    return (
+      <>
+        {listSlot ? createPortal(list, listSlot) : null}
+        {viewport}
+        {propsSlot ? createPortal(props, propsSlot) : props}
+      </>
     );
   }
   return (
