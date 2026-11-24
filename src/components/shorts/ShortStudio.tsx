@@ -1059,8 +1059,8 @@ export function ShortStudio({
                     </p>
                   ) : null}
                   {s.hook && !s.hook.partOf ? (
-                    <div className="mt-1 flex items-center justify-between gap-2">
-<label className="flex items-center gap-1 text-xs text-neutral-400">
+                    <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+<label className="flex items-center gap-1 whitespace-nowrap text-xs text-neutral-400">
                       <input
                         type="checkbox"
                         checked={exp.includes(s.id)}
@@ -1076,7 +1076,7 @@ export function ShortStudio({
                       导出时用
                     </label>
 <button
-                      className="text-xs text-neutral-500 hover:text-rose-300"
+                      className="whitespace-nowrap text-xs text-neutral-500 hover:text-rose-300"
                       disabled={busy || dirty}
                       onClick={async () => {
                         if (await askConfirm(`删除开头「${s.hook?.name}」${v.shots.some((x) => x.hook?.partOf === s.id) ? "（连切镜后的第二段一起删）" : ""}？\n\n会丢掉 ${usd(shotsSpend(st.jobs, [s.id, ...v.shots.filter((x) => x.hook?.partOf === s.id).map((x) => x.id)]))} 的结果。删掉的开头进回收站，可以恢复。`)) act(() => deleteHookShotAction(v.id, s.id), "已删除开头，可在回收站恢复");

@@ -522,9 +522,9 @@ export function ModelReview({ model, glbUrl, photos, stickers, backHref, kind, s
   const p = PREC[precision];
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
+    <div className="grid gap-4 @4xl/main:grid-cols-[minmax(0,1fr)_420px]">
       {/* 视窗 */}
-      <div className="relative h-[62vh] min-h-[420px] overflow-hidden rounded-xl border border-white/10 bg-[#d9d9d9] lg:sticky lg:top-4 lg:h-[calc(100vh-180px)]">
+      <div className="relative h-[62vh] min-h-[420px] overflow-hidden rounded-xl border border-white/10 bg-[#d9d9d9] @4xl/main:sticky @4xl/main:top-4 @4xl/main:h-[calc(100vh-180px)]">
         <Viewer
           url={glbUrl}
           view={view}
