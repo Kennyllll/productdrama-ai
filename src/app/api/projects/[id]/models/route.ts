@@ -39,10 +39,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const picked = form.get("origin");
   const origin = picked === "factory" || picked === "ai" ? picked : guessGlbOrigin(bytes);
   if (!origin) return Response.json({ error: "看不出这个 GLB 是工厂给的还是 AI 建的，请选一下", needOrigin: true }, { status: 400 });
-  if (origin === "ai") {
-    const model = addProductModel({ projectId: id, originalName: file.name, bytes, status: "review", source: "fal" });
-    return Response.json({ id: model.id, size: model.size, originalName: model.originalName, reviewUrl: `/projects/${id}/product/models/${model.id}` });
-  }
-  const model = addProductModel({ projectId: id, originalName: file.name, bytes });
-  return Response.json({ id: model.id, size: model.size, originalName: model.originalName });
+  // 工厂 GLB 外形是准的，但车头朝向、接触点也要看一眼，和 STEP 一样先进审核
+  const model = addProductModel({ projectId: id, originalName: file.name, bytes, status: "review", source: origin === "ai" ? "fal" : "upload" });
+  return Response.json({ id: model.id, size: model.size, originalName: model.originalName, reviewUrl: `/projects/${id}/product/models/${model.id}` });
 }

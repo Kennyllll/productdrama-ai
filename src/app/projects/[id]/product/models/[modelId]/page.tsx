@@ -1,7 +1,10 @@
+import fs from "node:fs";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui";
 import { ModelReview } from "@/components/workbench/ModelReview";
-import { getColor, getProductModelById } from "@/lib/model-repo";
+import { getColor, getProductModelById, modelPath } from "@/lib/model-repo";
+import { parseLengthCm } from "@/lib/model-size";
+import { getVisionKey } from "@/lib/vision-qa";
 import { findLocalProject, getProduct, listAssets } from "@/lib/repo";
 import { getRig } from "@/lib/product-rig-repo";
 import { rideKindOf } from "@/lib/figures";
@@ -20,15 +23,25 @@ export default async function ModelReviewPage({ params }: { params: Promise<{ id
     .map((a) => ({ id: a.id, label: a.angle }));
   const stickers = assets.filter((a) => a.kind === "sticker").map((a) => ({ id: a.id, label: `${a.angle} · ${a.note || "贴纸原图"}` }));
   const product = getProduct(id);
+  let rev = "0";
+  try {
+    rev = String(Math.round(fs.statSync(modelPath(m)).mtimeMs));
+  } catch {
+    // 文件不在：查看器会显示加载失败
+  }
+  const sizeText = product?.bible?.find((f) => f.key === "size")?.value ?? "";
   return (
     <>
       <PageHeader
-        title={color ? `审核颜色款「${color.name}」的贴色模型` : m.source === "step" ? "审核工厂 STEP 模型" : "审核白模"}
-        description={`${product?.name || "产品"} · ${m.originalName}。左边转动模型，点右边的照片可以把模型转到同一个角度对照。`}
+        title={color ? `审核颜色款「${color.name}」` : m.source === "fal" ? "审核照片建的模型" : "审核工厂模型"}
+        description={`${product?.name || "产品"} · ${m.originalName}。系统已按照片摆正、放好接触点、逐角度截图对照；只看标出来的问题，然后通过或退回。`}
       />
       <ModelReview
-        model={{ id: m.id, status: m.status, note: m.note, lengthCm: m.lengthCm, isColor: !!color, source: m.source }}
-        glbUrl={`/api/models/${m.id}`}
+        key={rev}
+        model={{ id: m.id, status: m.status, note: m.note, lengthCm: m.lengthCm, isColor: !!color, source: m.source, rev }}
+        glbUrl={`/api/models/${m.id}?v=${rev}`}
+        canCompare={!!getVisionKey()}
+        lengthHint={parseLengthCm(sizeText)}
         photos={photos}
         stickers={stickers}
         kind={rideKindOf(product?.rideKind, product?.category)}
