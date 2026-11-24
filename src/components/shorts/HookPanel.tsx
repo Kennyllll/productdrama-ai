@@ -8,7 +8,7 @@ import { effectDef } from "@/lib/hook-effects";
 import { cleanHookValues, HOOK_ENTRIES, type HookDef } from "@/lib/hooks";
 import { VIEW_LABEL, type HookPerson } from "@/lib/hook-stage";
 import type { ShortShot } from "@/lib/shorts";
-import { FRAME_USD_FALLBACK, VIDEO_USD_PER_SEC } from "@/lib/shorts";
+import { HF_VIDEO_USD_PER_SEC, SHORT_FRAME_USD, VIDEO_USD_PER_SEC } from "@/lib/shorts";
 
 type Done = (r: Awaited<ReturnType<typeof deleteHookShotAction>>, ok?: string) => void;
 const inp = "w-full rounded border border-white/10 bg-neutral-950 px-2 py-1 text-sm text-white disabled:opacity-50";
@@ -152,14 +152,14 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
       ) : null}
       {def?.second ? (
         <p className="text-sky-200">
-          切镜头（照案例）：第 {def.seconds} 秒切到第二段（{def.second.seconds} 秒）：{def.second.about}。两段各有自己的 3D、首帧和视频，第二段多一张首帧和一段 4 秒视频（720p 约多 ${(FRAME_USD_FALLBACK + 4 * VIDEO_USD_PER_SEC["720p"]).toFixed(2)}，生成前照样审批）；字幕跨两段连着放。
+          切镜头（照案例）：第 {def.seconds} 秒切到第二段（{def.second.seconds} 秒）：{def.second.about}。两段各有自己的 3D、首帧和视频，第二段多一张首帧和一段 4 秒视频（720p 约多 ${(SHORT_FRAME_USD + 4 * (def.second.stage.people.length ? HF_VIDEO_USD_PER_SEC : VIDEO_USD_PER_SEC)["720p"]).toFixed(2)}，{def.second.stage.people.length ? "有人走 Higgsfield" : "只拍产品走方舟"}，生成前照样审批）；字幕跨两段连着放。
         </p>
       ) : def ? (
         <p className="text-neutral-500">一镜到底，不切镜头（照案例）。</p>
       ) : null}
       <label className="flex flex-wrap items-center gap-2">
         <input type="checkbox" checked={selfie || car} disabled={pending || car} onChange={(e) => toggleSelfie(e.target.checked)} />
-        自拍镜头 <span className="text-amber-300">强制开声音，台词在「生成视频」旁边填</span>
+        自拍镜头 <span className="text-amber-300">强制开声音；台词 AI 写剧本时一起写，采用后在「生成视频」旁边能改</span>
       </label>
       {(selfie || car) && cast.length ? (
         <label className="flex flex-wrap items-center gap-2">
