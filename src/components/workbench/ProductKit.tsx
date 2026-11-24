@@ -9,7 +9,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import {
   addColorAction,
   clearUnknownJobAction,
-  deleteCandidateAction,
+  trashModelAction,
   deleteColorAction,
   pollModelJobAction,
   quoteModelAction,
@@ -349,9 +349,9 @@ export function ModelBuilder({ kit, target, colorId = null, refAngles = [] }: { 
                   type="button"
                   className="text-rose-300"
                   onClick={async () =>
-                    await askConfirm("删除这个不通过的模型？") &&
+                    await askConfirm("删除这个不通过的模型？会进回收站，能恢复。") &&
                     start(async () => {
-                      await deleteCandidateAction(m.id);
+                      await trashModelAction(m.id);
                       router.refresh();
                     })
                   }

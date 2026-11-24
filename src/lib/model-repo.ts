@@ -8,7 +8,7 @@ import { localPath, putFile, removeFile, removePrefix, storageKey } from "@/lib/
 const ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const MAX_MODEL_BYTES = 300 * 1024 * 1024;
 
-export type ModelStatus = "review" | "approved" | "rejected" | "archived";
+export type ModelStatus = "review" | "approved" | "rejected" | "archived" | "trashed";
 
 export interface ProductModel {
   id: string;
@@ -68,7 +68,7 @@ const toModel = (r: Row): ProductModel => ({
   fileName: r.file_name,
   size: r.size,
   createdAt: r.created_at,
-  status: (["review", "approved", "rejected", "archived"].includes(r.status) ? r.status : "approved") as ModelStatus,
+  status: (["review", "approved", "rejected", "archived", "trashed"].includes(r.status) ? r.status : "approved") as ModelStatus,
   colorId: r.color_id,
   source: r.source === "fal" ? "fal" : r.source === "step" ? "step" : "upload",
   note: r.note ?? "",
@@ -135,7 +135,7 @@ export function modelFor(projectId: string, colorId?: string | null): ProductMod
 }
 
 export function listProductModels(projectId: string): ProductModel[] {
-  return (getDb().prepare("SELECT * FROM product_models WHERE project_id = ? ORDER BY created_at DESC").all(projectId) as Row[]).map(toModel);
+  return (getDb().prepare("SELECT * FROM product_models WHERE project_id = ? AND status != 'trashed' ORDER BY created_at DESC").all(projectId) as Row[]).map(toModel);
 }
 
 export function getProductModelById(id: string): ProductModel | null {
@@ -185,6 +185,25 @@ export function reviewProductModel(id: string, ok: boolean, opts: { lengthCm?: n
     .run(ok ? "approved" : "rejected", opts.lengthCm ?? null, (opts.note ?? "").slice(0, 500), id);
   const next = getProductModelById(id)!;
   if (ok) archiveOthers(next);
+  return next;
+}
+
+/** 删模型先进回收站：只改状态，文件、接触点都留着，能恢复 */
+export function trashProductModel(id: string): ProductModel | null {
+  const m = getProductModelById(id);
+  if (!m || m.status === "trashed") return null;
+  getDb().prepare("UPDATE product_models SET status = 'trashed' WHERE id = ?").run(id);
+  if (m.status === "approved") removePrefix(refsKey(m.projectId, m.colorId));
+  return m;
+}
+
+/** 从回收站恢复。原来在用、但现在已经有别的在用模型时，先放进待审核，不顶掉现在的 */
+export function restoreProductModel(id: string, prev: ModelStatus): ModelStatus | null {
+  const m = getProductModelById(id);
+  if (!m || m.status !== "trashed") return null;
+  const taken = prev === "approved" && !!getDb().prepare("SELECT 1 FROM product_models WHERE project_id = ? AND status = 'approved' AND color_id IS ? LIMIT 1").get(m.projectId, m.colorId);
+  const next: ModelStatus = taken ? "review" : prev === "trashed" ? "review" : prev;
+  getDb().prepare("UPDATE product_models SET status = ? WHERE id = ?").run(next, id);
   return next;
 }
 

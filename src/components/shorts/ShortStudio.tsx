@@ -1,6 +1,7 @@
 "use client";
 
 import { BudgetEditor } from "@/components/admin/BudgetEditor";
+import { PRECISION_LABEL, type Precision } from "@/lib/model-precision";
 import { ExportHistory } from "@/components/admin/ExportHistory";
 import { OverLimitApproval } from "@/components/admin/OverLimitApproval";
 import { replaceLoss, shotsSpend } from "@/lib/spend";
@@ -125,6 +126,7 @@ export function ShortStudio({
   initialShot = null,
   kit,
   hasBase = false,
+  model = null,
   families = [],
   hookLib = [],
   cast = [],
@@ -142,6 +144,8 @@ export function ShortStudio({
   initialShot?: string | null;
   kit?: KitData;
   hasBase?: boolean;
+  /** 现在在用的产品模型精度：工作台上提示新手 3D 构图是按精确还是近似模型摆的 */
+  model?: { precision: Precision; name: string } | null;
   families?: { id: string; name: string }[];
   hookLib?: HookDef[];
   /** 家庭位 1 的成员：选谁拿手机 */
@@ -1393,6 +1397,11 @@ export function ShortStudio({
                     >
                       打开 3D 摆位 + 机位
                     </a>
+                    )}
+                    {s.hook?.scene === "car" ? null : (
+                      <a href={`/projects/${v.projectId}/product`} title={model?.name} className={`ml-2 inline-block text-xs ${!model ? "text-rose-300" : model.precision === "approx" ? "text-amber-200" : "text-emerald-300"}`}>
+                        {!model ? "还没有产品模型：3D 里用方块占位" : `模型：${PRECISION_LABEL[model.precision]}`}
+                      </a>
                     )}
                     {(() => {
                       const sy = st.sync?.[s.id];

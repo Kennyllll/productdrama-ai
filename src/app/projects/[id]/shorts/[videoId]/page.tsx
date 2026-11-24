@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { precisionOf } from "@/lib/model-precision";
 import { notFound } from "next/navigation";
 import { ShortStudio } from "@/components/shorts/ShortStudio";
 import { hfPublicInfo } from "@/lib/higgsfield";
@@ -29,6 +30,7 @@ export default async function ShortVideoPage({ params, searchParams }: { params:
   } catch {
     finalAt = null;
   }
+  const base = getProductModel(id);
   return (
     <>
       <ShortStudio
@@ -41,7 +43,8 @@ export default async function ShortVideoPage({ params, searchParams }: { params:
         adFacts={getAdFacts(id)}
         productPhotos={(await productRefFiles(id, video.colorId)).length}
         kit={loadKit(id)}
-        hasBase={!!getProductModel(id)}
+        hasBase={!!base}
+        model={base ? { precision: precisionOf(base), name: base.originalName } : null}
         families={listFamilies().map((f) => ({ id: f.id, name: f.name }))}
         hookLib={listHooks()}
         finalAt={finalAt}

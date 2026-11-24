@@ -7,7 +7,7 @@ import { askConfirm } from "@/components/ConfirmHost";
 import { NeedAdmin, useIsAdmin } from "@/components/admin/AdminContext";
 import type { TrashItem } from "@/lib/trash-repo";
 
-const KIND: Record<string, string> = { shots: "镜头 / 开头", frame: "首帧", video: "视频", short_video: "整条短视频", portrait: "家庭定妆照草稿" };
+const KIND: Record<string, string> = { shots: "镜头 / 开头", frame: "首帧", video: "视频", short_video: "整条短视频", portrait: "家庭定妆照草稿", model: "3D 模型" };
 
 export function TrashList({ items, projectNames }: { items: TrashItem[]; projectNames: Record<string, string> }) {
   const router = useRouter();

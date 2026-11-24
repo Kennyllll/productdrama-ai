@@ -36,6 +36,8 @@ import {
   addModelJob,
   addProductModel,
   deleteProductModel,
+  listModelJobs,
+  trashProductModel,
   getColor,
   getModelJob,
   getProductModel,
@@ -55,6 +57,7 @@ import {
 import { addAsset, assetPath, deleteAsset, findLocalProject, getAsset, getProduct, listAssets } from "@/lib/repo";
 import { compareModelToPhotos } from "@/lib/vision-qa";
 import { listShortVideos } from "@/lib/shorts-repo";
+import { addTrash } from "@/lib/trash-repo";
 import type { AssetRecord, FormState } from "@/lib/types";
 
 type Result<T> = { result?: T; error?: string };
@@ -406,12 +409,31 @@ export async function calibrateModelAction(projectId: string, input: { file: str
   }
 }
 
-export async function deleteCandidateAction(modelId: string): Promise<Result<true>> {
+/** 删模型前问一句：哪些短视频在用它（白模所有视频都用，颜色款模型只算选了这个颜色的） */
+export async function modelUsageAction(modelId: string): Promise<string[]> {
   const m = getProductModelById(modelId);
-  if (!m || m.status === "approved") return { error: "在用的模型不能在这里删" };
-  deleteProductModel(modelId);
-  refresh(m.projectId);
-  return { result: true };
+  if (!m || m.status !== "approved") return [];
+  return listShortVideos(m.projectId)
+    .filter((v) => !m.colorId || v.colorId === m.colorId)
+    .map((v) => v.title);
+}
+
+/** 删模型：进回收站，能恢复；永久删除只有管理员在回收站做 */
+export async function trashModelAction(modelId: string): Promise<Result<true>> {
+  try {
+    const m = trashProductModel(modelId);
+    if (!m) throw new Error("这个模型已经删了");
+    const usd = listModelJobs(m.projectId).find((j) => j.modelId === m.id)?.estUsd ?? 0;
+    const was = { review: "待审核", approved: "在用", rejected: "不通过", archived: "旧版", trashed: "" }[m.status];
+    const actor = await currentActor();
+    const trashId = addTrash({ projectId: m.projectId, videoId: null, kind: "model", label: `${m.originalName}（${was}）`, usd, payload: { modelId: m.id, status: m.status }, actor: actor.name });
+    logAction(actor, { action: "删除 3D 模型", projectId: m.projectId, detail: `${m.originalName}（${was}），进回收站`, refId: trashId });
+    refresh(m.projectId);
+    revalidatePath("/trash");
+    return { result: true };
+  } catch (e) {
+    return fail(e);
+  }
 }
 
 /** 已传过的产品照片直接放进白底照 / 颜色款的某一格（拷贝一份，免费，不用重新上传） */

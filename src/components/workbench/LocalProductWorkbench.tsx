@@ -14,6 +14,8 @@ import { ColorKits, ModelBuilder, PhotoSlots, StickersBody } from "@/components/
 import { PROVIDERS, WHITE_REQUIRED } from "@/lib/fal-catalog";
 import { RIDE_KINDS, rideKindOf } from "@/lib/figures";
 import type { KitData } from "@/lib/product-kit";
+import { modelUsageAction, trashModelAction } from "@/app/model-actions";
+import { PRECISION_LABEL, precisionOf, type Precision } from "@/lib/model-precision";
 import type { AssetKind, FormState, LocalProduct } from "@/lib/types";
 
 export interface AssetView {
@@ -35,7 +37,7 @@ const buttonClass =
 const ghost = "rounded-md border border-white/15 px-2.5 py-1 text-xs text-neutral-200 hover:border-amber-400/60 disabled:opacity-40";
 const FORM_ID = "product-form";
 const choice = "block cursor-pointer rounded-xl border border-white/15 bg-white/5 p-4 hover:border-amber-400/60";
-const PRECISION = { exact: "精确 · 工厂文件", calibrated: "校准 · 照片模型 + 图纸尺寸", approx: "近似 · 照片建的" } as const;
+const PRECISION = PRECISION_LABEL;
 
 const formatSize = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`);
 const stepId = (n: number) => `step-${n}`;
@@ -152,7 +154,7 @@ export function LocalProductWorkbench({
   const done2 = !!logo && kit.white.length > 0 && (!!model || missingWhite.length === 0);
   const done3 = !!model && reviewing.length === 0;
   const done4 = unconfirmed.length === 0;
-  const precision3: "exact" | "calibrated" | "approx" = !model ? "approx" : model.source !== "fal" ? "exact" : model.cad?.ok ? "calibrated" : "approx";
+  const precision3: Precision = model ? precisionOf({ source: model.source ?? "upload", cad: model.cad }) : "approx";
   const shapeJobBusy = kit.jobs.some((j) => j.target === "shape" && j.colorId === null && ["submitting", "submitted", "unknown"].includes(j.status));
   const asking = (!model && !reviewing.length) || path3 !== "" || shapeJobBusy;
   const photoOpen = path3 === "photo" || shapeJobBusy;
@@ -218,10 +220,12 @@ export function LocalProductWorkbench({
   }
 
   async function removeModel(id: string) {
-    if (!await askConfirm("删除在用的 3D 模型？删了以后 3D 页和出图都没有模型可用，要重新上传或建模。")) return;
+    const used = await modelUsageAction(id);
+    const who = used.length ? `「${used.slice(0, 3).join("」「")}」${used.length > 3 ? `等 ${used.length} 条视频` : ""}正在用它。` : "";
+    if (!await askConfirm(`删除在用的 3D 模型？\n\n${who}删了以后 3D 页和出图都没有模型可用，要重新上传或建模。模型会进回收站，能恢复。`)) return;
     setBusy(true);
-    const res = await fetch(`/api/models/${id}`, { method: "DELETE" });
-    setNotice(res.ok ? { tone: "ok", text: "已删除" } : { tone: "error", text: "删除失败" });
+    const r = await trashModelAction(id);
+    setNotice(r.error ? { tone: "error", text: r.error } : { tone: "ok", text: "已删除，可以在回收站恢复" });
     router.refresh();
     setBusy(false);
   }

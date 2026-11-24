@@ -10,6 +10,7 @@ import { getFamily, updateMember } from "@/lib/families-repo";
 import type { Portrait } from "@/lib/families";
 import { usdText } from "@/lib/spend";
 import type { ShortShot } from "@/lib/shorts";
+import { deleteProductModel, getProductModelById, restoreProductModel, type ModelStatus } from "@/lib/model-repo";
 
 type Result<T> = { result?: T; error?: string };
 const fail = (e: unknown) => ({ error: e instanceof Error ? e.message : String(e) });
@@ -35,6 +36,15 @@ export async function restoreTrashAction(id: string): Promise<Result<string>> {
     if (t.kind === "short_video") {
       if (!t.videoId || !restoreShortVideo(t.videoId)) throw new Error("这条短视频已经找不到了");
       msg = `短视频「${t.label}」已恢复`;
+    } else if (t.kind === "model") {
+      const { modelId, status } = t.payload as { modelId: string; status: ModelStatus };
+      const next = restoreProductModel(modelId, status);
+      if (!next) throw new Error("这个模型已经找不到了");
+      if (t.projectId) {
+        revalidatePath(`/projects/${t.projectId}/product`);
+        revalidatePath(`/projects/${t.projectId}/shorts`, "layout");
+      }
+      msg = next === "approved" ? "模型已恢复，重新在用" : status === "approved" ? "模型已恢复。现在已经有在用的模型，它先放在「待审核」：要换回它，去审核页点通过" : "模型已恢复";
     } else if (t.kind === "portrait") {
       const { familyId, memberId, look, draft } = t.payload as { familyId: string; memberId: string; look: string; draft: Portrait };
       const m = getFamily(familyId)?.members.find((x) => x.id === memberId);
@@ -101,6 +111,10 @@ export async function purgeTrashAction(id: string): Promise<Result<true>> {
       const v = getShortVideoAny(t.videoId);
       if (v && getShortVideo(v.id)) throw new Error("这条短视频已经恢复了，不能永久删除");
       purgeShortVideo(t.videoId);
+    }
+    if (t.kind === "model") {
+      const modelId = String(t.payload.modelId ?? "");
+      if (getProductModelById(modelId)?.status === "trashed") deleteProductModel(modelId);
     }
     markTrash(id, "purged_at");
     logAction(actor, { projectId: t.projectId, videoId: t.videoId, action: "永久删除", detail: `${TRASH_LABEL[t.kind]}：${t.label}（${usdText(t.usd)}，费用记录保留）`, refId: t.id });
