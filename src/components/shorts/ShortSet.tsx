@@ -188,7 +188,8 @@ export function ShortSet({
   const saveAll = () => (stageDirty ? setStageSave((n) => n + 1) : setCap((n) => n + 1));
   return (
     <div className="space-y-3">
-      <div className="sticky top-11 z-20 flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-neutral-950/95 p-2 backdrop-blur">
+      <div className="sticky top-11 z-20 space-y-1 rounded-xl bg-neutral-950">
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-neutral-950/95 p-2 backdrop-blur">
         <Link href={`/projects/${projectId}/shorts/${videoId}?shot=${code}`} className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-neutral-200 hover:bg-white/5">
           ← 回到镜头
         </Link>
@@ -237,7 +238,9 @@ export function ShortSet({
           </button>
           {reopenMsg ? <span className="text-rose-300">{reopenMsg}</span> : null}
         </p>
-      ) : tip ? (
+      ) : null}
+      </div>
+      {!lockedMsg && tip ? (
         <p className="flex items-center gap-3 rounded-lg border border-sky-400/30 bg-sky-400/5 px-3 py-2 text-sm text-sky-100">
           <span>左边选人、车或相机 → 在画面里拖（W 移动 · E 旋转 · F 对准 · C 相机视角）→ 右边改属性 → 右上角「保存」</span>
           <button type="button" onClick={() => (localStorage.setItem("pd-3d-tip", "1"), setTip(false))} className="ml-auto text-xs text-neutral-400 hover:text-white">
@@ -264,7 +267,7 @@ export function ShortSet({
       ) : null}
       {code ? <ShotSyncBox videoId={videoId} shotId={code} label={b?.label ?? ""} figIds={(st?.layout.figures ?? []).map((f) => f.id)} layout={st?.layout} saved={Boolean(cur?.edited)} live={live} cam={camLive} members={st?.members} rig={rig} filmerId={fv[code] === "none" ? undefined : fv[code] || filmers[code]?.video || undefined} /> : null}
       <div className="grid gap-3 @4xl/main:grid-cols-[10.625rem_minmax(0,1fr)_18.75rem] @6xl/main:grid-cols-[12.5rem_minmax(0,1fr)_21.25rem]">
-        <aside ref={setListSlot} aria-label="场景列表" className="self-start rounded-xl border border-white/10 bg-neutral-900/60 p-2 @4xl/main:sticky @4xl/main:top-28" />
+        <aside ref={setListSlot} aria-label="场景列表" className={`self-start rounded-xl border border-white/10 bg-neutral-900/60 p-2 @4xl/main:sticky ${lockedMsg ? "@4xl/main:top-40" : "@4xl/main:top-28"}`} />
         <section className="@container min-w-0 space-y-3">
           {st ? (
             <StageEditor
@@ -354,7 +357,7 @@ export function ShortSet({
             </details>
           ) : null}
         </section>
-        <aside aria-label="属性" className="min-w-0 self-start @4xl/main:sticky @4xl/main:top-28">
+        <aside aria-label="属性" className={`min-w-0 self-start @4xl/main:sticky ${lockedMsg ? "@4xl/main:top-40" : "@4xl/main:top-28"}`}>
           <div ref={setPropsSlot} className={camSel ? "hidden" : ""} />
           <div ref={setCamSlot} className={camSel ? "" : "hidden"} />
         </aside>
