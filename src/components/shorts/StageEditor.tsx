@@ -1194,7 +1194,7 @@ export function StageEditor({
         )}
         <p className="pointer-events-none absolute bottom-2 left-2 rounded bg-black/60 px-2 py-0.5 text-[11px] text-neutral-300">
           {ro
-            ? "这一镜只能看：可以转视角、缩放，不能拖动"
+            ? "这一镜已锁定，只能看，蓝球和箭头不显示。要改：点上面黄条里的按钮"
             : shotView
               ? "相机视角：看到的就是首帧构图"
               : sel?.startsWith("fig:") && doc.bike && doc.figures.find((f) => `fig:${f.id}` === sel)?.onProduct
