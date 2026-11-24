@@ -25,7 +25,7 @@ export default async function ProjectLayout({
     <>
       <ProjectStatusBar project={project} videoTitles={videoTitles} />
       <div className="flex items-start">
-        <main className="mx-auto min-w-0 max-w-7xl flex-1 px-6 py-8">{children}</main>
+        <main className="@container/main mx-auto min-w-0 max-w-7xl flex-1 px-6 py-8">{children}</main>
         {local ? (
           <Suspense fallback={null}>
             <GuideRail projectId={id} initialMessages={listGuideMessages(id)} decisions={listDecisions(id)} videoTitles={videoTitles} />

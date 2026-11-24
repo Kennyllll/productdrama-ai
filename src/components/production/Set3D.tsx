@@ -734,7 +734,7 @@ export function Set3D({
         </>
       )}
 
-      <div className={compact ? "grid items-start gap-3 md:grid-cols-[minmax(0,220px)_minmax(0,1fr)]" : "grid gap-4 xl:grid-cols-2"}>
+      <div className={compact ? "grid items-start gap-3 @lg:grid-cols-[minmax(0,220px)_minmax(0,1fr)]" : "grid gap-4 xl:grid-cols-2"}>
         <figure>
           <figcaption className="mb-1 text-xs text-neutral-400">摄影机画面（按当时的机位、焦段实时算）</figcaption>
           <canvas ref={camCanvas} className={`${layout.aspect < 1 ? "mx-auto max-w-sm" : ""} w-full rounded-lg border border-white/10 bg-black`} style={{ aspectRatio: String(layout.aspect) }} />
