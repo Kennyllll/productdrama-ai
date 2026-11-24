@@ -76,7 +76,7 @@ export function TimelineView({
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_18.75rem]">
         <div>
           <div className="mb-2 flex flex-wrap gap-2">
             {data.deliverables.map((d) => (
@@ -99,7 +99,7 @@ export function TimelineView({
             onLoadedMetadata={(e) => {
               if (initialT) e.currentTarget.currentTime = initialT;
             }}
-            className={`rounded-lg border border-white/10 bg-black ${vertical ? "mx-auto max-h-[560px]" : "w-full"}`}
+            className={`rounded-lg border border-white/10 bg-black ${vertical ? "mx-auto max-h-[35rem]" : "w-full"}`}
           />
         </div>
         <div className="rounded-xl border border-white/10 bg-neutral-900/70 p-4 text-sm">

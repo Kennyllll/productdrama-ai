@@ -1992,7 +1992,7 @@ export function ShortStudio({
                 <video
                   src={`/api/shorts/${v.id}?final=${k === 0 ? "1" : id}&t=${encodeURIComponent(finalAt)}`}
                   controls
-                  className="max-h-[560px] rounded-lg"
+                  className="max-h-[35rem] rounded-lg"
                 />
               </figure>
             ))}

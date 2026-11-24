@@ -734,7 +734,7 @@ export function Set3D({
         </>
       )}
 
-      <div className={compact ? "grid items-start gap-3 @lg:grid-cols-[minmax(0,220px)_minmax(0,1fr)]" : "grid gap-4 xl:grid-cols-2"}>
+      <div className={compact ? "grid items-start gap-3 @lg:grid-cols-[minmax(0,13.75rem)_minmax(0,1fr)]" : "grid gap-4 xl:grid-cols-2"}>
         <figure>
           <figcaption className="mb-1 text-xs text-neutral-400">摄影机画面（按当时的机位、焦段实时算）</figcaption>
           <canvas ref={camCanvas} className={`${layout.aspect < 1 ? "mx-auto max-w-sm" : ""} w-full rounded-lg border border-white/10 bg-black`} style={{ aspectRatio: String(layout.aspect) }} />
@@ -771,7 +771,7 @@ export function Set3D({
         </figure>
       </div>
 
-      <div className={compact ? "space-y-3" : "grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]"}>
+      <div className={compact ? "space-y-3" : "grid gap-4 lg:grid-cols-[20rem_minmax(0,1fr)]"}>
         {controlsSlot ? createPortal(controls, controlsSlot) : controls}
         <details open={!compact} className="min-w-0">
           <summary className="mb-2 cursor-pointer select-none text-xs text-neutral-400">{compact ? "历史结果" : "当时按这个布景出来的结果（对照看 3D 数据怎么变成画面）"}</summary>

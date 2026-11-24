@@ -118,7 +118,7 @@ export function GuideRail({
   }
 
   return (
-    <aside aria-label="AI 大脑" className="sticky top-12 flex h-[calc(100vh-3rem)] w-[340px] shrink-0 flex-col border-l border-amber-400/30 bg-neutral-950">
+    <aside aria-label="AI 大脑" className="sticky top-12 flex h-[calc(100vh-3rem)] w-[21.25rem] shrink-0 flex-col border-l border-amber-400/30 bg-neutral-950">
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
         <div>
           <p className="text-sm font-semibold text-amber-200">AI 大脑</p>

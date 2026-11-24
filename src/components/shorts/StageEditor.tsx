@@ -1143,7 +1143,7 @@ export function StageEditor({
     const tool = (on: boolean) => `rounded px-2 py-1 disabled:opacity-40 ${on ? "bg-amber-400 text-black" : "bg-black/70 text-white hover:bg-black"}`;
     const viewport = (
       <div className="relative text-xs">
-        <canvas ref={canvas} className="h-[62vh] min-h-[420px] w-full touch-none rounded-xl border border-white/10 bg-black" />
+        <canvas ref={canvas} className="h-[62vh] min-h-[26.25rem] w-full touch-none rounded-xl border border-white/10 bg-black" />
         <div className={`absolute left-2 top-2 flex flex-wrap gap-1 ${shotView ? "right-2" : "right-32"}`}>
           {ro ? null : (
             <>
@@ -1223,7 +1223,7 @@ export function StageEditor({
     );
   }
   return (
-    <div className="mt-3 grid gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
+    <div className="mt-3 grid gap-3 lg:grid-cols-[18.75rem_minmax(0,1fr)]">
       <aside className="space-y-3 text-xs text-neutral-300">
         {vHeader}
         {vView}

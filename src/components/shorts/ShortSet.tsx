@@ -263,7 +263,7 @@ export function ShortSet({
         </details>
       ) : null}
       {code ? <ShotSyncBox videoId={videoId} shotId={code} label={b?.label ?? ""} figIds={(st?.layout.figures ?? []).map((f) => f.id)} layout={st?.layout} saved={Boolean(cur?.edited)} live={live} cam={camLive} members={st?.members} rig={rig} filmerId={fv[code] === "none" ? undefined : fv[code] || filmers[code]?.video || undefined} /> : null}
-      <div className="grid gap-3 @4xl/main:grid-cols-[170px_minmax(0,1fr)_300px] @6xl/main:grid-cols-[200px_minmax(0,1fr)_340px]">
+      <div className="grid gap-3 @4xl/main:grid-cols-[10.625rem_minmax(0,1fr)_18.75rem] @6xl/main:grid-cols-[12.5rem_minmax(0,1fr)_21.25rem]">
         <aside ref={setListSlot} aria-label="场景列表" className="self-start rounded-xl border border-white/10 bg-neutral-900/60 p-2 @4xl/main:sticky @4xl/main:top-28" />
         <section className="@container min-w-0 space-y-3">
           {st ? (

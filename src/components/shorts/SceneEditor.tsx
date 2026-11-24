@@ -285,7 +285,7 @@ export function SceneEditor({ projectId, videoId, shot, scenes, onDraft }: { pro
       {msg ? <p className="text-xs text-amber-200">{msg}</p> : null}
 
       {edit ? (
-        <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
+        <div className="grid gap-3 lg:grid-cols-[1fr_20rem]">
           <TopMap items={edit} theme={shot.scene.theme} sel={sel} onSel={setSel} onMove={(id, x, y) => setEdit((e) => e && e.map((i) => (i.id === id ? { ...i, x, y } : i)))} />
           <div className="space-y-2">
             <label className="block">
@@ -371,7 +371,7 @@ function TopMap({ items, theme, sel, onSel, onMove }: { items: SceneItem[]; them
     <svg
       ref={ref}
       viewBox={vb}
-      className="h-[420px] w-full touch-none rounded-lg bg-neutral-950"
+      className="h-[26.25rem] w-full touch-none rounded-lg bg-neutral-950"
       onPointerMove={(e) => {
         if (!drag.current) return;
         const p = pt(e);

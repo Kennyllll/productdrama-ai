@@ -296,7 +296,7 @@ function Viewer({ url, view, kind, rig, onRig, sel, onPick, editRig, withRig, ap
 
 function ViewCube({ view, onView }: { view: string; onView: (v: string) => void }) {
   return (
-    <div className="grid w-[108px] grid-cols-3 overflow-hidden rounded-md border border-black/20 bg-white/80 text-[11px] text-neutral-700 shadow" role="group" aria-label="视图">
+    <div className="grid w-[6.75rem] grid-cols-3 overflow-hidden rounded-md border border-black/20 bg-white/80 text-[11px] text-neutral-700 shadow" role="group" aria-label="视图">
       {CUBE.map(([v, s]) => (
         <button key={v} type="button" title={v} onClick={() => onView(v)} className={`h-7 border-black/10 [&:not(:nth-child(3n))]:border-r [&:nth-child(-n+6)]:border-b ${v === view ? "bg-amber-400 font-medium text-black" : "hover:bg-amber-100"}`}>
           {s}
@@ -522,9 +522,9 @@ export function ModelReview({ model, glbUrl, photos, stickers, backHref, kind, s
   const p = PREC[precision];
 
   return (
-    <div className="grid gap-4 @4xl/main:grid-cols-[minmax(0,1fr)_420px]">
+    <div className="grid gap-4 @4xl/main:grid-cols-[minmax(0,1fr)_26.25rem]">
       {/* 视窗 */}
-      <div className="relative h-[62vh] min-h-[420px] overflow-hidden rounded-xl border border-white/10 bg-[#d9d9d9] @4xl/main:sticky @4xl/main:top-4 @4xl/main:h-[calc(100vh-180px)]">
+      <div className="relative h-[62vh] min-h-[26.25rem] overflow-hidden rounded-xl border border-white/10 bg-[#d9d9d9] @4xl/main:sticky @4xl/main:top-4 @4xl/main:h-[calc(100vh-180px)]">
         <Viewer
           url={glbUrl}
           view={view}

@@ -82,7 +82,7 @@ export function ExportGate({
       {previewAt ? (
         <figure>
           <figcaption className="mb-1 text-xs text-amber-300">预览（不完整，不能当成片发布）</figcaption>
-          <video src={`/api/shorts/${videoId}?preview=1&t=${encodeURIComponent(previewAt)}`} controls className="max-h-[560px] rounded-lg" />
+          <video src={`/api/shorts/${videoId}?preview=1&t=${encodeURIComponent(previewAt)}`} controls className="max-h-[35rem] rounded-lg" />
         </figure>
       ) : null}
     </div>

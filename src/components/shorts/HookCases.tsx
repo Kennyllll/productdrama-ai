@@ -25,7 +25,7 @@ export function HookCases({ effect, name }: { effect?: HookEffectId; name?: stri
         看真实案例（{cases.length}）
       </button>
       {open ? (
-        <aside className="fixed right-0 top-0 z-40 flex h-full w-[380px] max-w-[90vw] flex-col border-l border-white/10 bg-neutral-950/95 text-xs text-neutral-300 shadow-2xl">
+        <aside className="fixed right-0 top-0 z-40 flex h-full w-[23.75rem] max-w-[90vw] flex-col border-l border-white/10 bg-neutral-950/95 text-xs text-neutral-300 shadow-2xl">
           <div className="flex items-center justify-between border-b border-white/10 p-3">
             <span className="text-sm font-medium text-white">{name ? `「${name}」` : ""}真实案例</span>
             <button type="button" className="text-neutral-400 hover:text-white" onClick={() => setOpen(false)}>
