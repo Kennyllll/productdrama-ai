@@ -43,6 +43,8 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
     }
   };
   const gen = async () => {
+    const empty = fields.filter((f) => !f.optional && !values[f.key]?.trim());
+    if (empty.length) return setMsg(`⚠ 先填：${empty.map((f) => f.label).join("、")}`);
     if (!await askConfirm("用 DeepSeek 写这个开头的剧本（文字调用 1 次，约 $0.01，不出图）。只出草稿，你点“采用”才会改视频。继续？")) return;
     setMsg("");
     start(async () => {

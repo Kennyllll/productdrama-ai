@@ -63,7 +63,7 @@ import { cadDir, getColor, getProductModel, modelFor, modelPath, modelPrecision 
 import { addRule, type SetLayout, type SetMove } from "@/lib/production-repo";
 import { figuresOf, KB002_RIG, RIDE_KINDS, rideKindOf } from "@/lib/figures";
 import { basisOf, shotChecks, shotSync, TEXT_FIELDS, type ShotSync, type TextField } from "@/lib/shorts-sync";
-import { cleanShotNotes, dropGlare } from "@/lib/prompt-clean";
+import { cleanCarDraft, cleanShotNotes, dropGlare } from "@/lib/prompt-clean";
 import { captionIssues, castConflicts, fullSync, placeOf, rigOf, syncOf } from "@/lib/shorts-sync-state";
 import { opCompKey, operatorShows, opMissing, parseOp, opString, OP_POSES, poseOf } from "@/lib/shorts-operator";
 import { blockingText, itemSight } from "@/lib/shorts-blocking";
@@ -390,6 +390,10 @@ export async function draftHookAction(videoId: string, libId: string, values: Re
     const textOf = (o: Record<string, unknown>) => Object.fromEntries(TEXT_FIELDS.map((k) => [k, typeof o[k] === "string" ? String(o[k]).trim().replace(/^English:\s*/i, "").slice(0, HOOK_LIM[k]) : ""])) as Record<TextField, string>;
     const draft = textOf(d);
     if (!draft.description || !draft.framePrompt) throw new AiError("AI 没有写出剧本，请重试");
+    if (car) {
+      for (const k of ["framePrompt", "motionPrompt"] as const) draft[k] = cleanCarDraft(draft[k], "en");
+      for (const k of ["description", "camera"] as const) draft[k] = cleanCarDraft(draft[k], "zh");
+    }
     const { people: rawPeople, dropped, renames } = cleanHookPeople(d.people, cast?.members, filmer);
     const notes = Array.isArray(d.notes) ? d.notes.filter((n): n is string => typeof n === "string" && !!n.trim()).slice(0, 3).map((n) => renameText(n, renames)) : [];
     const fixNames = (t: Partial<Record<TextField, string>>, r: [string, string][]) => {

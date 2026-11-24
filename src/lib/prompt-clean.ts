@@ -32,3 +32,19 @@ export function cleanShotNotes(notes: string, opts: { wardrobe: boolean; selfie:
 export function dropGlare(t: string): string {
   return clauses(t).filter((c) => !GLARE.test(c)).join(", ").replace(/\.,/g, ".").replace(/,\s*$/, "");
 }
+
+const SIDE_EN = /\b(?:on|in|to|at)\s+the\s+(?:far\s+)?(?:left|right)(?:\s+(?:side|half|third|edge))?(?:\s+of\s+the\s+(?:frame|screen|shot|image|picture))?/gi;
+const SIDE_ZH = /在?画面(?:的)?(?:左|右)(?:边|侧|半边|方|半)?/g;
+const WEAR_ZH = /穿|T\s*恤|牛仔|外套|衬衫|裙|毛衣|卫衣|夹克|帽子|围巾/;
+
+/** 车里自拍草稿：脸的位置由程序定在画面中间，衣服按家庭资料，AI 写的左右和衣服都删掉（给用户看的和真正出图的一致） */
+export function cleanCarDraft(t: string, lang: "en" | "zh"): string {
+  if (lang === "zh")
+    return t
+      .replace(SIDE_ZH, "在画面中间")
+      .split(/(?<=[，。；])/)
+      .filter((c) => !WEAR_ZH.test(c))
+      .join("")
+      .replace(/[，；]$/, "。");
+  return cleanShotNotes(t.replace(SIDE_EN, "in the middle of the frame"), { wardrobe: true, selfie: false }).text;
+}
