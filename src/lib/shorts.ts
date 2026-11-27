@@ -235,14 +235,23 @@ export interface StoryIssue {
   quote: string;
   why: string;
 }
+/** 自动改掉的一处：原话 → 新话；ok = 改完复查这一镜没再报问题 */
+export interface StoryFix {
+  shotId: string;
+  why: string;
+  quote: string;
+  now: string;
+  ok: boolean;
+}
 /** 剧本对账（story-check.ts）：hash 对不上 = 剧本改过，要重查 */
 export interface StoryCheck {
   hash: string;
   at: string;
   pass: boolean;
   issues: StoryIssue[];
-  /** 自动重写了哪些镜头 */
+  /** 自动重写了哪些镜头（旧数据）；新的看 fixes */
   fixed: string[];
+  fixes?: StoryFix[];
   usd: number;
   error?: string;
 }
@@ -281,6 +290,8 @@ export interface ShortVideoData {
   /** 从哪个模板（哪一版）套来的 */
   fromTemplate?: { id: string; v: number; name: string; fromProduct: string; fromKind?: string; rewritten?: boolean };
   storyCheck?: StoryCheck;
+  /** 剧本对账里用户点了「不用管」的问题（storyKey），以后不拦、不改 */
+  storyIgnore?: string[];
 }
 
 export interface ShortVideo extends ShortVideoData {

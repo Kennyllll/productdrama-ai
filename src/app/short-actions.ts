@@ -8,7 +8,7 @@ import { requireProductReady } from "@/lib/product-readiness-repo";
 import { getAdFacts } from "@/lib/ad-facts-repo";
 import { exportReport, formalExportError } from "@/lib/export-check";
 import { getBrainKey as brainKey, kimiChat, parseJson } from "@/lib/brain/kimi";
-import { parseStoryIssues, STORY_FIELDS, storyBlock, storyHash, storyLabel, storyRewrites, storyStale } from "@/lib/story-check";
+import { dropIgnored, parseStoryIssues, STORY_FIELDS, storyBlock, storyHash, storyKey, storyLabel, storyRewrites, storyStale } from "@/lib/story-check";
 import { previewPath } from "@/lib/export-paths";
 import { keyFromPath, putFile, readFile, storageKey } from "@/lib/storage";
 import { randomUUID } from "node:crypto";
@@ -22,7 +22,7 @@ import { promisify } from "node:util";
 import { createHook, getHook } from "@/lib/hooks-repo";
 import { cleanHookValues, fillCaption, HOOK_ENTRIES } from "@/lib/hooks";
 import { isHookEffect } from "@/lib/hook-effects";
-import { hookParts, hooksOf, isExtraHook, needsComposite, shotSound } from "@/lib/shorts";
+import { hookParts, hooksOf, isExtraHook, needsComposite, shotSound, type StoryFix, type StoryIssueKind } from "@/lib/shorts";
 import { trimAdvice } from "@/lib/video-trim";
 import { applySelfie, buildHookLayout, cleanHookPeople, DEFAULT_STAGE, peopleText, renameText, VIEW_LABEL, type HookPerson, addNamedPeople } from "@/lib/hook-stage";
 import { shortConceptPrompt, shortShotsPrompt } from "@/lib/ai/short-prompts";
@@ -2152,7 +2152,7 @@ export async function runJobAction(
 }
 
 /** 剧本对账要对照的东西：产品资料、绑定的家庭、节日、每一镜的文字 */
-function storyInput(v: ShortVideo) {
+function storyInput(v: ShortVideo, all = false) {
   const th = videoTheme(v);
   const fams = Object.values(v.families ?? {}).flatMap((id) => {
     const f = getFamily(id);
@@ -2162,7 +2162,7 @@ function storyInput(v: ShortVideo) {
     productFacts: productText(v.projectId),
     families: fams.length ? fams : "no family bound: people are free, but must stay the same across all shots",
     theme: th.theme === "none" ? "none (no holiday or occasion at all)" : th.theme === "custom" ? th.themeText || "custom" : findTheme(th.theme).label,
-    shots: v.shots.map((s) => ({ shotId: s.id, label: storyLabel(v, s), editable: s.stage === "draft", selfie: !!s.hook?.selfie, beat: s.beat, ...Object.fromEntries(STORY_FIELDS.map((k) => [k, s[k] ?? ""])) })),
+    shots: v.shots.map((s) => ({ shotId: s.id, label: storyLabel(v, s), editable: all || s.stage === "draft", selfie: !!s.hook?.selfie, beat: s.beat, ...Object.fromEntries(STORY_FIELDS.map((k) => [k, s[k] ?? ""])) })),
   };
 }
 
@@ -2176,37 +2176,47 @@ const STORY_SYSTEM = [
   "5. continuity: openings (labels starting with 开头) and body shots must show the same people, the same place and the same time of day. A selfie opening (selfie=true) is filmed somewhere else on purpose (for example in a car): do not flag its place or light.",
   "Flag only real problems from these 5 kinds, not style or wording taste. quote = the exact words from the shot. why = one short sentence in plain Simplified Chinese for a non-technical user.",
   "For every shot with editable=true that has a problem, also return a corrected version of all its fields that fixes every problem while keeping its beat, length, camera and role in the story. Use only features in productFacts. Keep the language of each field (caption in English, the others as they are).",
-  'Return JSON only: {"issues":[{"shotId","kind","quote","why"}],"rewrites":[{"shotId","caption","description","camera","productNote","framePrompt","motionPrompt"}]}. No problems = empty arrays.',
+  "In each rewrite, changes lists every fix: quote = the exact old words, now = the new words that replace them.",
+  'Return JSON only: {"issues":[{"shotId","kind","quote","why"}],"rewrites":[{"shotId","caption","description","camera","productNote","framePrompt","motionPrompt","changes":[{"quote","now"}]}]}. No problems = empty arrays.',
 ].join("\n");
 
-/** 剧本对账：K3 查一遍，能改的镜头（还在写剧本）自动改写后再查，最多改 2 次；结果存在视频上，花费记账 */
-async function runStoryCheck(videoId: string) {
+/** 剧本对账：K3 查一遍，能改的镜头自动改写后再查，最多改 2 次；结果存在视频上，花费记账。
+ *  all=true（一键改掉）：已采用的镜头也改文字，已出的首帧和视频不动 */
+async function runStoryCheck(videoId: string, all = false) {
   let v = load(videoId);
   const fixed: string[] = [];
+  const fixes: StoryFix[] = [];
   let usd = 0;
   let issues: ReturnType<typeof parseStoryIssues> = [];
   try {
     for (let round = 0; ; round++) {
-      const { message, usage } = await kimiChat({ messages: [{ role: "system", content: STORY_SYSTEM }, { role: "user", content: JSON.stringify(storyInput(v)) }], effort: "low", json: true, maxTokens: 12_000, timeoutMs: 300_000 });
+      const { message, usage } = await kimiChat({ messages: [{ role: "system", content: STORY_SYSTEM }, { role: "user", content: JSON.stringify(storyInput(v, all)) }], effort: "low", json: true, maxTokens: 12_000, timeoutMs: 300_000 });
       usd += usage.usd;
       const d = (parseJson(message.content) ?? {}) as { issues?: unknown; rewrites?: unknown };
-      issues = parseStoryIssues(d.issues, v);
-      const rw = storyRewrites(d.rewrites, v, issues);
+      issues = dropIgnored(parseStoryIssues(d.issues, v), v.storyIgnore);
+      const rw = storyRewrites(d.rewrites, v, issues, all);
       if (!issues.length || !rw.length || round >= 2) break;
       const caps = await ensureEnglish(rw.map((r) => r.fields.caption ?? v.shots.find((s) => s.id === r.shotId)!.caption));
       rw.forEach((r, k) => {
         const s = v.shots.find((x) => x.id === r.shotId)!;
         Object.assign(s, r.fields, { caption: caps[k] });
         s.textBasis = basisOf(s, placeOf(v, s));
-        fixed.push(`${storyLabel(v, s)} 已自动重写：${issues.filter((i) => i.shotId === s.id).map((i) => i.why).join("；")}`);
+        const mine = issues.filter((i) => i.shotId === s.id);
+        fixed.push(`${storyLabel(v, s)} 已自动重写：${mine.map((i) => i.why).join("；")}`);
+        for (const i of mine) {
+          const c = r.changes.find((x) => x.quote && (x.quote.includes(i.quote) || i.quote.includes(x.quote))) ?? r.changes[mine.indexOf(i)];
+          for (const f of fixes) if (f.shotId === s.id && f.quote === i.quote) f.now = c?.now ?? f.now;
+          if (!fixes.some((f) => f.shotId === s.id && f.quote === i.quote)) fixes.push({ shotId: s.id, why: i.why, quote: i.quote, now: c?.now ?? "", ok: false });
+        }
       });
       saveShortVideo(v);
       v = load(videoId);
     }
-    v.storyCheck = { hash: storyHash(v), at: new Date().toISOString(), pass: !issues.length, issues, fixed, usd: Math.round(usd * 10000) / 10000 };
+    for (const f of fixes) f.ok = !issues.some((i) => i.shotId === f.shotId);
+    v.storyCheck = { hash: storyHash(v), at: new Date().toISOString(), pass: !issues.length, issues, fixed, fixes, usd: Math.round(usd * 10000) / 10000 };
   } catch (e) {
     v = load(videoId);
-    v.storyCheck = { hash: storyHash(v), at: new Date().toISOString(), pass: false, issues: [], fixed, usd: Math.round(usd * 10000) / 10000, error: e instanceof Error ? e.message : "未知错误" };
+    v.storyCheck = { hash: storyHash(v), at: new Date().toISOString(), pass: false, issues: [], fixed, fixes, usd: Math.round(usd * 10000) / 10000, error: e instanceof Error ? e.message : "未知错误" };
     throw e;
   } finally {
     saveShortVideo(v);
@@ -2215,9 +2225,28 @@ async function runStoryCheck(videoId: string) {
   }
 }
 
-export async function storyCheckAction(videoId: string): Promise<Result<StudioState>> {
+/** 剧本对账里这一条「不用管」：不拦首帧和导出，以后 K3 再报也跳过（免费） */
+export async function storyIgnoreAction(videoId: string, shotId: string, kind: StoryIssueKind, quote: string): Promise<Result<StudioState>> {
   try {
-    await runStoryCheck(videoId);
+    const v = load(videoId);
+    const key = storyKey({ shotId, kind, quote });
+    v.storyIgnore = [...new Set([...(v.storyIgnore ?? []), key])];
+    if (v.storyCheck) {
+      v.storyCheck.issues = dropIgnored(v.storyCheck.issues, v.storyIgnore);
+      v.storyCheck.pass = !v.storyCheck.issues.length && !v.storyCheck.error;
+      v.storyCheck.fixes = v.storyCheck.fixes?.map((f) => (f.shotId === shotId ? { ...f, ok: !v.storyCheck!.issues.some((i) => i.shotId === shotId) } : f));
+    }
+    saveShortVideo(v);
+    refresh(v);
+    return { result: state(videoId) };
+  } catch (e) {
+    return { ...fail(e), result: getShortVideo(videoId) ? state(videoId) : undefined };
+  }
+}
+
+export async function storyCheckAction(videoId: string, all = false): Promise<Result<StudioState>> {
+  try {
+    await runStoryCheck(videoId, all);
     return { result: state(videoId) };
   } catch (e) {
     return { ...fail(e), result: getShortVideo(videoId) ? state(videoId) : undefined };

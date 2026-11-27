@@ -32,6 +32,7 @@ import {
   settleJobAction,
   retargetTextAction,
   storyCheckAction,
+  storyIgnoreAction,
   runJobAction,
   saveShortVideoAction,
   setBudgetAction,
@@ -525,22 +526,62 @@ export function ShortStudio({
                   >
                     {sc && !stale ? "重新对账" : "现在对账"}（K3，约 $0.03）
                   </button>
+                  {sc && !stale && sc.issues.length ? (
+                    <button
+                      type="button"
+                      className={btn}
+                      disabled={busy}
+                      onClick={async () => {
+                        if (!(await askConfirm(`让 AI 改掉这 ${sc.issues.length} 处，改完 K3 自动复查（约 $0.05）。\n\n已采用的镜头只改文字，已经出好的首帧和视频不动。\n\n确定吗？`))) return;
+                        start(async () => {
+                          setMsg({ tone: "ok", text: "AI 改写并复查中…（2–4 分钟）" });
+                          apply(await storyCheckAction(v.id, true), "改完了，复查结果在「剧本对账」里");
+                        });
+                      }}
+                    >
+                      一键改掉（只改文字）
+                    </button>
+                  ) : null}
                 </div>
                 {sc && !stale ? (
                   <ul className="list-disc space-y-0.5 pl-5">
-                    {sc.fixed.map((f) => (
-                      <li key={f} className="text-emerald-300/90">{f}</li>
-                    ))}
+                    {sc.fixes?.length
+                      ? sc.fixes.map((f, k) => {
+                          const s = v.shots.find((x) => x.id === f.shotId);
+                          const n = s ? (s.hook ? `开头「${s.hook.name}」` : `#${v.shots.indexOf(s) + 1}`) : "";
+                          return (
+                            <li key={`f${k}`} className={f.ok ? "text-emerald-300/90" : "text-rose-300/90"}>
+                              {f.ok ? "✓ 复查通过" : "✗ 还没改好"} · {n}：{f.why}
+                              {f.quote || f.now ? (
+                                <span className="block text-neutral-400">
+                                  「{f.quote}」→「{f.now || "（整句重写）"}」
+                                </span>
+                              ) : null}
+                            </li>
+                          );
+                        })
+                      : sc.fixed.map((f) => (
+                          <li key={f} className="text-emerald-300/90">{f}</li>
+                        ))}
                     {sc.issues.map((i, k) => {
                       const s = v.shots.find((x) => x.id === i.shotId);
                       const n = s ? (s.hook ? `开头「${s.hook.name}」` : `#${v.shots.indexOf(s) + 1}`) : "";
                       return (
                         <li key={k} className="text-rose-300/90">
                           {n}：{i.quote ? `「${i.quote}」` : ""}{i.why}
+                          <button
+                            type="button"
+                            className="ml-2 rounded border border-white/15 px-1.5 text-[11px] text-neutral-300 hover:bg-white/10"
+                            disabled={busy}
+                            title="这一条不影响，不拦首帧和导出，以后 K3 再报也跳过（免费）"
+                            onClick={() => start(async () => apply(await storyIgnoreAction(v.id, i.shotId, i.kind, i.quote), "这一条不再管"))}
+                          >
+                            不用管
+                          </button>
                         </li>
                       );
                     })}
-                    {locked ? <li className="text-neutral-400">已确认构图的镜头不会自动改：先「退回构图」，再点重新对账</li> : null}
+                    {locked ? <li className="text-neutral-400">已确认构图的镜头查的时候不自动改：点「一键改掉」只改文字，已出的画面不动</li> : null}
                   </ul>
                 ) : null}
               </div>

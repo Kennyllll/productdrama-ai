@@ -56,17 +56,44 @@ export function parseStoryIssues(raw: unknown, v: Pick<ShortVideoData, "shots">)
   return out;
 }
 
-/** K3 给的改写：只认还在写剧本（draft）、而且这轮被查出问题的镜头 */
-export function storyRewrites(raw: unknown, v: Pick<ShortVideoData, "shots">, issues: StoryIssue[]): { shotId: string; fields: Partial<Record<StoryField, string>> }[] {
+/** 一条问题的身份：镜头 + 种类 + 原话 */
+export function storyKey(i: Pick<StoryIssue, "shotId" | "kind" | "quote">): string {
+  return `${i.shotId}|${i.kind}|${i.quote.trim().toLowerCase()}`;
+}
+
+/** 去掉用户点过「不用管」的问题；K3 每次引的原话长短不一，互相包含也算同一条 */
+export function dropIgnored(issues: StoryIssue[], ignore: string[] | undefined): StoryIssue[] {
+  if (!ignore?.length) return issues;
+  const keys = ignore.map((k) => {
+    const [shotId, kind, ...q] = k.split("|");
+    return { shotId, kind, quote: q.join("|") };
+  });
+  return issues.filter((i) => {
+    const q = i.quote.trim().toLowerCase();
+    return !keys.some((k) => k.shotId === i.shotId && k.kind === i.kind && (k.quote === q || (!!k.quote && !!q && (k.quote.includes(q) || q.includes(k.quote)))));
+  });
+}
+
+/** K3 给的改写：只认这轮被查出问题的镜头；all=false 时只改还在写剧本（draft）的，all=true（一键改掉）已采用的也改文字 */
+export function storyRewrites(
+  raw: unknown,
+  v: Pick<ShortVideoData, "shots">,
+  issues: StoryIssue[],
+  all = false,
+): { shotId: string; fields: Partial<Record<StoryField, string>>; changes: { quote: string; now: string }[] }[] {
   if (!Array.isArray(raw)) return [];
   const bad = new Set(issues.map((i) => i.shotId));
   const lim: Record<StoryField, number> = { caption: 160, description: 600, camera: 200, productNote: 300, framePrompt: 2000, motionPrompt: 1000 };
   return raw.flatMap((x) => {
     const o = (x ?? {}) as Record<string, unknown>;
     const s = v.shots.find((y) => y.id === o.shotId);
-    if (!s || s.stage !== "draft" || !bad.has(s.id)) return [];
+    if (!s || (!all && s.stage !== "draft") || !bad.has(s.id)) return [];
     const fields: Partial<Record<StoryField, string>> = {};
     for (const k of STORY_FIELDS) if (typeof o[k] === "string" && (o[k] as string).trim()) fields[k] = (o[k] as string).trim().slice(0, lim[k]);
-    return Object.keys(fields).length ? [{ shotId: s.id, fields }] : [];
+    const changes = (Array.isArray(o.changes) ? o.changes : []).flatMap((c) => {
+      const x = (c ?? {}) as Record<string, unknown>;
+      return typeof x.quote === "string" && typeof x.now === "string" ? [{ quote: x.quote.trim().slice(0, 160), now: x.now.trim().slice(0, 160) }] : [];
+    });
+    return Object.keys(fields).length ? [{ shotId: s.id, fields, changes }] : [];
   });
 }
