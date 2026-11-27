@@ -122,7 +122,7 @@ export function GuideRail({
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
         <div>
           <p className="text-sm font-semibold text-amber-200">AI 大脑</p>
-          <p className="text-[11px] text-neutral-500">⌘K 随时呼出</p>
+          <p className="text-[11px] text-neutral-500">⌘K（Windows 按 Ctrl+K）随时呼出</p>
         </div>
         <button type="button" onClick={() => setOpen(false)} className="rounded border border-white/15 px-2 py-0.5 text-xs text-neutral-300 hover:bg-white/5">
           收起 ›
@@ -193,7 +193,7 @@ export function GuideRail({
           className="w-full resize-none rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-neutral-600 focus:border-amber-400/60 focus:outline-none"
         />
         <div className="mt-2 flex items-center justify-between">
-          <span className="text-[11px] text-neutral-500">{error || "向导还没接模型：消息会存进项目对话"}</span>
+          <span className="text-[11px] text-neutral-500">{error || "AI 大脑还没接模型：消息会存进项目对话"}</span>
           <button type="submit" disabled={pending || !text.trim()} className="rounded-lg bg-amber-400 px-3 py-1 text-sm font-medium text-black disabled:opacity-40">
             发送
           </button>

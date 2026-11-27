@@ -265,7 +265,6 @@ export function ShortSet({
           <SceneEditor projectId={projectId} videoId={videoId} shot={b} scenes={scenes} onDraft={onDraft} />
         </details>
       ) : null}
-      {code ? <ShotSyncBox videoId={videoId} shotId={code} label={b?.label ?? ""} figIds={(st?.layout.figures ?? []).map((f) => f.id)} layout={st?.layout} saved={Boolean(cur?.edited)} live={live} cam={camLive} members={st?.members} rig={rig} filmerId={fv[code] === "none" ? undefined : fv[code] || filmers[code]?.video || undefined} locked={Boolean(lockedMsg)} /> : null}
       <div className="grid gap-3 @xl/main:grid-cols-[minmax(0,1fr)_15rem] @4xl/main:grid-cols-[10.625rem_minmax(0,1fr)_18.75rem] @6xl/main:grid-cols-[12.5rem_minmax(0,1fr)_21.25rem]">
         <aside ref={setListSlot} aria-label="场景列表" className={`self-start @xl/main:order-3 @xl/main:col-start-2 @4xl/main:order-none @4xl/main:col-start-auto rounded-xl border border-white/10 bg-neutral-900/60 p-2 @4xl/main:sticky ${lockedMsg ? "@4xl/main:top-40" : "@4xl/main:top-28"}`} />
         <section className="@container min-w-0 space-y-3 @xl/main:row-span-2 @4xl/main:row-span-1">
@@ -299,6 +298,7 @@ export function ShortSet({
               shotCamLive={camLive}
             />
           ) : null}
+          {code ? <ShotSyncBox videoId={videoId} shotId={code} label={b?.label ?? ""} figIds={(st?.layout.figures ?? []).map((f) => f.id)} layout={st?.layout} saved={Boolean(cur?.edited)} live={live} cam={camLive} members={st?.members} rig={rig} filmerId={fv[code] === "none" ? undefined : fv[code] || filmers[code]?.video || undefined} locked={Boolean(lockedMsg)} /> : null}
           <Set3D
             controlsSlot={camSlot}
             compact

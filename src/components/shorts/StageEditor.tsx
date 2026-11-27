@@ -12,7 +12,7 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 import { saveProductRigAction, saveSceneVersionAction, sceneConflictsAction } from "@/app/scene-actions";
 import { saveShortLayoutAction } from "@/app/short-actions";
 import { brainStageAction, type StageProposal } from "@/app/brain-stage-actions";
-import { buildFigure, presetPose, shape } from "@/components/shorts/scene-mesh";
+import { buildFigure, presetPose, shape, clampReach } from "@/components/shorts/scene-mesh";
 import { carryBlock, carrierOf, figName, freeSpot, isStructure, itemLabel, liftOf, normalizeStage, rideBlock, ridersOf, relSpot } from "@/lib/stage-rules";
 import { estimateRig, figuresOf, FIGURE_POSES, isCarry, JOINTS, KB002_RIG, RIG_KEYS, rideOf, rigFrom, rigLocal, type FigureKind, type FigureSpec, type JointId, type P3, type ProductRig, type RigKey } from "@/lib/figures";
 import type { SetLayout } from "@/lib/production-repo";
@@ -230,6 +230,21 @@ export function StageEditor({
       orbit.target.set(v0[3], v0[4], v0[5]);
     }
     orbit.update();
+    // 室内场地：转视角不穿到墙外（墙外看进来整个画面是灰的）
+    const keepIn = () => {
+      const ws = st.current.doc.items.filter((i) => i.type === "wall");
+      if (ws.length < 4) return;
+      const xs = ws.map((i) => i.x);
+      const ys = ws.map((i) => i.y);
+      const [x0, x1, y0, y1] = [Math.min(...xs) + 0.15, Math.max(...xs) - 0.15, Math.min(...ys) + 0.15, Math.max(...ys) - 0.15];
+      if (x1 - x0 < 1 || y1 - y0 < 1) return;
+      const c = cam.position;
+      const x = Math.min(x1, Math.max(x0, c.x));
+      const z = Math.min(-y0, Math.max(-y1, c.z));
+      if (x !== c.x || z !== c.z) c.set(x, c.y, z);
+    };
+    orbit.addEventListener("change", keepIn);
+    keepIn();
     // 滚轮默认滚页面；点过画布（鼠标还在画布上）或按住 Ctrl 才缩放
     orbit.enableZoom = false;
     let armed = false;
@@ -418,7 +433,9 @@ export function StageEditor({
         n = { ...d, figures: d.figures.map((f) => (f.id === id ? { ...f, dx: r2(o.position.x - bx), dy: r2(-o.position.z - by), yaw: Math.round(wrap(deg(Math.PI - o.rotation.y))) } : f)) };
       } else if (key.startsWith("joint:")) {
         const [, fid, j] = key.split(":");
-        const p: P3 = [r3(o.position.x), r3(Math.max(0, o.position.y)), r3(o.position.z)];
+        let p: P3 = [r3(o.position.x), r3(Math.max(0, o.position.y)), r3(o.position.z)];
+        const f0 = d.figures.find((f) => f.id === fid);
+        if (f0 && j !== "hip") p = clampReach(f0.kind, effPose(f0, Boolean(d.bike)), { ride: rideOf(rg), custom: f0.custom, h: f0.h }, j as "handL" | "handR" | "footL" | "footR", p);
         n = { ...d, figures: d.figures.map((f) => (f.id === fid ? { ...f, custom: { ...f.custom, [j as JointId]: p } } : f)) };
       } else if (key.startsWith("rig:")) n = { ...d, rig: rigFrom(rg, key.slice(4) as RigKey, o.position) };
       if (n !== d) commitRef.current(n);

@@ -275,6 +275,25 @@ export function buildFigure(kind: FigureKind, pose: FigurePose, opts: { ride?: R
   return g;
 }
 
+/** 手脚目标够不着时拉回到伸直能到的地方（和 buildFigure 同一算法）：保存的蓝球不会离开手脚 */
+export function clampReach(kind: FigureKind, pose: FigurePose, opts: { ride?: RideRig; custom?: PoseTargets; h?: number }, j: "handL" | "handR" | "footL" | "footR", t: P3): P3 {
+  const d = dims(kind, opts.h);
+  const p = { ...presetPose(kind, pose, opts.ride, opts.h), ...opts.custom };
+  const hip = V(p.hip);
+  const up = new THREE.Vector3(0, Math.cos(p.lean), Math.sin(p.lean));
+  const sx = j.endsWith("L") ? 1 : -1;
+  const hand = j.startsWith("hand");
+  const root = hand
+    ? hip.clone().addScaledVector(up, d.torso - 0.03 * d.H).add(new THREE.Vector3(sx * d.sh, 0, 0))
+    : hip.clone().add(new THREE.Vector3(sx * d.hipW, 0, 0));
+  const len = (hand ? d.ua + d.fa : d.thigh + d.shin) - 1e-3;
+  const v = V(t).sub(root);
+  if (v.length() <= len) return t;
+  const e = root.add(v.setLength(len));
+  const r = (x: number) => Math.round(x * 1000) / 1000;
+  return [r(e.x), r(Math.max(0, e.y)), r(e.z)];
+}
+
 /**
  * 拍摄者空着的手（挂在摄影机下，摄影机本地坐标：+x 右、+y 上、-z 前）。
  * side = -1 从画面左下角伸进来；tanH / tanV = 半视角正切。
