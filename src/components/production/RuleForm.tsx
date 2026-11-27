@@ -13,6 +13,7 @@ export function RuleForm({ projectId }: { projectId: string }) {
   const [level, setLevel] = useState("must");
   const [text, setText] = useState("");
   const [source, setSource] = useState("");
+  const [global, setGlobal] = useState(false);
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
   const admin = useIsAdmin();
@@ -22,7 +23,7 @@ export function RuleForm({ projectId }: { projectId: string }) {
       onSubmit={(e) => {
         e.preventDefault();
         start(async () => {
-          const r = await addRuleAction(projectId, { layer, level, text, source });
+          const r = await addRuleAction(projectId, { layer, level, text, source, global });
           if (r.error) return setError(r.error);
           setText("");
           setSource("");
@@ -55,6 +56,10 @@ export function RuleForm({ projectId }: { projectId: string }) {
       <label className="flex w-48 flex-col text-xs text-neutral-400">
         来源（哪个镜头 / 谁说的）
         <input value={source} onChange={(e) => setSource(e.target.value)} className="mt-1 rounded border border-white/15 bg-black/40 px-2 py-1 text-sm text-white" />
+      </label>
+      <label className="flex items-center gap-1 self-center text-xs text-neutral-300" title="勾上后，别的产品项目也按这条检查">
+        <input type="checkbox" checked={global} onChange={(e) => setGlobal(e.target.checked)} />
+        所有产品都适用
       </label>
       <button type="submit" disabled={pending || !text.trim() || !admin} className="rounded-lg bg-amber-400 px-3 py-1.5 font-medium text-black disabled:opacity-40">
         加入规则库

@@ -210,17 +210,18 @@ export function listLedger(projectId: string): LedgerEntry[] {
 }
 
 export function listRules(projectId: string): Rule[] {
-  return getDb().prepare("SELECT id, scope, layer, level, text, source, origin FROM rules WHERE project_id = ? ORDER BY created_at, rowid").all(projectId) as Rule[];
+  // 「所有项目」的规则不管存在哪个项目下，每个项目都要读到
+  return getDb().prepare("SELECT id, scope, layer, level, text, source, origin FROM rules WHERE project_id = ? OR scope = 'global' ORDER BY created_at, rowid").all(projectId) as Rule[];
 }
 
-export function addRule(projectId: string, input: { layer: RuleLayer; level: "must" | "warn"; text: string; source: string }): void {
+export function addRule(projectId: string, input: { layer: RuleLayer; level: "must" | "warn"; text: string; source: string; global?: boolean }): void {
   getDb()
-    .prepare("INSERT INTO rules (id, project_id, scope, layer, level, text, source, origin, created_at) VALUES (?, ?, 'project', ?, ?, ?, ?, 'user', ?)")
-    .run(randomUUID(), projectId, input.layer, input.level, input.text, input.source, new Date().toISOString());
+    .prepare("INSERT INTO rules (id, project_id, scope, layer, level, text, source, origin, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'user', ?)")
+    .run(randomUUID(), projectId, input.global ? "global" : "project", input.layer, input.level, input.text, input.source, new Date().toISOString());
 }
 
 export function deleteRule(projectId: string, id: string): void {
-  getDb().prepare("DELETE FROM rules WHERE project_id = ? AND id = ?").run(projectId, id);
+  getDb().prepare("DELETE FROM rules WHERE id = ? AND (project_id = ? OR scope = 'global')").run(id, projectId);
 }
 
 export function listDecisions(projectId: string): Decision[] {

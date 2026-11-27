@@ -36,7 +36,7 @@ export async function rememberDecisionAction(projectId: string, text: string, co
 }
 
 /** 规则库只有管理员能改；每次改动留一版，能回退 */
-export async function addRuleAction(projectId: string, input: { layer: string; level: string; text: string; source: string }): Promise<{ error?: string }> {
+export async function addRuleAction(projectId: string, input: { layer: string; level: string; text: string; source: string; global?: boolean }): Promise<{ error?: string }> {
   if (!findLocalProject(projectId)) return { error: "项目不存在" };
   let actor;
   try {
@@ -47,7 +47,7 @@ export async function addRuleAction(projectId: string, input: { layer: string; l
   const layer = LAYERS.find((l) => l === input.layer);
   const text = clean(input.text);
   if (!layer || !text) return { error: "请选择层级并填写规则" };
-  addRule(projectId, { layer, level: input.level === "warn" ? "warn" : "must", text, source: clean(input.source).slice(0, 200) });
+  addRule(projectId, { layer, level: input.level === "warn" ? "warn" : "must", text, source: clean(input.source).slice(0, 200), global: input.global === true });
   const r = listRules(projectId).at(-1);
   if (r) addRevision({ entityType: "rule", entityId: r.id, projectId, label: text.slice(0, 60), data: r, op: "create", actor: actor.name });
   logAction(actor, { projectId, action: "新增规则", detail: text.slice(0, 200), refId: r?.id });
