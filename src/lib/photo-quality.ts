@@ -15,7 +15,7 @@ export function photoWarnings(p: PhotoStats): string[] {
   const side = Math.min(p.width, p.height);
   if (side < MIN_SIDE) w.push(`太小（${p.width}×${p.height}），请用原图，短边至少 ${MIN_SIDE} 像素`);
   if (p.brightness < 60) w.push("太暗：开灯或到窗边重拍");
-  else if (p.brightness > 245) w.push("太亮：白色部分看不清，调暗一点重拍");
+  else if (p.brightness > 252) w.push("太亮：产品本身也发白、看不清细节，调暗一点重拍（白底是正常的）");
   if (p.sharpness < 4) w.push("有点糊：拿稳手机、对好焦再拍");
   return w;
 }

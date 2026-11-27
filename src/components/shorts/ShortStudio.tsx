@@ -1110,7 +1110,7 @@ export function ShortStudio({
                         act(() => addHookAction(v.id), "已新建开头：先改文字，再去 3D 保存构图");
                       }}
                     >
-                      ＋ 照抄第一个开头
+                      {hooksOf(v).length ? "＋ 照抄第一个开头" : "＋ 用正文第 1 镜做一个开头"}
                     </button>
                     <button className={btn} disabled={busy || dirty || !hookLib.length} title={dirty ? "先保存分镜" : ""} onClick={() => setHookPanel({})}>
                       ＋ 用 Hook 库加一个开头

@@ -6,7 +6,7 @@ test("照片质量：太小、太暗、太亮、太糊", () => {
   assert.deepEqual(photoWarnings({ width: 3000, height: 4000, brightness: 200, sharpness: 20 }), []);
   assert.match(photoWarnings({ width: 800, height: 600, brightness: 200, sharpness: 20 })[0], /太小（800×600）/);
   assert.match(photoWarnings({ width: 3000, height: 3000, brightness: 30, sharpness: 20 })[0], /太暗/);
-  assert.match(photoWarnings({ width: 3000, height: 3000, brightness: 250, sharpness: 20 })[0], /太亮/);
+  assert.match(photoWarnings({ width: 3000, height: 3000, brightness: 254, sharpness: 20 })[0], /太亮/);
   assert.match(photoWarnings({ width: 3000, height: 3000, brightness: 200, sharpness: 1.5 })[0], /糊/);
 });
 
