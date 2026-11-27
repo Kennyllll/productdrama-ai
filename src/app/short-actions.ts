@@ -479,12 +479,6 @@ export async function adoptHookAction(videoId: string, libId: string, values: Re
     s.useSeconds = lib.seconds;
     const fixed = s.layout ? fitFigureActions(s.layout, rigOf(v)) : [];
     // Hook 的机位高度定了拍摄者姿势：0.9 米就是蹲着拍，不能还写站着
-    const fitOp = (x: ShortShot, camH: number) => {
-      const op = parseOp(x.operator);
-      const ok = (id: typeof op.pose) => camH >= poseOf(id).lo && camH <= poseOf(id).hi;
-      const fit = OP_POSES.find((y) => ok(y.id));
-      if (!op.custom && fit && !ok(op.pose)) x.operator = opString({ ...op, pose: fit.id });
-    };
     fitOp(s, me ? (s.layout?.camPos?.[2] ?? stage.camH) : stage.camH);
     s.compFile = null;
     // 切镜后的第二段：单独一镜（自己的 3D、首帧、视频），换 Hook 时旧的第二段一起换掉
@@ -1901,6 +1895,14 @@ function draftShot(videoId: string, shotId: string) {
 }
 
 /** 保存机位 / 运镜；机位变了，之前截的 3D 构图作废 */
+/** 3D 机位高度和「拍摄者姿势」对不上时，自动换成高度对得上的姿势（站着 / 蹲着 / 坐着…），不留给用户手改 */
+function fitOp(x: ShortShot, camH: number) {
+  const op = parseOp(x.operator);
+  const ok = (id: typeof op.pose) => camH >= poseOf(id).lo && camH <= poseOf(id).hi;
+  const fit = OP_POSES.find((y) => ok(y.id));
+  if (!op.custom && fit && !ok(op.pose)) x.operator = opString({ ...op, pose: fit.id });
+}
+
 export async function saveShortLayoutAction(videoId: string, shotId: string, layout: SetLayout | null): Promise<{ error?: string }> {
   try {
     const { v, s } = draftShot(videoId, shotId);
@@ -1908,6 +1910,7 @@ export async function saveShortLayoutAction(videoId: string, shotId: string, lay
     if (layout && !l) throw new Error("布景数据不完整");
     if (l) await translateActions(l, s.layout);
     s.layout = l;
+    if (l && !s.hook?.selfie) fitOp(s, l.camPos[2]);
     s.compFile = null;
     saveShortVideo(v);
     refresh(v);

@@ -92,7 +92,7 @@ export default async function ShortSetPage({ params, searchParams }: { params: P
           </p>
         </Card>
       ) : null}
-      {carIds.size ? (
+      {carIds.size && (!sp.shot || [...carIds].some((x) => x.startsWith(sp.shot!))) ? (
         <Card title="车里自拍">
           <p className="text-sm text-neutral-300">
             {v.shots.flatMap((s, i) => (carIds.has(s.id) ? [`#${i + 1}`] : [])).join("、")} 开头在车里自拍，不用 3D，三轮车不入镜，所以这里没有这一段。切镜后的第二段照案例只拍产品，没有人。
