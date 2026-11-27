@@ -235,7 +235,7 @@ export function saveJobOutput(j: JobRecord, bytes: Buffer, ext: string, mime: st
 }
 
 /** 写入项目费用账本（与长剧共用账本页） */
-export function addLedgerEntry(e: { projectId: string; shotCode: string; kind: "first_frame" | "video"; model: string; usd: number; note: string }) {
+export function addLedgerEntry(e: { projectId: string; shotCode: string; kind: "first_frame" | "video" | "check"; model: string; usd: number; note: string }) {
   getDb()
     .prepare("INSERT INTO ledger (id, project_id, episode, shot_code, kind, model, usd, exact, used, note, created_at) VALUES (?, ?, 0, ?, ?, ?, ?, 1, 0, ?, ?)")
     .run(randomUUID(), e.projectId, e.shotCode, e.kind, e.model, e.usd, e.note, now());

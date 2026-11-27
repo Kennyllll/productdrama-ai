@@ -6,7 +6,7 @@ import { findLocalProject } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
 
-const KIND: Record<string, string> = { first_frame: "首帧", video: "视频", video_edit: "视频编辑", sound: "声音", model3d: "3D 建模" };
+const KIND: Record<string, string> = { first_frame: "首帧", video: "视频", check: "自动检查", video_edit: "视频编辑", sound: "声音", model3d: "3D 建模" };
 const usd = (n: number) => `$${n.toFixed(2)}`;
 const sum = (xs: LedgerEntry[]) => xs.reduce((s, x) => s + x.usd, 0);
 

@@ -1,4 +1,5 @@
 // 视觉质检（先用 Gemini，Gemini 没 Key 或出错就用大脑的 Kimi K3 看图）：看最终关键帧，按清单找结构 / 物理错误。仅服务端调用；Key 只保存在本机 SQLite，不记录日志。
+import { AsyncLocalStorage } from "node:async_hooks";
 import sharp from "sharp";
 import { getDb } from "@/lib/db";
 import type { KimiPart } from "@/lib/brain/kimi";
@@ -55,6 +56,14 @@ export function visionReady(): boolean {
   return !!getVisionKey() || !!getBrainKey();
 }
 
+// K3 看图按 token 收费：包在 withVisionSpend 里的检查，花了多少记下来写进账本（Gemini 不回报价格，不记）
+const spend = new AsyncLocalStorage<{ usd: number }>();
+export async function withVisionSpend<T>(fn: () => Promise<T>): Promise<{ value: T; usd: number }> {
+  const box = { usd: 0 };
+  const value = await spend.run(box, fn);
+  return { value, usd: box.usd };
+}
+
 // Gemini 欠费 / Key 失效时每次都会失败：失败后 10 分钟内直接用 K3，不白等
 let geminiDownUntil = 0;
 
@@ -81,7 +90,9 @@ async function kimiGenerate(parts: Part[], timeoutMs: number): Promise<unknown> 
   const content: KimiPart[] = parts.map((p) =>
     "text" in p ? { type: "text", text: p.text } : { type: "image_url", image_url: { url: `data:${p.inline_data.mime_type};base64,${p.inline_data.data}` } },
   );
-  const { message } = await kimiChat({ messages: [{ role: "user", content }], effort: "low", json: true, timeoutMs: timeoutMs * 2 });
+  const { message, usage } = await kimiChat({ messages: [{ role: "user", content }], effort: "low", json: true, timeoutMs: timeoutMs * 2 });
+  const box = spend.getStore();
+  if (box) box.usd += usage.usd;
   return parseJson(message.content);
 }
 

@@ -1956,7 +1956,7 @@ export function ShortStudio({
           预览与导出（免费，本机合成）
         </h2>
         <p className="mb-2 text-xs text-neutral-500">
-          每个勾选的开头各出一条「开头 + 正文」，裁成 1080×1920。
+          正式导出：每个勾选的开头各出一条「开头 + 正文」，裁成 1080×1920；预览只出一条（打开的那个开头，没打开就用勾选的第一个）。
           {exp.length ? ` 现在勾选了：${hookList.filter((h) => exp.includes(h.id)).map((h) => h.hook?.name).join("、")}。` : ""}
         </p>
         <label className="mb-1 flex items-center gap-2 text-sm text-neutral-200">

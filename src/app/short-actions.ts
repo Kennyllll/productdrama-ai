@@ -12,7 +12,7 @@ import { keyFromPath, putFile, readFile, storageKey } from "@/lib/storage";
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { AiError, chatJson } from "@/lib/ai/client";
-import { reviewShortFrame, reviewShortVideo, checkMoveDirection, visionReady } from "@/lib/vision-qa";
+import { reviewShortFrame, reviewShortVideo, checkMoveDirection, visionReady, withVisionSpend } from "@/lib/vision-qa";
 import ffmpegPath from "ffmpeg-static";
 import os from "node:os";
 import { execFile } from "node:child_process";
@@ -1326,7 +1326,21 @@ async function checkRefs(v: ShortVideo, s: ShortShot): Promise<{ productRefs: Bu
   return { productRefs: top.map(([f]) => fs.readFileSync(f)), refNotes: top.map(([, n]) => n) };
 }
 
-async function runFrameCheck(videoId: string, shotId: string, jobId: string, bytes: Buffer) {
+/** 自动检查花的钱（K3 看图）记进费用账本 */
+async function withCheckLedger(videoId: string, shotId: string, label: string, fn: () => Promise<void>) {
+  const { usd } = await withVisionSpend(fn);
+  const v = getShortVideo(videoId);
+  if (!v || usd <= 0) return;
+  addLedgerEntry({ projectId: v.projectId, shotCode: `${v.title} / ${v.shots.findIndex((x) => x.id === shotId) + 1}`, kind: "check", model: "kimi-k3.1-pro", usd: Math.round(usd * 10000) / 10000, note: `短视频 · ${label}（K3 看图）` });
+}
+
+const runFrameCheck = (videoId: string, shotId: string, jobId: string, bytes: Buffer) =>
+  withCheckLedger(videoId, shotId, "首帧检查", () => frameCheck(videoId, shotId, jobId, bytes));
+
+const runVideoCheck = (videoId: string, shotId: string, jobId: string, bytes: Buffer) =>
+  withCheckLedger(videoId, shotId, "视频检查", () => videoCheck(videoId, shotId, jobId, bytes));
+
+async function frameCheck(videoId: string, shotId: string, jobId: string, bytes: Buffer) {
   const at = new Date().toISOString();
   const v0 = getShortVideo(videoId);
   const s0 = v0?.shots.find((x) => x.id === shotId);
@@ -1443,7 +1457,7 @@ export async function recheckVideoAction(videoId: string, shotId: string): Promi
 const execFileP = promisify(execFile);
 
 /** 视频出来后自动看：每 0.5 秒截一帧，对照产品照查变形；没 Key 或出错只记下来，让用户自己看 */
-async function runVideoCheck(videoId: string, shotId: string, jobId: string, bytes: Buffer) {
+async function videoCheck(videoId: string, shotId: string, jobId: string, bytes: Buffer) {
   const at = new Date().toISOString();
   const v0 = getShortVideo(videoId);
   const s0 = v0?.shots.find((x) => x.id === shotId);
