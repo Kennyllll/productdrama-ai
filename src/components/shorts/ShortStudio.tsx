@@ -227,7 +227,7 @@ export function ShortStudio({
     </select>
   );
 
-  const [hookPanel, setHookPanel] = useState<{ shotId?: string } | null>(null);
+  const [hookPanel, setHookPanel] = useState<{ shotId?: string; targetId?: string } | null>(null);
   const famName = (k: string) => families.find((f) => f.id === v.families?.[k])?.name ?? "不指定";
   const famSlots = [...new Set(["1", ...shots.map((s) => String(s.family ?? 1))])].sort();
   const changeFamily = (slot: string, id: string) =>
@@ -1016,7 +1016,7 @@ export function ShortStudio({
                 ) : null,
                 i === 0 && hookPanel ? (
                   <li key="h-panel" className="col-span-full">
-                    <HookPanel onBgCapture={setBgCap} cast={cast} themePicker={themeSelect} key={hookPanel.shotId ?? "new"} videoId={v.id} lib={hookLib} shot={hookPanel.shotId ? v.shots.find((x) => x.id === hookPanel.shotId) : undefined} targetId={undefined} setHref={(id) => `/projects/${v.projectId}/shorts/${v.id}/set?shot=${id}&capture=1`} onDone={apply} onClose={() => setHookPanel(null)} />
+                    <HookPanel onBgCapture={setBgCap} cast={cast} themePicker={themeSelect} key={hookPanel.shotId ?? hookPanel.targetId ?? "new"} videoId={v.id} lib={hookLib} shot={hookPanel.shotId ? v.shots.find((x) => x.id === hookPanel.shotId) : undefined} targetId={hookPanel.targetId} setHref={(id) => `/projects/${v.projectId}/shorts/${v.id}/set?shot=${id}&capture=1`} onDone={apply} onClose={() => setHookPanel(null)} />
                   </li>
                 ) : null,
                 !s.hook && i === firstBody ? (
@@ -1050,6 +1050,10 @@ export function ShortStudio({
                   {s.hook?.libId ? (
                     <button className="mt-1 text-xs text-amber-300 underline" disabled={busy || dirty} onClick={() => setHookPanel({ shotId: s.id })}>
                       Hook 属性（{s.hook.libName}）
+                    </button>
+                  ) : s.hook && !s.hook.partOf ? (
+                    <button className="mt-1 text-xs text-amber-300 underline" disabled={busy || dirty} title={dirty ? "先保存分镜" : ""} onClick={() => setHookPanel({ targetId: s.id })}>
+                      换成 Hook 库的套路，AI 重写
                     </button>
                   ) : null}
                   {s.hook ? (
@@ -1274,7 +1278,7 @@ export function ShortStudio({
                           : `字幕（英文，出片时按 Hook 效果烧进开头：${effectDef(hookEffectOf(s.hook))?.label ?? ""}）`
                         : s.hook
                           ? "字幕（英文，这个开头没选 Hook 效果，出片不烧）"
-                          : "字幕（英文，正文出片不烧，只作参考）"}
+                          : v.captions !== false ? "字幕（英文，出片时用开头同款样式烧进正文）" : "字幕（英文，下面「整条视频加字幕」没勾，出片不烧）"}
                     <input
                       value={s.caption}
                       onChange={(e) => edit(i, { caption: e.target.value })}
