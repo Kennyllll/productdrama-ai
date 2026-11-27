@@ -1,7 +1,7 @@
 // 视觉质检（先用 Gemini，Gemini 没 Key 或出错就用大脑的 Kimi K3 看图）：看最终关键帧，按清单找结构 / 物理错误。仅服务端调用；Key 只保存在本机 SQLite，不记录日志。
 import sharp from "sharp";
 import { getDb } from "@/lib/db";
-import { getBrainKey, kimiChat, parseJson, type KimiPart } from "@/lib/brain/kimi";
+import type { KimiPart } from "@/lib/brain/kimi";
 
 /** 按顺序尝试：Google 下线旧模型时返回 404，繁忙时 503，换下一个 */
 export const VISION_MODELS = ["gemini-3.5-flash", "gemini-3.8-flash"];
@@ -39,6 +39,17 @@ export function visionPublicInfo(): { configured: boolean; keyHint: string } {
 
 type Part = { text: string } | { inline_data: { mime_type: string; data: string } };
 
+// kimi.ts 带 server-only，单元测试里不能直接 import：Key 在这里读，调用时再动态加载
+function getBrainKey(): string {
+  const row = getDb().prepare("SELECT value FROM settings WHERE key = 'brain'").get() as { value: string } | undefined;
+  try {
+    const o = row ? (JSON.parse(row.value) as Record<string, unknown>) : {};
+    return typeof o.apiKey === "string" ? o.apiKey : "";
+  } catch {
+    return "";
+  }
+}
+
 /** Gemini 或大脑 Kimi 有一个能用，就能自动检查 */
 export function visionReady(): boolean {
   return !!getVisionKey() || !!getBrainKey();
@@ -66,6 +77,7 @@ async function generate(parts: Part[], timeoutMs: number): Promise<unknown> {
 }
 
 async function kimiGenerate(parts: Part[], timeoutMs: number): Promise<unknown> {
+  const { kimiChat, parseJson } = await import("@/lib/brain/kimi");
   const content: KimiPart[] = parts.map((p) =>
     "text" in p ? { type: "text", text: p.text } : { type: "image_url", image_url: { url: `data:${p.inline_data.mime_type};base64,${p.inline_data.data}` } },
   );
