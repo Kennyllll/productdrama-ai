@@ -227,6 +227,26 @@ export interface ShotHook {
   partOf?: string;
 }
 
+export type StoryIssueKind = "feature" | "negative" | "holiday" | "people" | "continuity";
+export interface StoryIssue {
+  shotId: string;
+  kind: StoryIssueKind;
+  /** 镜头里的原话 */
+  quote: string;
+  why: string;
+}
+/** 剧本对账（story-check.ts）：hash 对不上 = 剧本改过，要重查 */
+export interface StoryCheck {
+  hash: string;
+  at: string;
+  pass: boolean;
+  issues: StoryIssue[];
+  /** 自动重写了哪些镜头 */
+  fixed: string[];
+  usd: number;
+  error?: string;
+}
+
 export interface ShortVideoData {
   templateId: string;
   brief: string;
@@ -260,6 +280,7 @@ export interface ShortVideoData {
   filmer?: string;
   /** 从哪个模板（哪一版）套来的 */
   fromTemplate?: { id: string; v: number; name: string; fromProduct: string; fromKind?: string; rewritten?: boolean };
+  storyCheck?: StoryCheck;
 }
 
 export interface ShortVideo extends ShortVideoData {

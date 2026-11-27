@@ -31,6 +31,7 @@ import {
   resumeJobAction,
   settleJobAction,
   retargetTextAction,
+  storyCheckAction,
   runJobAction,
   saveShortVideoAction,
   setBudgetAction,
@@ -92,6 +93,7 @@ import { ColorKits } from "@/components/workbench/ProductKit";
 import { ExportGate } from "@/components/shorts/ExportGate";
 import { NeedKey } from "@/components/shorts/NeedKey";
 import { exportReport } from "@/lib/export-check";
+import { storyStale } from "@/lib/story-check";
 import { EMPTY_FACTS, type AdFacts } from "@/lib/ad-compliance";
 import type { KitData } from "@/lib/product-kit";
 
@@ -499,6 +501,51 @@ export function ShortStudio({
               ) : null}
             </div>
           ) : null}
+          {(() => {
+            const sc = v.storyCheck;
+            const stale = storyStale(v);
+            const locked = sc && !stale && sc.issues.some((i) => v.shots.find((x) => x.id === i.shotId)?.stage !== "draft");
+            return (
+              <div className="mt-2 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={!sc || stale ? "text-amber-200/80" : sc.pass ? "text-emerald-300" : "text-rose-300"}>
+                    剧本对账：{!sc ? "还没查，出首帧前会自动查" : sc.error ? `上次没查成（${sc.error}）` : stale ? "剧本改过，出首帧前会自动再查" : sc.pass ? "产品、人物、节日、前后都对得上" : `${sc.issues.length} 处对不上，这几镜出首帧会被拦住`}
+                  </span>
+                  <button
+                    type="button"
+                    className={btn}
+                    disabled={busy}
+                    title="大脑 K3 对照产品资料、家庭、节日和开头查每一镜；还没确认构图的镜头有问题会自动改写"
+                    onClick={() =>
+                      start(async () => {
+                        setMsg({ tone: "ok", text: "K3 对账中…（1–3 分钟）" });
+                        apply(await storyCheckAction(v.id), "剧本对账完成");
+                      })
+                    }
+                  >
+                    {sc && !stale ? "重新对账" : "现在对账"}（K3，约 $0.03）
+                  </button>
+                </div>
+                {sc && !stale ? (
+                  <ul className="list-disc space-y-0.5 pl-5">
+                    {sc.fixed.map((f) => (
+                      <li key={f} className="text-emerald-300/90">{f}</li>
+                    ))}
+                    {sc.issues.map((i, k) => {
+                      const s = v.shots.find((x) => x.id === i.shotId);
+                      const n = s ? (s.hook ? `开头「${s.hook.name}」` : `#${v.shots.indexOf(s) + 1}`) : "";
+                      return (
+                        <li key={k} className="text-rose-300/90">
+                          {n}：{i.quote ? `「${i.quote}」` : ""}{i.why}
+                        </li>
+                      );
+                    })}
+                    {locked ? <li className="text-neutral-400">已确认构图的镜头不会自动改：先「退回构图」，再点重新对账</li> : null}
+                  </ul>
+                ) : null}
+              </div>
+            );
+          })()}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <button
               type="button"

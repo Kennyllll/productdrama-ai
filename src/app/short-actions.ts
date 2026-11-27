@@ -7,6 +7,8 @@ import { productPhotos } from "@/lib/product-photos";
 import { requireProductReady } from "@/lib/product-readiness-repo";
 import { getAdFacts } from "@/lib/ad-facts-repo";
 import { exportReport, formalExportError } from "@/lib/export-check";
+import { getBrainKey as brainKey, kimiChat, parseJson } from "@/lib/brain/kimi";
+import { parseStoryIssues, STORY_FIELDS, storyBlock, storyHash, storyLabel, storyRewrites, storyStale } from "@/lib/story-check";
 import { previewPath } from "@/lib/export-paths";
 import { keyFromPath, putFile, readFile, storageKey } from "@/lib/storage";
 import { randomUUID } from "node:crypto";
@@ -2117,6 +2119,18 @@ export async function runJobAction(
   approvedUsd: number,
 ): Promise<Result<StudioState>> {
   try {
+    // 花钱前先对账剧本（K3 约 $0.03）：剧本改过就重查；这一镜还有问题就拦住。没配 K3 Key 就跳过
+    if ((kind === "frame" || kind === "video") && brainKey()) {
+      if (storyStale(load(videoId))) {
+        try {
+          await runStoryCheck(videoId);
+        } catch (e) {
+          throw new Error(`剧本对账没跑成（${e instanceof Error ? e.message : "未知错误"}），这次没花钱，稍后再点`);
+        }
+      }
+      const b = storyBlock(load(videoId), shotId, kind);
+      if (b) throw new Error(b);
+    }
     const { p, key, approval } = await withVideoLock(videoId, async () => {
       const p = await prepare(videoId, shotId, kind, seconds, reason, overLimit);
       if (p.quote.blocked.length) throw new Error(p.quote.blocked[0]);
@@ -2133,6 +2147,79 @@ export async function runJobAction(
     return { result: state(videoId) };
   } catch (e) {
     console.error("[runJob]", kind, shotId, e instanceof Error ? e.message : e);
+    return { ...fail(e), result: getShortVideo(videoId) ? state(videoId) : undefined };
+  }
+}
+
+/** 剧本对账要对照的东西：产品资料、绑定的家庭、节日、每一镜的文字 */
+function storyInput(v: ShortVideo) {
+  const th = videoTheme(v);
+  const fams = Object.values(v.families ?? {}).flatMap((id) => {
+    const f = getFamily(id);
+    return f ? [{ family: f.name, about: f.about.en, members: f.members.map((m) => memberText(m, th.theme)) }] : [];
+  });
+  return {
+    productFacts: productText(v.projectId),
+    families: fams.length ? fams : "no family bound: people are free, but must stay the same across all shots",
+    theme: th.theme === "none" ? "none (no holiday or occasion at all)" : th.theme === "custom" ? th.themeText || "custom" : findTheme(th.theme).label,
+    shots: v.shots.map((s) => ({ shotId: s.id, label: storyLabel(v, s), editable: s.stage === "draft", selfie: !!s.hook?.selfie, beat: s.beat, ...Object.fromEntries(STORY_FIELDS.map((k) => [k, s[k] ?? ""])) })),
+  };
+}
+
+const STORY_SYSTEM = [
+  "You check the script of a TikTok-style product video before any image or video is paid for. caption is on-screen English text; description, camera, productNote, framePrompt and motionPrompt drive the image and video generation.",
+  "Compare EVERY shot against:",
+  "1. feature: productFacts are the only true facts about the product. Any part, feature or function not in productFacts is invented (for example a parent push handle, an adjustable or sliding seat, lights, music, a canopy, folding) and must be flagged.",
+  "2. negative: text that shows or says the product failing or falling short (the child cannot reach the pedals, it tips over, it breaks, it is hard to assemble). A small conflict must come from the situation or the child, never from the product.",
+  "3. holiday: the video's theme. Any other holiday or occasion (for example Father's Day in a Boxing Day video, or any holiday when theme is none) is a mismatch. Negated mentions such as 'no Christmas tree' are fine.",
+  "4. people: when a family is bound, the people must be those members (by name, age, look, ethnicity, clothes). A generic 'father' or 'toddler' with a different look is a mismatch.",
+  "5. continuity: openings (labels starting with 开头) and body shots must show the same people, the same place and the same time of day. A selfie opening (selfie=true) is filmed somewhere else on purpose (for example in a car): do not flag its place or light.",
+  "Flag only real problems from these 5 kinds, not style or wording taste. quote = the exact words from the shot. why = one short sentence in plain Simplified Chinese for a non-technical user.",
+  "For every shot with editable=true that has a problem, also return a corrected version of all its fields that fixes every problem while keeping its beat, length, camera and role in the story. Use only features in productFacts. Keep the language of each field (caption in English, the others as they are).",
+  'Return JSON only: {"issues":[{"shotId","kind","quote","why"}],"rewrites":[{"shotId","caption","description","camera","productNote","framePrompt","motionPrompt"}]}. No problems = empty arrays.',
+].join("\n");
+
+/** 剧本对账：K3 查一遍，能改的镜头（还在写剧本）自动改写后再查，最多改 2 次；结果存在视频上，花费记账 */
+async function runStoryCheck(videoId: string) {
+  let v = load(videoId);
+  const fixed: string[] = [];
+  let usd = 0;
+  let issues: ReturnType<typeof parseStoryIssues> = [];
+  try {
+    for (let round = 0; ; round++) {
+      const { message, usage } = await kimiChat({ messages: [{ role: "system", content: STORY_SYSTEM }, { role: "user", content: JSON.stringify(storyInput(v)) }], effort: "low", json: true, maxTokens: 12_000, timeoutMs: 300_000 });
+      usd += usage.usd;
+      const d = (parseJson(message.content) ?? {}) as { issues?: unknown; rewrites?: unknown };
+      issues = parseStoryIssues(d.issues, v);
+      const rw = storyRewrites(d.rewrites, v, issues);
+      if (!issues.length || !rw.length || round >= 2) break;
+      const caps = await ensureEnglish(rw.map((r) => r.fields.caption ?? v.shots.find((s) => s.id === r.shotId)!.caption));
+      rw.forEach((r, k) => {
+        const s = v.shots.find((x) => x.id === r.shotId)!;
+        Object.assign(s, r.fields, { caption: caps[k] });
+        s.textBasis = basisOf(s, placeOf(v, s));
+        fixed.push(`${storyLabel(v, s)} 已自动重写：${issues.filter((i) => i.shotId === s.id).map((i) => i.why).join("；")}`);
+      });
+      saveShortVideo(v);
+      v = load(videoId);
+    }
+    v.storyCheck = { hash: storyHash(v), at: new Date().toISOString(), pass: !issues.length, issues, fixed, usd: Math.round(usd * 10000) / 10000 };
+  } catch (e) {
+    v = load(videoId);
+    v.storyCheck = { hash: storyHash(v), at: new Date().toISOString(), pass: false, issues: [], fixed, usd: Math.round(usd * 10000) / 10000, error: e instanceof Error ? e.message : "未知错误" };
+    throw e;
+  } finally {
+    saveShortVideo(v);
+    if (usd > 0) addLedgerEntry({ projectId: v.projectId, shotCode: `${v.title} / 剧本`, kind: "check", model: "kimi-k3.1-pro", usd: Math.round(usd * 10000) / 10000, note: "短视频 · 剧本对账（K3）" });
+    refresh(v);
+  }
+}
+
+export async function storyCheckAction(videoId: string): Promise<Result<StudioState>> {
+  try {
+    await runStoryCheck(videoId);
+    return { result: state(videoId) };
+  } catch (e) {
     return { ...fail(e), result: getShortVideo(videoId) ? state(videoId) : undefined };
   }
 }

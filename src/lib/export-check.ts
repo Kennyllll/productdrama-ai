@@ -3,6 +3,7 @@ import { checkAdText, type AdFacts, type AdIssue, type AdText } from "@/lib/ad-c
 import { bodyOf, hooksOf, videoTheme, type ShortShot, type ShortVideoData } from "@/lib/shorts";
 import { THEME_WORDS } from "@/lib/shorts-sync";
 import { findTheme } from "@/lib/shorts-scenes";
+import { STORY_KIND, storyLabel, storyStale } from "@/lib/story-check";
 
 export interface BodyGap {
   n: number;
@@ -57,9 +58,18 @@ export function holidayWarns(v: Pick<ShortVideoData, "shots"> & Partial<Pick<Sho
   });
 }
 
-export function exportReport(v: Pick<ShortVideoData, "shots"> & Partial<Pick<ShortVideoData, "theme" | "themeText" | "room">>, facts: AdFacts, fileOk?: (s: ShortShot) => boolean): ExportReport {
+/** 剧本对账查出、还没改掉的问题（剧本改过就不算，出首帧前会重查） */
+export function storyWarns(v: Pick<ShortVideoData, "shots"> & Partial<Pick<ShortVideoData, "theme" | "themeText" | "families" | "storyCheck">>): AdIssue[] {
+  if (!v.storyCheck || storyStale(v)) return [];
+  return v.storyCheck.issues.flatMap((i) => {
+    const s = v.shots.find((x) => x.id === i.shotId);
+    return s ? [{ level: "warn" as const, where: storyLabel(v, s), hit: i.quote || STORY_KIND[i.kind], why: `${STORY_KIND[i.kind]}：${i.why}` }] : [];
+  });
+}
+
+export function exportReport(v: Pick<ShortVideoData, "shots"> & Partial<Pick<ShortVideoData, "theme" | "themeText" | "room" | "families" | "storyCheck">>, facts: AdFacts, fileOk?: (s: ShortShot) => boolean): ExportReport {
   const issues = checkAdText(exportTexts(v), facts);
-  return { gaps: bodyGaps(v, fileOk), blocks: issues.filter((i) => i.level === "block"), warns: [...issues.filter((i) => i.level === "warn"), ...holidayWarns(v)] };
+  return { gaps: bodyGaps(v, fileOk), blocks: issues.filter((i) => i.level === "block"), warns: [...issues.filter((i) => i.level === "warn"), ...holidayWarns(v), ...storyWarns(v)] };
 }
 
 /** 正式导出被拦的原因（一句话）；空 = 可以正式导出 */
