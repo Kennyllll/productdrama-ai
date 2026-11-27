@@ -314,7 +314,8 @@ export async function saveShortVideoAction(
           const ok = Object.keys(en).length > 0;
           Object.assign(s, en);
           s.issues = (s.issues ?? []).filter((x) => x.id !== EN_STALE);
-          if (!ok) s.issues.push({ id: EN_STALE, text: "改了中文，英文提示词没跟着改成（文字模型没回应）：再点一次「保存分镜」，或在「高级」里手动改英文", fromJobId: null, status: "open" });
+          // 文字模型不在（没 Key / 没回应）：出图直接用中文，不让新手去改英文
+          if (!ok) Object.assign(s, zhPrompts(s));
         }
       }
       // 文字改过（或第一次保存）：记下这份文字对应的 3D
@@ -779,8 +780,16 @@ export async function setVideoFamilyAction(videoId: string, slot: number, family
       const to = familyId ? getFamily(familyId)!.name : "不指定";
       return { result: { confirm: `家庭位 ${k} 换成「${to}」以后，这些已经做过的镜头画面里还是原来的人，要退回构图重做：\n${redo.map(label).join("、")}\n\n重做大约 $${usd.toFixed(2)}（每次生成照样先审批）。已经生成的画面会留在历史里。` } };
     }
+    // 旧家庭的人名免费换成新家庭的（按角色、大人 / 小孩对应），3D 里绑的人也跟着换
+    const was = v.families?.[k] ? getFamily(v.families[k]) : null;
+    const now = familyId ? getFamily(familyId) : null;
+    const mc = was && now
+      ? mapCast(was.members.map((m) => ({ slot: 1, id: m.id, name: m.name, role: m.role, child: m.role === "son" || m.role === "daughter" || m.age < 14, family: was.name })), [{ slot: 1, name: now.name, members: now.members }])
+      : null;
+    const swaps: Swap[] = mc ? [...mc.swaps, { from: familyWord(was!.name), to: familyWord(now!.name) }] : [];
     for (const s of changed) {
-      if (s.layout?.figures) s.layout.figures = s.layout.figures.map(({ memberId: _m, h: _h, ...f }) => (void _m, void _h, f));
+      if (swaps.length) for (const f of ["caption", ...TEXT_FIELDS] as const) s[f] = swapText(s[f] ?? "", swaps).text;
+      if (s.layout?.figures) s.layout.figures = s.layout.figures.map(({ memberId: _m, h: _h, ...f }) => (mc?.ids.has(_m ?? "") ? { ...f, memberId: mc.ids.get(_m!) } : (void _h, f)));
       if (redo.includes(s)) {
         s.compFile = null;
         s.stage = "draft";
@@ -913,6 +922,12 @@ export async function setBudgetAction(videoId: string, usd: number | null, reaso
 const CJK = /[\u3400-\u9fff]/;
 
 /** 字幕必须是英文（面向北美）；AI 偶尔会写成中文，发现就再翻译一次 */
+/** 手写中文、没有英文提示词时：直接用中文拼出图 / 动作提示词（免费） */
+function zhPrompts(s: ShortShot): { framePrompt: string; motionPrompt: string } {
+  const frame = [s.description, s.camera && `机位：${s.camera}`, s.productNote && `产品：${s.productNote}`].filter(Boolean).join("\n");
+  return { framePrompt: frame.slice(0, 2000), motionPrompt: (s.motionPrompt.trim() && !s.motionPrompt.includes(s.description) ? s.motionPrompt : s.description).slice(0, 1000) };
+}
+
 async function ensureEnglish(texts: string[]): Promise<string[]> {
   const idx = texts.map((t, i) => (CJK.test(t) ? i : -1)).filter((i) => i >= 0);
   if (!idx.length) return texts;
@@ -1054,7 +1069,8 @@ export async function shotStageAction(videoId: string, shotId: string, action: S
       case "confirm_comp":
         need(s.stage === "draft", "构图已确认过");
         need(!waitingFor(v, s.id), `按顺序做：先把 #${waitingFor(v, s.id)} 做到“采用”`);
-        need(s.framePrompt.trim().length > 20 && s.description.trim().length > 0, "构图描述和首帧提示词还没写好");
+        need(s.description.trim().length > 0, "「画面」还没写：用一句中文写这一镜拍什么");
+        if (s.framePrompt.trim().length <= 20) Object.assign(s, zhPrompts(s));
         need(!opMissing(s.operator), "拍摄者：勾了“空着的手入镜”，要先选动作");
         need(!!s.hook?.selfie || !filmerId(v, s) || !(s.layout?.figures ?? []).some((f) => f.memberId === filmerId(v, s)), "拿手机的人不能同时出现在画面里：换一个人拍，或者把这个人偶换成别人");
         need(s.hook?.scene === "car" || (!!s.layout && !!s.compFile && fs.existsSync(path.join(videoDir(v.projectId, v.id), s.compFile))), "先在 3D 布景里摆好机位，并保存 3D 构图");

@@ -41,7 +41,7 @@ const poseLabel = (p: string) => FIGURE_POSES.find((x) => x.id === p)?.label ?? 
 const opLabel = describeOp;
 
 /** 本镜实际用的场地（旧数据没有 s.scene 时由服务端按场地库解析） */
-export type Place = { name: string; outdoor: boolean; sh?: ShotScene };
+export type Place = { name: string; outdoor: boolean; sh?: ShotScene; /** 视频设的节日（检查文字按它，不按场地旧版本） */ theme?: string };
 
 export function basisOf(s: ShortShot, place: Place | null): ShotBasis {
   const l = s.layout;
@@ -51,7 +51,7 @@ export function basisOf(s: ShortShot, place: Place | null): ShotBasis {
     scene: sh ? `${sh.id}@${sh.v}` : "",
     sceneName: place?.name ?? "",
     outdoor: place?.outdoor ?? false,
-    theme: sh?.theme === "custom" ? `custom:${sh.themeText ?? ""}` : (sh?.theme ?? "none"),
+    theme: place?.theme ?? (sh?.theme === "custom" ? `custom:${sh.themeText ?? ""}` : (sh?.theme ?? "none")),
     figures: l ? figuresOf(l).map((f) => `${f.kind === "adult" ? "大人" : "小孩"}·${f.action || poseLabel(f.pose)}`).sort() : [],
     lens: l ? Math.round(l.lens) : 0,
     camH: l ? Math.round(l.camPos[2] * 20) / 20 : 0,
@@ -166,9 +166,13 @@ export function shotChecks(s: ShortShot, b: ShotBasis): string[] {
 
 function themeIssues(all: string, text: string, theme: string): string[] {
   const th = theme.startsWith("custom:") ? "" : theme;
-  if (th && th !== "none" && THEME_WORDS[th] && !THEME_WORDS[th].test(all)) return [`节日是「${findTheme(th).label}」，文字、字幕和提示词里都没提到`];
-  const hit = th === "none" ? Object.entries(THEME_WORDS).find(([, re]) => re.test(text)) : undefined;
-  return hit ? [`节日是「无节日」，文字或字幕里还写着${findTheme(hit[0]).label}`] : [];
+  const other = Object.entries(THEME_WORDS).find(([id, re]) => id !== th && re.test(text) && !(THEME_WORDS[th]?.test(text) && re.source === THEME_WORDS[th].source));
+  if (th === "none") return other ? [`节日是「无节日」，文字或字幕里还写着${findTheme(other[0]).label}：删掉这几个词`] : [];
+  if (!th) return [];
+  const out: string[] = [];
+  if (other) out.push(`节日是「${findTheme(th).label}」，文字里写的却是${findTheme(other[0]).label}：换成${findTheme(th).label}`);
+  if (THEME_WORDS[th] && !THEME_WORDS[th].test(all)) out.push(`节日是「${findTheme(th).label}」，文字、字幕和提示词里都没提到：在画面或字幕里加一句${findTheme(th).label}的元素`);
+  return out;
 }
 
 export function shotSync(s: ShortShot, place: Place | null): ShotSync {

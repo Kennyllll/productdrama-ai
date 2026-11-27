@@ -28,7 +28,7 @@ export async function KeyChecklist() {
     { id: "ark", name: "火山方舟", need: "必填", does: "只拍产品的镜头出视频（Seedance）", where: "火山引擎控制台 → 火山方舟 → API Key 管理", ok: arkPublicInfo().configured, extra: "Seedance 2.x 要求账户余额超过 200 元，请到火山引擎控制台看" },
     { id: "gemini", name: "Gemini", need: "建议", does: "首帧和视频自动检查；不填就要你自己看", where: "aistudio.google.com → Get API key", ok: visionPublicInfo().configured },
     { id: "fal", name: "fal.ai", need: "必填", does: "出首帧（默认的 Seedream）；没有 3D 文件时用照片建 3D 模型", where: "fal.ai → Dashboard → Keys", ok: falPublicInfo().configured },
-    { id: "kimi", name: "Kimi", need: "可选", does: "AI 大脑：回答问题、给建议", where: "platform.kimi.ai → API Keys", ok: brainPublicInfo().configured },
+    { id: "kimi", name: "Kimi", need: "建议", does: "AI 大脑 + 出首帧前的剧本对账（没有它查不了剧本，首帧会被拦住）", where: "platform.kimi.ai → API Keys", ok: brainPublicInfo().configured },
     { id: "elevenlabs", name: "ElevenLabs", need: "可选", does: "配音和音效", where: "elevenlabs.io → 个人设置 → API Keys", ok: elevenLabsPublicInfo().configured },
   ];
   const required = rows.filter((r) => r.need === "必填");

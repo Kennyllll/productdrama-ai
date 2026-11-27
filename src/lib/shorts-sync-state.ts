@@ -62,7 +62,8 @@ export function castConflicts(v: ShortVideo, s: ShortShot): string[] {
 export function placeOf(v: ShortVideo, s: ShortShot): Place | null {
   const sh = s.scene ?? legacyShotScene(ensureScenes(v.projectId, listShortVideos(v.projectId)), v.room, videoTheme(v).theme);
   const sc = getScene(sh.id);
-  return sc ? { name: sc.name, outdoor: sc.outdoor, sh } : null;
+  const vt = videoTheme(v);
+  return sc ? { name: sc.name, outdoor: sc.outdoor, sh, theme: vt.theme === "custom" ? `custom:${vt.themeText ?? ""}` : vt.theme } : null;
 }
 
 export function rigOf(v: ShortVideo) {

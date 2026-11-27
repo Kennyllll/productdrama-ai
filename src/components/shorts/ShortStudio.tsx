@@ -527,12 +527,12 @@ export function ShortStudio({
                     title="大脑 K3 对照产品资料、家庭、节日和开头查每一镜；还没确认构图的镜头有问题会自动改写"
                     onClick={() =>
                       start(async () => {
-                        setMsg({ tone: "ok", text: "K3 对账中…（1–3 分钟）" });
+                        setMsg({ tone: "ok", text: "Kimi K3 对账中…（1–3 分钟）" });
                         apply(await storyCheckAction(v.id), "剧本对账完成");
                       })
                     }
                   >
-                    {sc && !stale ? "重新对账" : "现在对账"}（K3，约 $0.03）
+                    {sc && !stale ? "重新对账" : "现在对账"}（Kimi K3，约 $0.03）
                   </button>
                   {sc && !stale && sc.issues.length ? (
                     <button
@@ -937,10 +937,11 @@ export function ShortStudio({
               className={btn}
               disabled={busy}
               onClick={() => {
+                const nid = Math.random().toString(36).slice(2, 10);
                 setShots((xs) => [
                   ...xs,
                   {
-                    id: Math.random().toString(36).slice(2, 10),
+                    id: nid,
                     beat: "",
                     useSeconds: 3,
                     trimStart: 0,
@@ -961,6 +962,7 @@ export function ShortStudio({
                   },
                 ]);
                 setDirty(true);
+                setFocus(nid);
               }}
             >
               + 镜头

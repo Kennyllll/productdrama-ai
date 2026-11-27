@@ -19,7 +19,7 @@ export function SyncNotice({ sync, busy, working, canRewrite, why, msg, onRewrit
         {list.map((x) => (
           <p key={x}>• {x}</p>
         ))}
-        <p className="text-neutral-400">改法（免费）：把画面、字幕里的节日词删掉或改掉；要是节日本来就该有，到上面「视频设定」改节日。</p>
+        <p className="text-neutral-400">改法（免费）：照每条后面写的改画面和字幕；要是节日本来就选错了，到上面「视频设定」改节日。</p>
       </div>
     );
   return (
