@@ -57,7 +57,7 @@ export async function renderShort(v: ShortVideo, dest = finalPath(v), hookId?: s
     const src = shotClipPath(v, s);
     if (!src || !fs.existsSync(src)) throw new Error(`镜头 ${i + 1} 的视频文件不存在`);
     // 声音关了的镜头用静音；开了但视频本身没声音（关着声音生成的）也用静音
-    const sound = shotSound(v, s) && (await hasAudio(src));
+    const sound = v.exportSound !== false && shotSound(v, s) && (await hasAudio(src));
     let at = 0;
     for (const [k, c] of shotCuts(s).entries()) {
       const zoom = c.zoom > 1 ? [`scale=${Math.round(1080 * c.zoom / 2) * 2}:${Math.round(1920 * c.zoom / 2) * 2}`, "crop=1080:1920"] : [];

@@ -30,7 +30,7 @@ export function ExportHistory({ videoId, refreshKey }: { videoId: string; refres
               <span className="text-neutral-400">操作人：{x.actor}</span>
               <span className="text-neutral-300">开头：{x.snapshot.hook?.name ?? "无"}</span>
               <span className="text-neutral-300">
-                {x.snapshot.shots.length} 镜 · {x.snapshot.seconds} 秒 · 字幕{x.snapshot.captions ? "开" : "关"}
+                {x.snapshot.shots.length} 镜 · {x.snapshot.seconds} 秒 · 字幕{x.snapshot.captions ? "开" : "关"}{x.snapshot.sound === undefined ? "" : ` · 声音${x.snapshot.sound ? "开" : "关"}`}
               </span>
               <span className="text-emerald-300">这版素材 {usd(x.snapshot.mediaUsd)}</span>
               <a className="ml-auto text-sky-300 underline" href={`/api/shorts/${x.videoId}?version=${x.id}`}>

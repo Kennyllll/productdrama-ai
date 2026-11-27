@@ -19,7 +19,10 @@ test("骑车时不管身高，手都在车把、脚踏高度跟着接触点", ()
   for (const h of [0.88, 0.95, 1.1]) {
     const p = presetPose("child", "ride", rig, h);
     assert.deepEqual(p.handL, [rig.gripX, rig.gripY, rig.gripZ]);
-    assert.ok(Math.abs(p.footL[1] - (0.135 + figureDims("child", h).ankle)) < 1e-9);
+    const mid = 0.135 + figureDims("child", h).ankle;
+    assert.ok(Math.abs((p.footL[1] + p.footR[1]) / 2 - mid) < 1e-9);
+    assert.ok(p.footL[1] - p.footR[1] > 0.1, "两个脚踏一高一低");
+    assert.ok(p.footL[2] > p.footR[2], "高的那只脚靠前");
   }
 });
 

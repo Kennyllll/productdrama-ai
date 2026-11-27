@@ -39,7 +39,8 @@ test("逐词出现：词数等于事件数；对比每 0.5 秒一个词；切成
 });
 
 test("声音默认关；视频开了才带；自拍开头强制带", () => {
-  assert.equal(shotSound({}, { hook: { name: "x" } }), false);
+  assert.equal(shotSound({}, { hook: { name: "x" } }), true);
+  assert.equal(shotSound({ sound: false }, { hook: { name: "x" } }), false);
   assert.equal(shotSound({ sound: true }, {}), true);
   assert.equal(shotSound({ sound: false }, { hook: { name: "x", selfie: true } }), true);
 });

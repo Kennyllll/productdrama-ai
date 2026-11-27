@@ -221,7 +221,10 @@ export function presetPose(kind: FigureKind, pose: FigurePose, ride: RideRig = r
   const shoulderY = (hipY: number, lean: number) => hipY + d.torso * Math.cos(lean) - 0.03 * H;
   if (pose === "ride") {
     const hipY = ride.seatY + 0.035 * H;
-    return { hip: [0, hipY, -0.01], lean: 0.25, head: 0, handL: [ride.gripX, ride.gripY, ride.gripZ], handR: [-ride.gripX, ride.gripY, ride.gripZ], footL: [ride.footX, (ride.footY ?? 0) + d.ankle, ride.footZ], footR: [-ride.footX, (ride.footY ?? 0) + d.ankle, ride.footZ] };
+    // 三轮车：两个脚踏在曲柄两头差 180°，左脚高、靠前，右脚低、靠后
+    const c = ride.footY === undefined ? 0 : Math.min(0.09, Math.max(0.04, 0.6 * ride.footY));
+    const fy = (ride.footY ?? 0) + d.ankle;
+    return { hip: [0, hipY, -0.01], lean: 0.25, head: 0, handL: [ride.gripX, ride.gripY, ride.gripZ], handR: [-ride.gripX, ride.gripY, ride.gripZ], footL: [ride.footX, fy + 0.85 * c, ride.footZ + 0.5 * c], footR: [-ride.footX, fy - 0.85 * c, ride.footZ - 0.5 * c] };
   }
   if (pose === "crouch") {
     const hipY = 0.27 * H;

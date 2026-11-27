@@ -275,7 +275,7 @@ export async function reviewShortFrame(o: { image: Buffer; productName: string; 
     `Holiday: ${o.holiday}.`,
     "Checklist:",
     "1. People: the number of people and who they are (adult/child, boy/girl) match the 3D blocking; nobody extra, nobody missing, nobody duplicated.",
-    `2. Poses: anyone riding sits on the saddle with both hands on the handlebar grips${o.facts3d.includes("pedal") ? " and both feet on the pedals" : ""}; standing, crouching or pointing people do what the blocking says.`,
+    `2. Poses: anyone riding sits on the saddle with both hands on the handlebar grips${o.facts3d.includes("pedal") ? " and both feet on the pedals, one pedal up and forward and the other down and back (they sit at opposite ends of the crank; both at the same height is wrong)" : ""}; standing, crouching or pointing people do what the blocking says.`,
     `3. The ${name} faces the way the blocking says (front toward camera / three-quarter / side) and is plausibly sized next to the people.`,
     o.productRefs?.length && !o.cadRender && !o.car
       ? `4. Exactly one ${name}, not duplicated; its parts and structure are judged only in "parts" (4b), never in "issues".`
@@ -326,7 +326,7 @@ export async function reviewShortVideo(o: { frames: { t: number; img: Buffer }[]
     : [
         "You check a generated TikTok product clip, given frames sampled every 0.5 s and a reference photo of the real product. Only report real, clearly visible problems; no style opinions.",
         `Product: ${name} (${o.productFacts}).`,
-        "1. In EVERY frame where the product is visible, compare it with the reference photo and with the first frame: count the wheels and how many are at the back; every part in the reference (baskets, seat and backrest, fender, pedals, handlebar) is still there; nothing melts, merges, bends, duplicates, disappears or changes size relative to the rest of the product; colors and logo stay the same.",
+        "1. In EVERY frame where the product is visible, compare it with the reference photo and with the first frame: count the wheels and how many are at the back; every part in the reference (baskets, seat and backrest, fender, pedals, handlebar) is still there; the two pedals stay at opposite ends of the crank (one up, one down, never level side by side); nothing melts, merges, bends, duplicates, disappears or changes size relative to the rest of the product; colors and logo stay the same.",
         "2. A part that is only hidden behind a person or cut by the frame edge is fine.",
         "3. People keep the same face, hair and clothes in every frame; nobody appears or vanishes; anatomy is correct.",
         "4. No glowing spots, flashes, garbled text or watermarks. Logo text: if the logo on the product is large enough to read in the first frame, it must read the same letters in every later frame; report it if the letters change or turn into gibberish (e.g. KRIDDO becoming PNDDS). If it is too small to read, do not judge it.",

@@ -47,6 +47,8 @@ export interface ExportSnapshot {
   hook: { id: string; name: string; libId?: string; libName?: string; effect?: string; caption: string } | null;
   shots: SnapshotShot[];
   captions: boolean;
+  /** 成片带不带声音；旧版本没记 */
+  sound?: boolean;
   seconds: number;
   resolution: string;
   /** 这一版用到的首帧 + 视频的钱（实际价优先，没有就用审批时的估价） */
@@ -61,7 +63,7 @@ export function missingBody(v: Pick<ShortVideoData, "shots">): string[] {
   return v.shots.flatMap((s, i) => (!s.hook && (s.stage !== "accepted" || !s.videoJobId) ? [`#${i + 1}${s.beat ? ` ${s.beat}` : ""}`] : []));
 }
 
-export function buildSnapshot(v: Pick<ShortVideoData, "shots" | "captions" | "resolution">, hook: ShortShot | null, jobs: Job[]): ExportSnapshot {
+export function buildSnapshot(v: Pick<ShortVideoData, "shots" | "captions" | "resolution" | "exportSound">, hook: ShortShot | null, jobs: Job[]): ExportSnapshot {
   const parts = hook ? hookParts(v, hook) : [];
   const list = [...parts, ...bodyOf(v)].filter((s) => s.stage === "accepted" && s.videoJobId);
   const model = (id: string | null) => (id ? (jobs.find((j) => j.id === id)?.model ?? "") : "");
@@ -85,6 +87,7 @@ export function buildSnapshot(v: Pick<ShortVideoData, "shots" | "captions" | "re
     hook: hook?.hook ? { id: hook.id, name: hook.hook.name, libId: hook.hook.libId, libName: hook.hook.libName, effect: hook.hook.effect, caption: hook.caption } : null,
     shots,
     captions: v.captions !== false,
+    sound: v.exportSound !== false,
     seconds: round(shots.reduce((a, s) => a + s.useSeconds, 0)),
     resolution: v.resolution,
     mediaUsd: round(shots.reduce((a, s) => a + s.usd, 0)),

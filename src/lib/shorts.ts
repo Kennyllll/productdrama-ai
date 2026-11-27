@@ -251,8 +251,10 @@ export interface ShortVideoData {
   themeText?: string;
   /** 家庭位（镜头的 family 编号）→ 家庭库 id；没选 = 不写具体成员 */
   families?: Record<string, string>;
-  /** 生成视频时要不要声音（只有环境音和动作声效）；默认关。自拍开头不管这里，强制开 */
+  /** 生成视频时要不要声音（只有环境音和动作声效）；默认开，false = 不要。自拍开头不管这里，强制开 */
   sound?: boolean;
+  /** 导出成片带不带声音；默认带，false = 整条静音 */
+  exportSound?: boolean;
   /** 整条视频谁拿手机（家庭位 1 的成员 id）；空 = 不指定 */
   filmer?: string;
   /** 从哪个模板（哪一版）套来的 */
@@ -287,7 +289,7 @@ export const emptyShortData = (templateId = "pov-gift", theme?: { theme: string;
 
 /** 这一镜生成视频时带不带声音：自拍开头强制带；其余跟视频的声音开关 */
 export const shotSound = (v: Pick<ShortVideoData, "sound"> & { shots?: Pick<ShortShot, "id" | "hook">[] }, s: Pick<ShortShot, "hook">): boolean =>
-  Boolean(s.hook?.selfie || v.sound || (s.hook?.partOf && v.shots?.some((x) => x.id === s.hook!.partOf && x.hook?.selfie)));
+  Boolean(s.hook?.selfie || v.sound !== false || (s.hook?.partOf && v.shots?.some((x) => x.id === s.hook!.partOf && x.hook?.selfie)));
 /** 开头的字幕效果；加效果之前采用的 Hook 开头按 Hook 名字补上 */
 export const hookEffectOf = (h: ShotHook | undefined): HookEffectId | undefined => h?.effect ?? (h?.libId ? PRESET_EFFECT[h.libName ?? h.name] : undefined);
 

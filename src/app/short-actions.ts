@@ -66,7 +66,7 @@ import { basisOf, shotChecks, shotSync, TEXT_FIELDS, type ShotSync, type TextFie
 import { cleanCarDraft, cleanShotNotes, dropGlare } from "@/lib/prompt-clean";
 import { captionIssues, castConflicts, fullSync, placeOf, rigOf, syncOf } from "@/lib/shorts-sync-state";
 import { opCompKey, operatorShows, opMissing, parseOp, opString, OP_POSES, poseOf } from "@/lib/shorts-operator";
-import { blockingText, itemSight } from "@/lib/shorts-blocking";
+import { blockingText, itemSight, PEDAL_MOTION, PEDAL_RULE } from "@/lib/shorts-blocking";
 import path from "node:path";
 import {
   addLedgerEntry,
@@ -273,7 +273,7 @@ async function englishFromChinese(s: ShortShot): Promise<{ framePrompt?: string;
 
 export async function saveShortVideoAction(
   videoId: string,
-  patch: { title?: string; brief?: string; templateId?: string; resolution?: VideoResolution; sound?: boolean; conceptId?: string | null; shots?: Partial<ShortShot>[]; exportHooks?: string[]; captions?: boolean; colorId?: string | null },
+  patch: { title?: string; brief?: string; templateId?: string; resolution?: VideoResolution; sound?: boolean; exportSound?: boolean; conceptId?: string | null; shots?: Partial<ShortShot>[]; exportHooks?: string[]; captions?: boolean; colorId?: string | null },
 ): Promise<Result<StudioState>> {
   try {
     const v = load(videoId);
@@ -288,6 +288,7 @@ export async function saveShortVideoAction(
     if (patch.templateId !== undefined) v.templateId = findTemplate(patch.templateId).id;
     if (patch.resolution !== undefined && patch.resolution in VIDEO_USD_PER_SEC) v.resolution = patch.resolution;
     if (patch.sound !== undefined) v.sound = patch.sound === true;
+    if (patch.exportSound !== undefined) v.exportSound = patch.exportSound === true;
     if (patch.conceptId !== undefined) v.conceptId = v.concepts.some((c) => c.id === patch.conceptId) ? patch.conceptId : null;
     if (patch.shots) {
       const jobs = listJobs(videoId);
@@ -376,7 +377,7 @@ export async function draftHookAction(videoId: string, libId: string, values: Re
         family: members.map((m) => ({ memberId: m.id, name: m.name, role: m.role, age: m.age })),
         filmer: filmer ? (cast?.members.find((m) => m.id === filmer)?.name ?? filmer) : "unnamed",
         presetPeople: stage.people,
-        rideRule: rig?.footY !== undefined ? "the rider sits on the saddle, both hands on the handlebar grips, both feet ON the pedals (never dangling, never on the ground)" : "the rider sits on the saddle, both hands on the handlebar grips, feet on the ground",
+        rideRule: rig?.footY !== undefined ? `the rider sits on the saddle, both hands on the handlebar grips, both feet ON the pedals (never dangling, never on the ground); ${PEDAL_RULE}` : "the rider sits on the saddle, both hands on the handlebar grips, feet on the ground",
         nextShotPeople: first?.layout ? figuresOf(first.layout).map((f) => ({ memberId: f.memberId, kind: f.kind, pose: f.pose, onProduct: f.onProduct, action: f.action })) : [],
         holiday: th.theme && th.theme !== "none" ? th.themeText || th.theme : "none",
         productFacts: productText(v.projectId),
@@ -1544,6 +1545,7 @@ function framePromptOf(v: ShortVideo, s: ShortShot): string {
     ...plan.map((r, k) => `Image ${k + 1} ${r.text}`),
     s.layout ? layoutText(s.layout) : "",
     s.layout ? `3D BLOCKING (authoritative: the positions, poses and orientation below override any conflicting wording later in this prompt): ${blockingText(s.layout, rigOf(v))}` : "",
+    s.layout?.bike && rigOf(v)?.footY !== undefined ? `Pedals: ${PEDAL_RULE}.` : "",
     castText(v, s),
     me ? sceneText(me.sc, me.ver, me.sh, s.layout ? itemSight(s.layout) : undefined) : "",
     me ? sceneVariation(v, s, me.sc.outdoor) : "",
@@ -1655,6 +1657,7 @@ function videoPromptOf(v: ShortVideo, s: ShortShot): string {
   const au = soundPrompt(v, s, s.hook?.selfie ? selfieWho(v, s) : filmerText(v, s));
   const sp = specialText(v, s);
   const riding = (s.layout ? figuresOf(s.layout) : []).some((f) => f.onProduct);
+  const pedals = s.layout?.bike && rigOf(v)?.footY !== undefined ? `The ${PEDAL_RULE}.${riding ? ` ${PEDAL_MOTION}` : ""}\n` : "";
   // 骑向镜头时车越来越大、角度一直变，模型最容易画错结构：改成横着骑过画面
   const motion0 = dropGlare(s.motionPrompt);
   const motion = riding ? dropCameraMoves(motion0).replace(/\b(?:straight |directly )?(?:toward|towards|at|into) (?:the )?(?:camera|lens|viewer)\b/gi, "slowly forward across the frame, front wheel first") : dropCameraMoves(motion0);
@@ -1662,7 +1665,7 @@ function videoPromptOf(v: ShortVideo, s: ShortShot): string {
   const stay = still
     ? `The product stands still on the ground for the whole clip: it never rolls, turns, slides or moves by itself, and its wheels do not spin.${moving ? " Only the camera moves." : " Nothing moves except natural ambient motion in the background."}\n`
     : `The product keeps exactly the structure, parts, colors and proportions of the first frame in every frame: no part disappears, merges, bends or changes size. Printed text and the logo on the product keep exactly the same letters as in the first frame; when the camera moves closer they only get bigger and sharper, never turn into other letters.${(s.layout ? figuresOf(s.layout) : []).some((f) => f.onProduct) ? " The rider pedals slowly and stays at about the same distance from the camera; the product keeps the same size in frame and never rides toward or past the camera. It only ever moves forward, front wheel first, in the direction its front end points; it never rolls backward or slides sideways." : ""}\n`;
-  return `${motion ? `${motion}\n` : ""}${sp ? `${sp}\n` : ""}${s.hook?.selfie && s.layout?.move?.kind === "handheld" ? "Camera: the phone is held at arm's length by the person taking the selfie; held at this angle for the whole clip; the camera does not zoom, push in, pan or drift." : moveText(s.layout)}${s.hook?.selfie ? "" : " Nobody looks into the lens."}\n${op ? `${op}${operatorShows(s.operator, s.layout) ? " Keep what shows of them partly visible and moving naturally through the clip." : ""}\n` : ""}${stay}Keep the product's shape, colors and logo exactly as in the first frame. ${still ? "Same place and lighting as the first frame throughout; no people appear." : "Same people, wardrobe, room and lighting as the first frame throughout; no new people appear."} Looks like real phone footage a parent shot for TikTok: natural speed, no slow motion, no smooth cinematic camera glide, casual unposed behavior.${still ? "" : " Faces keep changing with what happens (talking, laughing, reacting); nobody holds the same smile or pose."}${still || s.hook?.selfie ? "" : " People never look straight into the lens; when they talk to the person filming, they look just beside the phone."} No text overlays.${au ? `\n${au}` : ""}`;
+  return `${motion ? `${motion}\n` : ""}${sp ? `${sp}\n` : ""}${s.hook?.selfie && s.layout?.move?.kind === "handheld" ? "Camera: the phone is held at arm's length by the person taking the selfie; held at this angle for the whole clip; the camera does not zoom, push in, pan or drift." : moveText(s.layout)}${s.hook?.selfie ? "" : " Nobody looks into the lens."}\n${op ? `${op}${operatorShows(s.operator, s.layout) ? " Keep what shows of them partly visible and moving naturally through the clip." : ""}\n` : ""}${stay}${pedals}Keep the product's shape, colors and logo exactly as in the first frame. ${still ? "Same place and lighting as the first frame throughout; no people appear." : "Same people, wardrobe, room and lighting as the first frame throughout; no new people appear."} Looks like real phone footage a parent shot for TikTok: natural speed, no slow motion, no smooth cinematic camera glide, casual unposed behavior.${still ? "" : " Faces keep changing with what happens (talking, laughing, reacting); nobody holds the same smile or pose."}${still || s.hook?.selfie ? "" : " People never look straight into the lens; when they talk to the person filming, they look just beside the phone."} No text overlays.${au ? `\n${au}` : ""}`;
 }
 
 interface Prepared {

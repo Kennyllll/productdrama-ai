@@ -76,5 +76,5 @@ test("骑车：三轮车写双脚踩脚踏、平衡车写踩地；人跟车头�
   const toward = blockingText({ ...lay([rider]), bikeYaw: 180 }, trike).split("Person 1: ")[1] ?? "";
   assert.match(toward, /facing the camera/);
   const acted = blockingText(lay([{ ...rider, actionEn: "waving" }]), trike).split("Person 1: ")[1] ?? "";
-  assert.match(acted, /seat with both feet on the pedals, waving/);
+  assert.match(acted, /seat with both feet on the pedals, one up and forward, one down and back, waving/);
 });

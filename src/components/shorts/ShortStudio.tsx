@@ -556,9 +556,9 @@ export function ShortStudio({
                 ),
               )}
             </select>
-            <label className="flex items-center gap-1 text-xs text-neutral-300" title="开不开声音价格一样">
-              <input type="checkbox" checked={v.sound === true} disabled={busy} onChange={(e) => act(() => saveShortVideoAction(v.id, { sound: e.target.checked }))} />
-              声音（只有环境音和动作声效）{v.shots.some((x) => x.hook?.selfie) ? "：自拍开头那一镜不管这里，总是带声音和台词" : ""}
+            <label className="flex items-center gap-1 text-xs text-neutral-300" title="开不开声音价格一样；后期不要声音，在下面「预览与导出」里关">
+              <input type="checkbox" checked={v.sound !== false} disabled={busy} onChange={(e) => act(() => saveShortVideoAction(v.id, { sound: e.target.checked }))} />
+              声音（只有环境音和动作声效，价格一样）{v.shots.some((x) => x.hook?.selfie) ? "：自拍开头那一镜不管这里，总是带声音和台词" : ""}
             </label>
             <span>
               9:16 竖版 · 不用 1080p（$0.65/秒，超出每秒上限）·
@@ -1938,6 +1938,15 @@ export function ShortStudio({
             onChange={(e) => act(() => saveShortVideoAction(v.id, { captions: e.target.checked }))}
           />
           整条视频加字幕（开头按 Hook 效果，正文用同款样式）
+        </label>
+        <label className="mb-1 flex items-center gap-2 text-sm text-neutral-200">
+          <input
+            type="checkbox"
+            checked={v.exportSound !== false}
+            disabled={busy || dirty}
+            onChange={(e) => act(() => saveShortVideoAction(v.id, { exportSound: e.target.checked }))}
+          />
+          成片带声音（关掉 = 整条静音；生成时没开声音的那几段本来就没声音）
         </label>
         {v.captions !== false && shots.some((s) => !s.hook && !s.caption.trim()) ? (
           <p className="mb-2 flex flex-wrap items-center gap-2 text-xs text-amber-300">

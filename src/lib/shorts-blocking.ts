@@ -87,7 +87,10 @@ const POSE_EN: Record<string, string> = {
 
 /** 这个人在做什么：用户写的动作为准；手脚拖过但没写动作，就照 3D 人偶的样子，不用姿态名 */
 /** 骑车时脚在哪：量过脚踏高度（三轮车）= 踩脚踏，否则（平衡车）= 踩地 */
-const rideFeet = (rig: ProductRig | null | undefined) => (rig?.footY !== undefined ? "both feet on the pedals" : "feet on the ground");
+/** 三轮车左右脚踏在同一根曲柄两头，差 180° */
+export const PEDAL_RULE = "the two pedals sit at opposite ends of the crank, 180° apart: one pedal (and the foot on it) is up and forward, the other is down and back; never both at the same height side by side";
+export const PEDAL_MOTION = "When the rider pedals, the two feet go round with the pedals in opposite directions: one goes up while the other goes down.";
+const rideFeet = (rig: ProductRig | null | undefined) => (rig?.footY !== undefined ? "both feet on the pedals, one up and forward, one down and back" : "feet on the ground");
 
 function doing(f: FigureSpec, l: SetLayout, rig?: ProductRig | null): string {
   const ride = f.onProduct && !!l.bike;
