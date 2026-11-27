@@ -55,7 +55,7 @@ const STATUS_MESSAGES: Record<number, string> = {
 
 async function ark(pathname: string, opts: { method?: string; body?: unknown; timeoutMs?: number } = {}): Promise<unknown> {
   const key = getArkKey();
-  if (!key) throw new ArkError("尚未配置方舟 API Key，请到「模型设置」填写");
+  if (!key) throw new ArkError("尚未配置方舟 API Key，请到左边「设置」填写");
   let res: Response;
   try {
     res = await fetch(`${ARK_BASE}${pathname}`, {

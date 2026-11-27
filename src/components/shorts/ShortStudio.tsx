@@ -675,7 +675,7 @@ export function ShortStudio({
       ) : null}
       {!arkReady ? (
         <p className="rounded-md bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
-          尚未配置火山方舟 Key：只拍产品的镜头生成不了视频，到「模型设置」填写。
+          尚未配置火山方舟 Key：只拍产品的镜头生成不了视频，到左边「设置」填写。
         </p>
       ) : null}
       {productPhotos === 0 ? (
@@ -968,7 +968,7 @@ export function ShortStudio({
                       ? "下一步：① 确认构图（免费）"
                       : "下一步：先在场地地图摆好机位，点「保存机位 + 3D 构图」"
                     : s.stage === "comp_ok"
-                      ? hfReady ? "下一步：② 生成首帧（先弹审批框）" : "生成要先在「模型设置」填 Higgsfield Key"
+                      ? hfReady ? "下一步：② 生成首帧（先弹审批框）" : "生成要先在左边「设置」填 Higgsfield Key"
                       : s.stage === "frame_ready"
                         ? "下一步：检查首帧，点 ③ 首帧通过 或 首帧不行"
                         : s.stage === "frame_ok"

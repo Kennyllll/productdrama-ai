@@ -76,7 +76,7 @@ const STATUS_MESSAGES: Record<number, string> = {
 
 async function fal(url: string, opts: { method?: string; body?: unknown; timeoutMs?: number } = {}): Promise<unknown> {
   const key = getFalKey();
-  if (!key) throw new FalError("尚未配置 fal Key，请到「模型设置」填写");
+  if (!key) throw new FalError("尚未配置 fal Key，请到左边「设置」填写");
   let res: Response;
   try {
     res = await fetch(url, {

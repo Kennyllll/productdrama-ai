@@ -11,6 +11,17 @@ export function SyncNotice({ sync, busy, working, canRewrite, why, msg, onRewrit
   const list = [...sync.issues, ...sync.changes];
   const in3d = sync.fix3d ?? [];
   if (!list.length && !in3d.length) return null;
+  // 只有节日对不上：和 3D 无关，不用 AI，删掉或改掉节日词就行
+  if (!in3d.length && list.every((x) => x.startsWith("节日是")))
+    return (
+      <div className="mt-1 space-y-1 rounded border border-amber-400/40 bg-amber-400/5 p-2 text-xs text-amber-200">
+        <p className="font-medium">这一镜的节日对不上，生成前要改好：</p>
+        {list.map((x) => (
+          <p key={x}>• {x}</p>
+        ))}
+        <p className="text-neutral-400">改法（免费）：把画面、字幕里的节日词删掉或改掉；要是节日本来就该有，到上面「视频设定」改节日。</p>
+      </div>
+    );
   return (
     <div className="mt-1 space-y-2 rounded border border-amber-400/40 bg-amber-400/5 p-2 text-xs text-amber-200">
       <p className="font-medium">这一镜的文字和 3D 摆位有 {list.length + in3d.length} 处不一致，生成前要改好。</p>
@@ -44,7 +55,7 @@ export function SyncNotice({ sync, busy, working, canRewrite, why, msg, onRewrit
         {why ? <span className="text-neutral-400">{why}</span> : null}
       </div>
       {msg ? <p className="text-neutral-200">{msg}</p> : null}
-      <details>
+      <details open={list.length <= 3}>
         <summary className="cursor-pointer text-neutral-400">看文字是哪 {list.length} 处（删掉或改掉这几句就行，免费）</summary>
         <ul className="mt-1 list-disc pl-4">
           {list.map((x) => (

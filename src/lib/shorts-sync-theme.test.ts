@@ -9,12 +9,12 @@ const shot = (description: string, theme: string) =>
 
 test("还没摆 3D 也查节日：无节日的视频写了圣诞树要报", () => {
   const s = shot("爸爸拿着手机，圣诞树下有一辆三轮车", "none");
-  assert.deepEqual(shotChecks(s, basisOf(s, null)), ["主题是无节日，文字或字幕里还写着圣诞"]);
+  assert.deepEqual(shotChecks(s, basisOf(s, null)), ["节日是「无节日」，文字或字幕里还写着圣诞"]);
 });
 
 test("字幕里写 Santa 也算节日", () => {
   const s = { ...shot("客厅里有一辆三轮车", "none"), caption: "POV: Santa dropped this off early" } as ShortShot;
-  assert.deepEqual(shotChecks(s, basisOf(s, null)), ["主题是无节日，文字或字幕里还写着圣诞"]);
+  assert.deepEqual(shotChecks(s, basisOf(s, null)), ["节日是「无节日」，文字或字幕里还写着圣诞"]);
 });
 
 test("自动摆位按拍摄者姿势定机位高度", () => {

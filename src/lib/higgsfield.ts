@@ -51,7 +51,7 @@ const STATUS_MESSAGES: Record<number, string> = {
 
 async function hf(pathname: string, opts: { method?: string; body?: unknown; idempotencyKey?: string; timeoutMs?: number } = {}): Promise<unknown> {
   const c = getHfCreds();
-  if (!c.keyId || !c.secret) throw new HiggsfieldError("尚未配置 Higgsfield Key，请到「模型设置」填写");
+  if (!c.keyId || !c.secret) throw new HiggsfieldError("尚未配置 Higgsfield Key，请到左边「设置」填写");
   let res: Response;
   try {
     res = await fetch(`${HF_BASE}${pathname}`, {

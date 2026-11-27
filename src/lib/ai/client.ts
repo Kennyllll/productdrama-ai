@@ -7,7 +7,7 @@ export class AiError extends Error {}
 
 const STATUS_MESSAGES: Record<number, string> = {
   400: "请求格式错误",
-  401: "API Key 无效，请到「模型设置」检查",
+  401: "API Key 无效，请到左边「设置」检查",
   402: "DeepSeek 账户余额不足，请充值后再试",
   422: "请求参数错误",
   429: "请求过于频繁，请稍后再试",
@@ -31,7 +31,7 @@ export async function chatJson(opts: {
   timeoutMs?: number;
 }): Promise<{ data: unknown; usage: AiUsage }> {
   const s = getAiSettings();
-  if (!s.apiKey) throw new AiError("还没填 DeepSeek Key（AI 写创意、剧本用它）：到「模型设置」→ DeepSeek 填好再点");
+  if (!s.apiKey) throw new AiError("还没填 DeepSeek Key（AI 写创意、剧本用它）：到左边「设置」→ DeepSeek 填好再点");
   if (s.baseUrl.includes("deepseek.com")) {
     const bal = await deepseekBalance(s.baseUrl, s.apiKey);
     if (bal && !bal.ok) throw new AiError(`DeepSeek 余额不够（剩 ${bal.text}），先充值再点。这次没扣钱`);

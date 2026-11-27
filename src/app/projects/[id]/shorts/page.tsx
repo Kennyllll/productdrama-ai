@@ -20,7 +20,7 @@ export default async function ShortsPage({ params }: { params: Promise<{ id: str
   const project = findLocalProject(id);
   if (!project) notFound();
   const product = getProduct(id);
-  const photos = listAssets(id).filter((a) => a.kind === "product_photo").length;
+  const photos = listAssets(id).filter((a) => a.kind === "product_photo" || a.kind === "white_photo").length;
   const model = getProductModel(id);
   const refUrls = ["ref-front34", "ref-side", "ref-back34"]
     .filter((n) => fs.existsSync(path.join(cadDir(id), "short-refs", `${n}.png`)))

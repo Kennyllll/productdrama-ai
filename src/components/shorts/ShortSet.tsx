@@ -260,15 +260,15 @@ export function ShortSet({
       {b && st ? (
         <details open={sceneOpen} onToggle={(e) => setSceneOpen((e.currentTarget as HTMLDetailsElement).open)} className="rounded-xl border border-white/10 bg-neutral-900/60">
           <summary className="cursor-pointer select-none px-3 py-2 text-sm text-neutral-300">
-            场地：{st.scene.name} v{st.scene.v} · 主题：{st.scene.themeLabel} · 家庭 {b.family} <span className="ml-1 text-amber-300">更改</span>
+            场地：{st.scene.name} v{st.scene.v} · 节日：{st.scene.themeLabel} · 家庭 {b.family} <span className="ml-1 text-amber-300">更改</span>
           </summary>
           <SceneEditor projectId={projectId} videoId={videoId} shot={b} scenes={scenes} onDraft={onDraft} />
         </details>
       ) : null}
-      {code ? <ShotSyncBox videoId={videoId} shotId={code} label={b?.label ?? ""} figIds={(st?.layout.figures ?? []).map((f) => f.id)} layout={st?.layout} saved={Boolean(cur?.edited)} live={live} cam={camLive} members={st?.members} rig={rig} filmerId={fv[code] === "none" ? undefined : fv[code] || filmers[code]?.video || undefined} /> : null}
-      <div className="grid gap-3 @4xl/main:grid-cols-[10.625rem_minmax(0,1fr)_18.75rem] @6xl/main:grid-cols-[12.5rem_minmax(0,1fr)_21.25rem]">
-        <aside ref={setListSlot} aria-label="场景列表" className={`self-start rounded-xl border border-white/10 bg-neutral-900/60 p-2 @4xl/main:sticky ${lockedMsg ? "@4xl/main:top-40" : "@4xl/main:top-28"}`} />
-        <section className="@container min-w-0 space-y-3">
+      {code ? <ShotSyncBox videoId={videoId} shotId={code} label={b?.label ?? ""} figIds={(st?.layout.figures ?? []).map((f) => f.id)} layout={st?.layout} saved={Boolean(cur?.edited)} live={live} cam={camLive} members={st?.members} rig={rig} filmerId={fv[code] === "none" ? undefined : fv[code] || filmers[code]?.video || undefined} locked={Boolean(lockedMsg)} /> : null}
+      <div className="grid gap-3 @xl/main:grid-cols-[minmax(0,1fr)_15rem] @4xl/main:grid-cols-[10.625rem_minmax(0,1fr)_18.75rem] @6xl/main:grid-cols-[12.5rem_minmax(0,1fr)_21.25rem]">
+        <aside ref={setListSlot} aria-label="场景列表" className={`self-start @xl/main:order-3 @xl/main:col-start-2 @4xl/main:order-none @4xl/main:col-start-auto rounded-xl border border-white/10 bg-neutral-900/60 p-2 @4xl/main:sticky ${lockedMsg ? "@4xl/main:top-40" : "@4xl/main:top-28"}`} />
+        <section className="@container min-w-0 space-y-3 @xl/main:row-span-2 @4xl/main:row-span-1">
           {st ? (
             <StageEditor
               key={stageKey}
@@ -357,7 +357,7 @@ export function ShortSet({
             </details>
           ) : null}
         </section>
-        <aside aria-label="属性" className={`min-w-0 self-start @4xl/main:sticky ${lockedMsg ? "@4xl/main:top-40" : "@4xl/main:top-28"}`}>
+        <aside aria-label="属性" className={`min-w-0 self-start @xl/main:order-2 @4xl/main:order-none @4xl/main:sticky ${lockedMsg ? "@4xl/main:top-40" : "@4xl/main:top-28"}`}>
           <div ref={setPropsSlot} className={camSel ? "hidden" : ""} />
           <div ref={setCamSlot} className={camSel ? "" : "hidden"} />
         </aside>

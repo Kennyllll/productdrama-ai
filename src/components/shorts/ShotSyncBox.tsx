@@ -28,7 +28,10 @@ export function ShotSyncBox({
   members = [],
   rig,
   filmerId,
+  locked = false,
 }: {
+  /** 镜头锁定（已确认 / 已采用）：不提示保存 */
+  locked?: boolean;
   /** 这一镜谁拿手机（家庭成员 id） */
   filmerId?: string;
   videoId: string;
@@ -94,7 +97,7 @@ export function ShotSyncBox({
           ))}
         </details>
       ) : null}
-      {!saved ? <p className="text-neutral-400">摆好以后点上方「保存」：人数不对就点「+ 小孩」「+ 大人」。</p> : null}
+      {!saved && !locked ? <p className="text-neutral-400">摆好以后点上方「保存」：人数不对就点「+ 小孩」「+ 大人」。</p> : null}
     </div>
   ) : null;
   const showLive = !!now && (now.stale || now.extra.length > 0 || now.notes.length > 0);

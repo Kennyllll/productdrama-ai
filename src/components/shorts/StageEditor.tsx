@@ -193,10 +193,17 @@ export function StageEditor({
   const undoRef = useRef({ undo, redo });
   undoRef.current = { undo, redo };
 
+  const [noGl, setNoGl] = useState(false);
   useEffect(() => {
     const el = canvas.current;
     if (!el) return;
-    const renderer = new THREE.WebGLRenderer({ canvas: el, antialias: true, preserveDrawingBuffer: true });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ canvas: el, antialias: true, preserveDrawingBuffer: true });
+    } catch {
+      queueMicrotask(() => setNoGl(true));
+      return;
+    }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     const s3 = new THREE.Scene();
     s3.background = new THREE.Color("#1c1f24");
@@ -676,7 +683,7 @@ export function StageEditor({
           </div>
           <p className="text-white">{shotLabel}</p>
           <p className="text-neutral-400">
-            场地：{scene.name} v{scene.v} · 主题：{scene.themeLabel}
+            场地：{scene.name} v{scene.v} · 节日：{scene.themeLabel}
           </p>
           {locked ? <p className="text-amber-300">{locked}（人偶和产品只能看不能存；家具改动会存成新版本，本镜继续用旧版本）</p> : null}
         </div>
@@ -1144,6 +1151,7 @@ export function StageEditor({
     const viewport = (
       <div className="relative text-xs">
         <canvas ref={canvas} className="h-[62vh] min-h-[26.25rem] w-full touch-none rounded-xl border border-white/10 bg-black" />
+        {noGl ? <p className="rounded-lg border border-rose-400/40 bg-rose-400/5 p-3 text-sm text-rose-200">这个浏览器打不开 3D 画面（WebGL）：换最新版 Chrome，或在浏览器设置里打开「硬件加速」后刷新。</p> : null}
         <div className={`absolute left-2 top-2 flex flex-wrap gap-1 ${shotView ? "right-2" : "right-32"}`}>
           {ro ? null : (
             <>
@@ -1243,6 +1251,7 @@ export function StageEditor({
       </aside>
       <div className="relative">
           <canvas ref={canvas} className="h-[78vh] w-full touch-none rounded-xl border border-white/10 bg-black" />
+          {noGl ? <p className="rounded-lg border border-rose-400/40 bg-rose-400/5 p-3 text-sm text-rose-200">这个浏览器打不开 3D 画面（WebGL）：换最新版 Chrome，或在浏览器设置里打开「硬件加速」后刷新。</p> : null}
           {shotView ? null : (
             <div className="absolute right-2 top-2 flex gap-1 text-xs">
               <button type="button" aria-label="放大" className="rounded bg-black/70 px-2 py-1 text-white hover:bg-black" onClick={() => api.current?.zoom(1 / 1.25)}>

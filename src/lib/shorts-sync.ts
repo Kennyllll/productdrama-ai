@@ -166,9 +166,9 @@ export function shotChecks(s: ShortShot, b: ShotBasis): string[] {
 
 function themeIssues(all: string, text: string, theme: string): string[] {
   const th = theme.startsWith("custom:") ? "" : theme;
-  if (th && th !== "none" && THEME_WORDS[th] && !THEME_WORDS[th].test(all)) return [`主题是${findTheme(th).label}，文字、字幕和提示词里没提到`];
+  if (th && th !== "none" && THEME_WORDS[th] && !THEME_WORDS[th].test(all)) return [`节日是「${findTheme(th).label}」，文字、字幕和提示词里都没提到`];
   const hit = th === "none" ? Object.entries(THEME_WORDS).find(([, re]) => re.test(text)) : undefined;
-  return hit ? [`主题是无节日，文字或字幕里还写着${findTheme(hit[0]).label}`] : [];
+  return hit ? [`节日是「无节日」，文字或字幕里还写着${findTheme(hit[0]).label}`] : [];
 }
 
 export function shotSync(s: ShortShot, place: Place | null): ShotSync {

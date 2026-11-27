@@ -51,7 +51,7 @@ export function RulesBrowser({ projectId, rules, decisions, checks }: { projectI
                   {r.scope === "global" ? <Tag>所有项目</Tag> : null}
                   <span className="text-neutral-100">{r.text}</span>
                   {r.source ? <span className="text-xs text-neutral-500">来源：{r.source}</span> : null}
-                  {r.origin === "user" ? <DeleteRuleButton projectId={projectId} ruleId={r.id} /> : null}
+                  {r.origin === "user" ? <DeleteRuleButton projectId={projectId} ruleId={r.id} global={r.scope === "global"} /> : null}
                 </li>
               ))}
             </ul>

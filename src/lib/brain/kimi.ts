@@ -10,7 +10,7 @@ const PRICE = { input: 2, cached: 0.2, output: 10 };
 
 const STATUS_MESSAGES: Record<number, string> = {
   400: "请求格式错误",
-  401: "Kimi Key 无效，请到「模型设置」检查",
+  401: "Kimi Key 无效，请到左边「设置」检查",
   402: "Kimi 账户余额不足，请充值后再试",
   403: "Kimi Key 无权限：旗舰模型需要账户至少充值 $1",
   429: "Kimi 请求过于频繁或额度用完，请稍后再试",
@@ -84,7 +84,7 @@ export async function kimiChat(opts: {
   timeoutMs?: number;
 }): Promise<{ message: KimiMessage; usage: KimiUsage }> {
   const key = getBrainKey();
-  if (!key) throw new BrainError("尚未配置 Kimi Key，请先到「模型设置」填写");
+  if (!key) throw new BrainError("尚未配置 Kimi Key，请先到左边「设置」填写");
   const body = JSON.stringify({
     model: BRAIN_MODEL,
     messages: opts.messages,

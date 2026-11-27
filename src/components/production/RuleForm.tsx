@@ -27,6 +27,7 @@ export function RuleForm({ projectId }: { projectId: string }) {
           if (r.error) return setError(r.error);
           setText("");
           setSource("");
+          setGlobal(false);
           setError("");
           router.refresh();
         });
@@ -70,7 +71,7 @@ export function RuleForm({ projectId }: { projectId: string }) {
   );
 }
 
-export function DeleteRuleButton({ projectId, ruleId }: { projectId: string; ruleId: string }) {
+export function DeleteRuleButton({ projectId, ruleId, global = false }: { projectId: string; ruleId: string; global?: boolean }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [err, setErr] = useState("");
@@ -81,7 +82,7 @@ export function DeleteRuleButton({ projectId, ruleId }: { projectId: string; rul
         type="button"
         disabled={pending || !admin}
         onClick={async () => {
-          if (!(await askConfirm("删除这条规则？以后的镜头不再按它检查。删掉后可以在页面下方「历史版本」里恢复。"))) return;
+          if (!(await askConfirm(global ? "删除这条「所有项目」规则？所有产品都不再按它检查，别的产品里也会一起删掉。删掉后可以在页面下方「历史版本」里恢复。" : "删除这条规则？以后的镜头不再按它检查。删掉后可以在页面下方「历史版本」里恢复。"))) return;
           start(async () => {
             const r = await deleteRuleAction(projectId, ruleId);
             setErr(r.error ?? "");

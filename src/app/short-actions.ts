@@ -2191,7 +2191,7 @@ async function drive(job: JobRecord): Promise<void> {
         throw e;
       }
       if (e instanceof HiggsfieldError && (e.status === 401 || e.status === 402 || e.status === 403))
-        throw new HiggsfieldError("Key 失效或账号余额不足，任务可能还在生成：去「模型设置」换 Key 或充值后，点「继续等待」，不会重复扣费", e.status);
+        throw new HiggsfieldError("Key 失效或账号余额不足，任务可能还在生成：去左边「设置」换 Key 或充值后，点「继续等待」，不会重复扣费", e.status);
       if (!transient || Date.now() > end) throw e;
       await new Promise((res) => setTimeout(res, delay));
       delay = Math.min(15_000, Math.round(delay * 1.4));

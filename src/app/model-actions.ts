@@ -132,7 +132,7 @@ interface Plan extends ModelQuote {
 
 function plan(projectId: string, target: Target, colorId: string | null, providerId: string, refAngle: string): Plan {
   if (!findLocalProject(projectId)) throw new Error("项目不存在");
-  if (!falPublicInfo().configured) throw new Error("尚未配置 fal Key，请到「模型设置」填写");
+  if (!falPublicInfo().configured) throw new Error("尚未配置 fal Key，请到左边「设置」填写");
   const p = findProvider(providerId, target);
   if (!p) throw new Error("请选择建模服务");
   const open = openModelJob(projectId, target === "color" ? colorId : null);
