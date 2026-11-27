@@ -82,7 +82,7 @@ const ABSOLUTE: { re: RegExp; why: string }[] = [
   { re: /\bthe only\b|\bonly one\b/i, why: "“唯一”很难证明，容易被判虚假宣传。改成具体卖点。" },
   { re: /\bguarantee[ds]?\b|\b100\s?%/i, why: "“保证 / 100%”是承诺，要有真实的保修或退款条款才能写。" },
   { re: /\b(perfect|never\s+(?:breaks?|tips?|falls?))\b/i, why: "绝对化说法（完美、永远不会…），平台会限流。改成具体事实。" },
-  { re: /最(?!近|后|初|少)|第一|唯一|顶级|极致/, why: "中文绝对化用语（最、第一、唯一），海外广告也会被判虚假宣传。改成具体事实。" },
+  { re: /最(?!近|后|初|少)|第一(?!次|回|个|步|天|眼|口|下|时间)|唯一|顶级|极致/, why: "中文绝对化用语（最、第一、唯一），海外广告也会被判虚假宣传。改成具体事实。" },
 ];
 const SAFETY_RE = /\b(safest|safe|safety|non-?toxic|bpa[- ]?free|certified|astm|cpsc|en\s?71|anti-?tip|tip-?proof|crash-?proof|injury|child-?safe)\b|安全|无毒|防翻|认证/i;
 const STOCK_RE = /\bonly\s+\d+\s+(?:left|in stock|remaining)\b|\b\d+\s+(?:left|in stock|remaining)\b|\blow stock\b|\bselling out\b|\bsold out\b|仅剩|库存/i;

@@ -58,4 +58,6 @@ test("绝对化用语和儿童安全说法：警告并说明原因", () => {
   assert.equal(checkAdText([{ where: "a", text: "Folds in 3 seconds" }], ok).length, 0);
   assert.equal(checkAdText([{ where: "a", text: "Meet her new best friend" }], ok).length, 0);
   assert.equal(checkAdText([{ where: "a", text: "最好的三轮车" }], ok).length, 1);
+  assert.equal(checkAdText([{ where: "a", text: "第一次自己骑三轮车" }], ok).length, 0);
+  assert.equal(checkAdText([{ where: "a", text: "销量第一" }], ok).length, 1);
 });
