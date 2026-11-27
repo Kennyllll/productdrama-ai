@@ -89,7 +89,7 @@ export function diffBasis(a: ShotBasis, b: ShotBasis): string[] {
 }
 
 const THEME_WORDS: Record<string, RegExp> = {
-  christmas: /christmas|xmas|圣诞/i,
+  christmas: /christmas|xmas|santa|圣诞/i,
   cny: /lunar new year|chinese new year|春节|新年/i,
   halloween: /halloween|万圣/i,
   thanksgiving: /thanksgiving|感恩节/i,
@@ -115,7 +115,8 @@ export function shotChecks(s: ShortShot, b: ShotBasis): string[] {
   const all = [s.description, s.camera, s.productNote, s.framePrompt, s.motionPrompt].join("\n");
   const text = stripFilmer(stripNeg(all));
   // 节日对不上不用 3D 也能查：还没摆 3D 先查这个
-  if (!l) return themeIssues(all, text, b.theme);
+  const cap = `\n${s.caption ?? ""}`;
+  if (!l) return themeIssues(all + cap, text + cap, b.theme);
   const cam = [s.camera, s.framePrompt.split(/[.。]/)[0] ?? ""].join("\n");
   const out: string[] = [];
   const figs = figuresOf(l);
@@ -159,15 +160,15 @@ export function shotChecks(s: ShortShot, b: ShotBasis): string[] {
     if (b.camH < p.lo || b.camH > p.hi) out.push(`拍摄者是「${p.label}拍」，3D 机位离地 ${b.camH} 米（${p.label}拍一般 ${p.lo}–${p.hi} 米）`);
     if (!operatorView(op.pose, l).parts.includes("toe") && /slipper|拖鞋|their own feet|自己的脚/i.test(stripNeg(text))) out.push(`文字写了拍摄者的脚 / 拖鞋，按「${p.label}拍」和这个机位拍不到`);
   }
-  out.push(...themeIssues(all, text, b.theme));
+  out.push(...themeIssues(all + cap, text + cap, b.theme));
   return out;
 }
 
 function themeIssues(all: string, text: string, theme: string): string[] {
   const th = theme.startsWith("custom:") ? "" : theme;
-  if (th && th !== "none" && THEME_WORDS[th] && !THEME_WORDS[th].test(all)) return [`主题是${findTheme(th).label}，文字和提示词里没提到`];
+  if (th && th !== "none" && THEME_WORDS[th] && !THEME_WORDS[th].test(all)) return [`主题是${findTheme(th).label}，文字、字幕和提示词里没提到`];
   const hit = th === "none" ? Object.entries(THEME_WORDS).find(([, re]) => re.test(text)) : undefined;
-  return hit ? [`主题是无节日，文字里还写着${findTheme(hit[0]).label}`] : [];
+  return hit ? [`主题是无节日，文字或字幕里还写着${findTheme(hit[0]).label}`] : [];
 }
 
 export function shotSync(s: ShortShot, place: Place | null): ShotSync {

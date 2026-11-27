@@ -2,6 +2,7 @@
 // 坐标沿用 Blender：x 东、y 北、z 上，单位米；产品默认放在原点。
 import type { SetLayout, SetMove, SetProp } from "@/lib/production-repo";
 import { cleanFigures } from "@/lib/figures";
+import { parseOp, poseOf } from "@/lib/shorts-operator";
 
 type V3 = [number, number, number];
 const box = (lo: V3, hi: V3, rgb: V3): SetProp => ({ lo, hi, rgb });
@@ -258,10 +259,12 @@ export function frameShot(l: SetLayout, minH = 0): Pick<SetLayout, "camPos" | "l
   return { camPos: [rd(bx + ux * d), rd(by + uy * d), rd(camH)], lookAt: [bx, by, rd(z)] };
 }
 
-export function autoLayout(shot: { camera: string; description: string }, index: number): SetLayout {
+export function autoLayout(shot: { camera: string; description: string; operator?: string }, index: number): SetLayout {
   const t = `${shot.camera} ${shot.description}`;
+  // 没写高低机位就按拍摄者姿势的手机高度（站着 1.5 米、蹲着 0.75 米……），和机位检查一致
+  const op = parseOp(shot.operator);
   const [dist, lens] = has(t, /特写|close-up|closeup|macro/) ? [0.9, 50] : has(t, /近景/) ? [1.5, 35] : has(t, /全景|远景|wide|establish/) ? [4, 24] : [1.6, 28];
-  const camH = has(t, /低机位|低角度|地面|low angle|floor|蹲/) ? 0.35 : has(t, /俯|top|high angle|overhead/) ? 2 : has(t, /pov|主观/) ? 1.4 : 1.1;
+  const camH = has(t, /低机位|低角度|地面|low angle|floor|蹲/) ? 0.35 : has(t, /俯|top|high angle|overhead/) ? 2 : !op.custom ? poseOf(op.pose).camH : has(t, /pov|主观/) ? 1.4 : 1.1;
   // 相邻镜头换角度，避免直接切像跳帧（≥ 30°）
   const az = ([-35, 25, -65, 50, -10, 75, -45, 15][index % 8] * Math.PI) / 180;
   const move: SetMove = has(t, /推|push/) ? { kind: "push", amount: 0.5 } : has(t, /拉|pull/) ? { kind: "pull", amount: 0.5 } : has(t, /环绕|orbit/) ? { kind: "orbitR", amount: 0.5 } : has(t, /固定|三脚架|static|locked|tripod/) ? { kind: "static", amount: 0 } : { kind: "handheld", amount: 0.3 };
