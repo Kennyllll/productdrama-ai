@@ -94,6 +94,7 @@ export function StageEditor({
   cameraSelected = false,
   onCamera,
   shotCamLive,
+  onBrainCam,
 }: {
   /** 三栏 3D 页：场景列表、属性栏渲染到页面左右两栏 */
   listSlot?: HTMLElement | null;
@@ -103,6 +104,8 @@ export function StageEditor({
   onCamera?: (on: boolean) => void;
   /** 相机栏里还没保存的机位：视窗里的相机框跟着动 */
   shotCamLive?: Pick<SetLayout, "camPos" | "lookAt" | "lens"> | null;
+  /** 大脑挪过的机位：交给相机栏（不自动保存） */
+  onBrainCam?: (c: Pick<SetLayout, "camPos" | "lookAt" | "lens">) => void;
   brainReady?: boolean;
   videoId: string;
   /** 这一镜家庭的成员（家庭库）；人偶可以绑定 */
@@ -1042,6 +1045,7 @@ export function StageEditor({
       if (r.error || !r.result) return setBrainMsg(`⚠ ${r.error ?? "大脑没有返回结果"}`);
       const p = r.result;
       commit((x) => ({ ...x, figures: p.figures, bike: p.bike, bikeYaw: p.bikeYaw }));
+      if (p.cam) onBrainCam?.(p.cam);
       setSel(null);
       setBrain(p);
       setBrainMsg(`已在 3D 里改好，还没保存。不对就点「撤销」或再说一句。本次花费 $${p.usd.toFixed(3)}`);
@@ -1049,9 +1053,9 @@ export function StageEditor({
   };
   const vBrain = ro ? null : (
     <div className="space-y-2 rounded-xl border border-violet-400/30 bg-violet-400/5 p-3">
-      <p className="text-white">跟大脑说一句 <span className="text-[11px] text-neutral-400">说想怎么摆人和车，大脑帮你摆</span></p>
+      <p className="text-white">跟大脑说一句 <span className="text-[11px] text-neutral-400">说想怎么摆人、车和机位，大脑帮你摆</span></p>
       <div className="flex gap-2">
-        <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="比如：小孩骑在车上，大人站在旁边，其他细节你帮我调" className="min-w-0 flex-1 rounded border border-white/10 bg-neutral-950 px-2 py-1 text-white" />
+        <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="比如：小孩骑在车上，大人站在旁边，镜头拉远拍全车" className="min-w-0 flex-1 rounded border border-white/10 bg-neutral-950 px-2 py-1 text-white" />
         <button type="button" disabled={!brainReady || thinking || askOk || ask.trim().length < 2} onClick={() => setAskOk(true)} className="rounded-lg bg-violet-400 px-3 py-1 font-medium text-black disabled:opacity-40">
           {thinking ? "想中…" : "让大脑调"}
         </button>
@@ -1079,7 +1083,7 @@ export function StageEditor({
               ))}
             </ul>
           ) : null}
-          {brain.camera ? <p className="text-sky-300">摄影机建议（要你在右边手动调）：{brain.camera}</p> : null}
+          {brain.cam ? <p className="text-sky-300">机位已挪好（还没保存）：{brain.camera || "按画面需要调整"}</p> : brain.camera ? <p className="text-sky-300">摄影机建议（没挪，要你在相机栏手动调）：{brain.camera}</p> : null}
           {brain.text.map((c, i) => (
             <p key={i} className="text-neutral-400">分镜文字建议（没改，要你在镜头里手动改）：{c}</p>
           ))}

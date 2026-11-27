@@ -14,6 +14,8 @@ import { autoLayout } from "@/lib/shorts-set";
 import { activeItems, findItemType, type SceneItem } from "@/lib/shorts-scenes";
 import { BrainError, kimiChat, parseJson } from "@/lib/brain/kimi";
 import { SKILLS } from "@/lib/brain/review";
+import { checkCam, LENSES, type Cam } from "@/lib/brain-camera";
+import { roomBox } from "@/lib/stage-rules";
 
 export interface StageDraft {
   figures: FigureSpec[];
@@ -33,6 +35,8 @@ export interface StageProposal {
   camera: string;
   /** 分镜文字要跟着改的建议（程序不改，用户手动改） */
   text: string[];
+  /** 大脑挪过、程序校验过的机位；没有 = 机位不动 */
+  cam?: Cam;
   usd: number;
 }
 
@@ -66,13 +70,13 @@ ${SKILLS}
 - action：一句简体中文大白话，写这个人在做什么，会进首帧提示词。
 - 不能穿进家具：人偶中心离家具边至少 0.2 米。人和产品都要在场地里、摄影机拍得到的范围内（参考给出的“画面右边方向”和“朝向摄影机的角度”）。
 - 人和人之间至少 0.4 米，没骑车的人离产品至少 0.35 米，不要挡住产品的正面和 Logo。
-- 摄影机你不能动：如果要动，写进 camera（中文一句话，比如“摄影机降低到 0.9 米并拉近 0.5 米”）。
+- 摄影机可以动：用户要求、或产品被裁掉 / 太远太小 / 人挡住产品时，写 cam：pos = 摄影机位置 [x, y, 离地高度]，look = 看向的点 [x, y, 高度]，lens 只能是 ${LENSES.join("、")}（mm，越大越近）。要求：产品整辆完整在竖屏画面里、占画面一半左右；摄影机在房间里、不在家具里、离产品至少 0.6 米；拍的人站着时手机约 1.3–1.5 米，蹲着约 0.6–0.9 米。不用动就不写 cam。camera 写一句中文说明你怎么动的、为什么。程序会校验：墙外、太近、产品出画会自动修，修不好就不采用。
 - 家具和装饰你不能动；需要动就写进 cannot。
 - 分镜文字（画面、机位、产品状态等）你也不能改；如果改完 3D 后文字和 3D 对不上，把要怎么改写进 text。changes 只写你在 figures / product 里真的改了的东西。
 - 用户没提到的人偶和产品保持原样（原样抄回原值）；用户说“其他细节你帮我调”时，你可以按这一镜的故事和技能卡调整没指定的细节，并在 changes 里写清楚。
 - 拿不准、要用户拍板的写进 questions；不要编造。
 
-只输出 JSON：{"summary":"一句话","figures":[{"id":"原有人偶沿用原 id，新增的写 new1、new2","memberId":"家庭成员 id（可选，绑定后 kind 和身高跟成员）","kind":"adult|child","pose":"…","onProduct":false,"dx":0,"dy":0,"yaw":0,"action":"…"}],"product":{"x":0,"y":0,"heading":0},"camera":"","text":["分镜文字建议"],"changes":["每条一句中文：改了什么、为什么"],"cannot":["做不到的"],"questions":["要用户拍板的"]}
+只输出 JSON：{"summary":"一句话","figures":[{"id":"原有人偶沿用原 id，新增的写 new1、new2","memberId":"家庭成员 id（可选，绑定后 kind 和身高跟成员）","kind":"adult|child","pose":"…","onProduct":false,"dx":0,"dy":0,"yaw":0,"action":"…"}],"product":{"x":0,"y":0,"heading":0},"cam":{"pos":[0,-1.6,0.8],"look":[0,0,0.35],"lens":28},"camera":"","text":["分镜文字建议"],"changes":["每条一句中文：改了什么、为什么"],"cannot":["做不到的"],"questions":["要用户拍板的"]}
 figures 是改完以后的完整人偶列表（删掉的人偶不写）。`;
 
 /** 让大脑按一句话调这一镜的人偶和产品（Kimi 一次文字调用，不出图）；结果只用于预览 */
@@ -102,6 +106,8 @@ export async function brainStageAction(videoId: string, shotId: string, request:
     const solid = items.filter((i) => !flat(i));
     const floor = items.find((i) => i.type === "floor" || i.type === "lawn" || i.type === "path");
 
+    const len = m?.lengthCm ? m.lengthCm / 100 : 0.8;
+    const ph = Math.max(0.4, rig.gripY ?? 0.6);
     const shotNo = v.shots.indexOf(s) + 1;
     const text = [
       `## 产品\n${p ? `${p.name}（${p.category}）；产品类型：${kind}` : "（无）"}；接触点：${savedRig ? "已量过" : "没量过，骑车时手脚按估算放"}`,
@@ -109,8 +115,12 @@ export async function brainStageAction(videoId: string, shotId: string, request:
       `## 用户定下的决定\n${listDecisions(v.projectId).map((d) => `- ${d.text}`).join("\n") || "（空）"}`,
       `## 整条分镜\n${v.shots.map((x, i) => `#${i + 1} [${x.stage}]${x.hook ? ` 开头「${x.hook.name}」` : ""} ${x.beat} | ${x.description.slice(0, 120)}`).join("\n")}`,
       `## 这一镜 #${shotNo}\n画面：${s.description}\n机位：${s.camera}\n产品状态：${s.productNote}\n特殊要求：${s.special || "无"}\n拍摄者：${s.operator || "站着拍"}${filmer ? `（拿手机的是 ${cast?.members.find((m) => m.id === filmer)?.name ?? filmer}：他在镜头后面，不能出现在画面里，不要给人偶绑定他）` : ""}`,
-      `## 摄影机（你不能动）\n位置 ${layout.camPos.map(r2).join(", ")}，看向 ${layout.lookAt.map(r2).join(", ")}，焦段 ${layout.lens}mm。镜头朝向角 ${Math.round(camYaw)}°；画面右边 = 地图方向 ${Math.round(norm(camYaw + 90))}°，画面左边 = ${Math.round(norm(camYaw - 90))}°；人站在产品旁边要面向摄影机，朝向角约 ${toCam(bx, by)}°。`,
+      `## 摄影机（现在的位置）${s.hook?.selfie ? "：自拍镜头，机位跟着手机，你不能动，不要写 cam" : ""}\n位置 ${layout.camPos.map(r2).join(", ")}，看向 ${layout.lookAt.map(r2).join(", ")}，焦段 ${layout.lens}mm。镜头朝向角 ${Math.round(camYaw)}°；画面右边 = 地图方向 ${Math.round(norm(camYaw + 90))}°，画面左边 = ${Math.round(norm(camYaw - 90))}°；人站在产品旁边要面向摄影机，朝向角约 ${toCam(bx, by)}°。`,
       `## 现在的 3D\n产品：${draft.bike ? `x ${r2(bx)}, y ${r2(by)}，车头朝向 ${Math.round(norm(draft.bikeYaw))}°` : "这一镜没有产品"}\n人偶：${JSON.stringify(draft.figures.map((f) => ({ id: f.id, kind: f.kind, pose: f.pose, onProduct: f.onProduct, dx: r2(f.dx), dy: r2(f.dy), yaw: Math.round(f.yaw), action: f.action ?? "" })))}\n按摄影机算出的画面描述：${blockingText(cur, rig) || "（无）"}`,
+      (() => {
+        const rb = roomBox(items);
+        return `## 场地范围\n${rb ? `x ${r2(rb.x0)} 到 ${r2(rb.x1)}，y ${r2(rb.y0)} 到 ${r2(rb.y1)}（摄影机和人都要在这里面）` : "户外，没有墙"}；产品长约 ${r2(len)} 米、高约 ${r2(ph)} 米`;
+      })(),
       `## 场地里的家具（你不能动；x,y = 占地中心，w 沿朝向 0° 时的东西宽，d 南北深）\n${solid.map((i) => `${label(i)} x ${r2(i.x)} y ${r2(i.y)} w ${i.w} d ${i.d} h ${i.h} 转 ${i.yaw}°`).join("\n") || "（没有挡路的家具）"}${floor ? `\n可走动的地面：${label(floor)} 中心 x ${r2(floor.x)} y ${r2(floor.y)}，${floor.w}×${floor.d} 米` : ""}`,
       cast
         ? `## 这一镜的家庭：${cast.name}（用户说名字时指这些人；人偶写 memberId 就是这个人，身高自动用他的）\n${cast.members.filter((m) => m.id !== filmer).map((m) => `- memberId ${m.id}：${m.name}，${roleOf(m.role).label}，${m.age} 岁，${(m.heightCm / 100).toFixed(2)} 米`).join("\n")}\n现在绑定：${draft.figures.map((f, i) => `人偶${i + 1}（id ${f.id}）= ${cast.members.find((m) => m.id === f.memberId)?.name ?? "未绑定"}`).join("，") || "没有人偶"}`
@@ -213,8 +223,26 @@ export async function brainStageAction(videoId: string, shotId: string, request:
       for (let b = a + 1; b < pos.length; b++)
         if (Math.hypot(pos[a][0] - pos[b][0], pos[a][1] - pos[b][1]) < 0.35) changes.push("有两个人站得很近，可能会叠在一起，看一下");
 
+    let cam: Cam | undefined;
+    const dc = d.cam as { pos?: unknown; look?: unknown; lens?: unknown } | null | undefined;
+    const p3 = (x: unknown) => (Array.isArray(x) && x.length === 3 && x.every((n) => typeof n === "number" && Number.isFinite(n)) ? (x as [number, number, number]) : null);
+    if (dc && typeof dc === "object") {
+      const pos = p3(dc.pos);
+      const look = p3(dc.look) ?? layout.lookAt;
+      if (s.hook?.selfie) cannot.push("自拍镜头的机位跟着手机走，机位没改");
+      else if (!pos) cannot.push("大脑给的机位格式不对，机位没改");
+      else {
+        const people = figures.map((f, k) => ({ name: cast?.members.find((x) => x.id === f.memberId)?.name ?? `人偶${k + 1}`, x: (bike?.[0] ?? 0) + (f.onProduct ? 0 : f.dx), y: (bike?.[1] ?? 0) + (f.onProduct ? 0 : f.dy), h: f.h ?? (f.kind === "adult" ? 1.7 : 1) }));
+        const r = checkCam({ camPos: pos, lookAt: look, lens: typeof dc.lens === "number" ? dc.lens : layout.lens }, { bike, bikeYaw, len, h: ph, items, people });
+        changes.push(...r.fixes);
+        cannot.push(...r.errors);
+        cam = r.cam ?? undefined;
+      }
+    }
+
     return {
       result: {
+        cam,
         summary: typeof d.summary === "string" ? d.summary.slice(0, 200) : "",
         figures,
         bike,

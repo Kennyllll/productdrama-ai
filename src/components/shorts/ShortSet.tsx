@@ -83,6 +83,7 @@ export function ShortSet({
   const [camSel, setCamSel] = useState(false);
   const [live, setLive] = useState<{ figures: FigureSpec[]; bike?: [number, number]; bikeYaw: number; bikeLift: number; bikePitch: number; bikeRoll: number; bikeGround: number; items: SceneItem[] } | null>(null);
   const [camLive, setCamLive] = useState<Pick<SetLayout, "camPos" | "lookAt" | "lens"> | null>(null);
+  const [brainCam, setBrainCam] = useState<(Pick<SetLayout, "camPos" | "lookAt" | "lens"> & { n: number }) | null>(null);
   const [cap, setCap] = useState(0);
   const [reopening, setReopening] = useState(false);
   const [reopenMsg, setReopenMsg] = useState("");
@@ -296,6 +297,7 @@ export function ShortSet({
               cameraSelected={camSel}
               onCamera={setCamSel}
               shotCamLive={camLive}
+              onBrainCam={(c) => setBrainCam({ ...c, n: Date.now() })}
             />
           ) : null}
           {code ? <ShotSyncBox videoId={videoId} shotId={code} label={b?.label ?? ""} figIds={(st?.layout.figures ?? []).map((f) => f.id)} layout={st?.layout} saved={Boolean(cur?.edited)} live={live} cam={camLive} members={st?.members} rig={rig} filmerId={fv[code] === "none" ? undefined : fv[code] || filmers[code]?.video || undefined} locked={Boolean(lockedMsg)} /> : null}
@@ -313,7 +315,7 @@ export function ShortSet({
             rig={rig}
             initialCode={code}
             codePrefix="#"
-            onShotChange={(c) => (setCode(c), setDraft(null), setLive(null), setCamLive(null), setStageDirty(false), window.history.replaceState(window.history.state, "", `?shot=${c}`))}
+            onShotChange={(c) => (setCode(c), setDraft(null), setLive(null), setCamLive(null), setBrainCam(null), setStageDirty(false), window.history.replaceState(window.history.state, "", `?shot=${c}`))}
             onSave={(c, layout) => saveShortLayoutAction(videoId, c, layout)}
             onCapture={async (c, png) => {
               const r = await saveShortCompAction(videoId, c, png);
@@ -348,6 +350,7 @@ export function ShortSet({
             captureSignal={cap}
             onDirty={setCamDirty}
             onCam={setCamLive}
+            camSet={brainCam}
             otherDirty={stageDirty}
           />
           {cur ? (

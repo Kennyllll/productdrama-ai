@@ -80,6 +80,7 @@ export function Set3D({
   onDirty,
   onCam,
   otherDirty = false,
+  camSet,
   compact = false,
   activeCode,
   controlsSlot,
@@ -122,6 +123,8 @@ export function Set3D({
   onCam?: (c: Pick<SetLayout, "camPos" | "lookAt" | "lens">) => void;
   /** 同页别的编辑器有没保存的改动：切镜头时一起提醒 */
   otherDirty?: boolean;
+  /** 外部（大脑）挪的机位：n 变一次套用一次，算没保存的改动 */
+  camSet?: (Pick<SetLayout, "camPos" | "lookAt" | "lens"> & { n: number }) | null;
   /** 合并 3D 页用：镜头切换、保存都放在页面顶部，次要设置收起 */
   compact?: boolean;
   /** 外面切了镜头（已经问过要不要丢改动） */
@@ -581,6 +584,11 @@ export function Set3D({
   useEffect(() => {
     onCam?.({ camPos: layout.camPos, lookAt: layout.lookAt, lens: layout.lens });
   }, [layout.camPos, layout.lookAt, layout.lens, onCam]);
+  useEffect(() => {
+    if (!camSet || shot.locked) return;
+    setLayout((l) => ({ ...l, camPos: camSet.camPos, lookAt: camSet.lookAt, lens: camSet.lens }));
+    setDirty(true);
+  }, [camSet, shot.locked]);
   useEffect(() => {
     if (!live) return;
     setLayout((l) => ({ ...l, figures: live.figures, figure: live.figures.length > 0, bike: live.bike, bikeYaw: live.bikeYaw, ...(live.bikeLift === undefined ? {} : { bikeLift: live.bikeLift, bikePitch: live.bikePitch, bikeRoll: live.bikeRoll, bikeGround: live.bikeGround }) }));
