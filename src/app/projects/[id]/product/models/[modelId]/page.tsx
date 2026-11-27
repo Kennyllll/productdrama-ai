@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/ui";
 import { ModelReview } from "@/components/workbench/ModelReview";
 import { getColor, getProductModelById, modelPath } from "@/lib/model-repo";
 import { parseLengthCm } from "@/lib/model-size";
-import { getVisionKey } from "@/lib/vision-qa";
+import { visionReady } from "@/lib/vision-qa";
 import { findLocalProject, getProduct, listAssets } from "@/lib/repo";
 import { getRig } from "@/lib/product-rig-repo";
 import { rideKindOf } from "@/lib/figures";
@@ -40,7 +40,7 @@ export default async function ModelReviewPage({ params }: { params: Promise<{ id
         key={rev}
         model={{ id: m.id, status: m.status, note: m.note, lengthCm: m.lengthCm, isColor: !!color, source: m.source, rev }}
         glbUrl={`/api/models/${m.id}?v=${rev}`}
-        canCompare={!!getVisionKey()}
+        canCompare={!!visionReady()}
         lengthHint={parseLengthCm(sizeText)}
         photos={photos}
         stickers={stickers}

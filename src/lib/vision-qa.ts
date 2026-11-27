@@ -1,6 +1,7 @@
-// 视觉质检（Gemini）：看最终关键帧，按清单找结构 / 物理错误。仅服务端调用；Key 只保存在本机 SQLite，不记录日志。
+// 视觉质检（先用 Gemini，Gemini 没 Key 或出错就用大脑的 Kimi K3 看图）：看最终关键帧，按清单找结构 / 物理错误。仅服务端调用；Key 只保存在本机 SQLite，不记录日志。
 import sharp from "sharp";
 import { getDb } from "@/lib/db";
+import { getBrainKey, kimiChat, parseJson, type KimiPart } from "@/lib/brain/kimi";
 
 /** 按顺序尝试：Google 下线旧模型时返回 404，繁忙时 503，换下一个 */
 export const VISION_MODELS = ["gemini-3.5-flash", "gemini-3.8-flash"];
@@ -38,9 +39,42 @@ export function visionPublicInfo(): { configured: boolean; keyHint: string } {
 
 type Part = { text: string } | { inline_data: { mime_type: string; data: string } };
 
+/** Gemini 或大脑 Kimi 有一个能用，就能自动检查 */
+export function visionReady(): boolean {
+  return !!getVisionKey() || !!getBrainKey();
+}
+
+// Gemini 欠费 / Key 失效时每次都会失败：失败后 10 分钟内直接用 K3，不白等
+let geminiDownUntil = 0;
+
 async function generate(parts: Part[], timeoutMs: number): Promise<unknown> {
+  let gErr = "";
+  if (getVisionKey() && Date.now() >= geminiDownUntil) {
+    try {
+      return await geminiGenerate(parts, timeoutMs);
+    } catch (e) {
+      gErr = e instanceof Error ? e.message : "Gemini 请求失败";
+      geminiDownUntil = Date.now() + 10 * 60_000;
+    }
+  }
+  if (!getBrainKey()) throw new Error(gErr || "尚未配置视觉质检 Key");
+  try {
+    return await kimiGenerate(parts, timeoutMs);
+  } catch (e) {
+    throw new Error(`${gErr ? `${gErr}；` : ""}Kimi K3 也没看成：${e instanceof Error ? e.message : "未知错误"}`);
+  }
+}
+
+async function kimiGenerate(parts: Part[], timeoutMs: number): Promise<unknown> {
+  const content: KimiPart[] = parts.map((p) =>
+    "text" in p ? { type: "text", text: p.text } : { type: "image_url", image_url: { url: `data:${p.inline_data.mime_type};base64,${p.inline_data.data}` } },
+  );
+  const { message } = await kimiChat({ messages: [{ role: "user", content }], effort: "low", json: true, timeoutMs: timeoutMs * 2 });
+  return parseJson(message.content);
+}
+
+async function geminiGenerate(parts: Part[], timeoutMs: number): Promise<unknown> {
   const key = getVisionKey();
-  if (!key) throw new Error("尚未配置视觉质检 Key");
   let res: Response | null = null;
   let lastErr = "";
   let quota = false;

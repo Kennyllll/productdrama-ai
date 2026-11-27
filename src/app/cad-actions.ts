@@ -12,7 +12,7 @@ import { deleteRequest, estimate, HiggsfieldError, submit, uploadFile, waitFor }
 import { addKeyframe, toKeyframeView, type KeyframeView } from "@/lib/keyframe-repo";
 import { cadDir, getProductModel, modelPath } from "@/lib/model-repo";
 import { findLocalProject, getProduct } from "@/lib/repo";
-import { getVisionKey, locateGeometry, locateSupport, reviewKeyframe } from "@/lib/vision-qa";
+import { locateGeometry, locateSupport, reviewKeyframe, visionReady } from "@/lib/vision-qa";
 import { getStoryboard } from "@/lib/storyboard-repo";
 import { composeSetFirst } from "@/lib/set-composite";
 import { layoutRecall } from "@/lib/layout-check";
@@ -527,7 +527,7 @@ async function productFirstKeyframe(projectId: string, shotId: string, p: CadPar
   let plateBox: { x0: number; y0: number; x1: number; y1: number } | null = null;
   const preQa: string[] = [];
   if (leaning) {
-    if (!getVisionKey()) throw new Error("靠物镜头需要看图定位支撑物，请先在设置页配置 Gemini Key");
+    if (!visionReady()) throw new Error("靠物镜头需要看图定位支撑物，请先在设置页配置 Gemini 或 Kimi Key");
     const geometry = product?.bible?.find((b) => b.key === "geometry")?.value ?? "";
     const spent = () => (plateCalls ? `（已生成 ${plateCalls} 张空场景）` : "");
     const find = async () => {
@@ -795,7 +795,7 @@ export async function generateCadKeyframeAction(projectId: string, shotId: strin
       const bv = (key: string) => bible.find((b) => b.key === key)?.value ?? "";
       const facts = ["color-main", "color-sub", "geometry", "logo"].map(bv).filter(Boolean).join("; ");
       const look = async (bytes: Buffer, box?: { x0: number; y0: number; x1: number; y1: number }): Promise<{ issues: string[]; failed: boolean }> => {
-        if (!getVisionKey()) return { issues: [], failed: false };
+        if (!visionReady()) return { issues: [], failed: false };
         const ref = path.join(dir, "product-only.png");
         try {
           // 车在画面里小时只看全图会误判：另附一张车周围的放大图

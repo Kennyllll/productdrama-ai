@@ -12,7 +12,7 @@ import { keyFromPath, putFile, readFile, storageKey } from "@/lib/storage";
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { AiError, chatJson } from "@/lib/ai/client";
-import { getVisionKey, reviewShortFrame, reviewShortVideo, checkMoveDirection } from "@/lib/vision-qa";
+import { reviewShortFrame, reviewShortVideo, checkMoveDirection, visionReady } from "@/lib/vision-qa";
 import ffmpegPath from "ffmpeg-static";
 import os from "node:os";
 import { execFile } from "node:child_process";
@@ -1332,7 +1332,7 @@ async function runFrameCheck(videoId: string, shotId: string, jobId: string, byt
   const s0 = v0?.shots.find((x) => x.id === shotId);
   if (!v0 || !s0) return;
   let res: NonNullable<ShortShot["frameCheck"]>;
-  if (!getVisionKey()) res = { jobId, pass: false, failed: true, issues: ["没做：设置里还没填 Gemini Key"], at };
+  if (!visionReady()) res = { jobId, pass: false, failed: true, issues: ["没做：设置里还没填 Gemini 或 Kimi Key"], at };
   else
     try {
       const th = videoTheme(v0);
@@ -1425,6 +1425,21 @@ export async function recheckFrameAction(videoId: string, shotId: string): Promi
   }
 }
 
+export async function recheckVideoAction(videoId: string, shotId: string): Promise<Result<StudioState>> {
+  try {
+    const v = load(videoId);
+    const s = v.shots.find((x) => x.id === shotId);
+    if (!s) throw new Error("镜头不存在");
+    const job = s.videoJobId ? getJob(s.videoJobId) : null;
+    const file = job ? jobFilePath(job) : null;
+    if (!job || !file || !fs.existsSync(file)) throw new Error("这一镜还没有视频");
+    await runVideoCheck(v.id, s.id, job.id, fs.readFileSync(file));
+    return { result: state(videoId) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 const execFileP = promisify(execFile);
 
 /** 视频出来后自动看：每 0.5 秒截一帧，对照产品照查变形；没 Key 或出错只记下来，让用户自己看 */
@@ -1434,7 +1449,7 @@ async function runVideoCheck(videoId: string, shotId: string, jobId: string, byt
   const s0 = v0?.shots.find((x) => x.id === shotId);
   if (!v0 || !s0) return;
   let res: NonNullable<ShortShot["videoCheck"]>;
-  if (!getVisionKey()) res = { jobId, pass: false, failed: true, issues: ["没做：设置里还没填 Gemini Key，请自己逐秒看一遍"], at };
+  if (!visionReady()) res = { jobId, pass: false, failed: true, issues: ["没做：设置里还没填 Gemini 或 Kimi Key，请自己逐秒看一遍"], at };
   else {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vcheck-"));
     try {

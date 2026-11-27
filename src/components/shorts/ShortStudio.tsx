@@ -47,6 +47,7 @@ import {
   setShotMoveAction,
   setShotFrameModelAction,
   recheckFrameAction,
+  recheckVideoAction,
 } from "@/app/short-actions";
 import {
   budgetOf,
@@ -1734,7 +1735,22 @@ export function ShortStudio({
                                 <span className="self-center text-xs text-emerald-300">视频检查通过：每 0.5 秒对照产品照，没看到变形{vc.note ? `。${vc.note}` : ""}</span>
                               ) : (
                                 <div className={`w-full rounded border p-2 text-xs ${vc.failed ? "border-amber-400/40 text-amber-200" : "border-rose-400/50 bg-rose-400/5 text-rose-200"}`}>
-                                  <p className="font-medium">{vc.failed ? "视频检查" : `视频检查发现 ${vc.issues.length} 个问题，先看视频再决定`}</p>
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <p className="font-medium">{vc.failed ? "视频检查" : `视频检查发现 ${vc.issues.length} 个问题，先看视频再决定`}</p>
+                                    <button
+                                      type="button"
+                                      className="rounded border border-white/20 px-2 py-0.5 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-40"
+                                      disabled={busy || runBusy || rechecking === s.id}
+                                      title="只重新看视频，不重新出视频"
+                                      onClick={async () => {
+                                        setRechecking(s.id);
+                                        apply(await recheckVideoAction(v.id, s.id));
+                                        setRechecking(null);
+                                      }}
+                                    >
+                                      {rechecking === s.id ? "正在重新检查…" : "重新检查（约 $0.05）"}
+                                    </button>
+                                  </div>
                                   {vc.issues.map((x, i) => (
                                     <p key={i}>· {x}</p>
                                   ))}
