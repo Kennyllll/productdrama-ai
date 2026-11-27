@@ -1475,10 +1475,11 @@ async function runVideoCheck(videoId: string, shotId: string, jobId: string, byt
   const s = v?.shots.find((x) => x.id === shotId);
   if (!v || !s || s.videoJobId !== jobId) return;
   if (!res.failed && !res.pass) {
-    const a = trimAdvice(res.issues, s);
+    const a = trimAdvice(res.issues, { ...s, hookCut: s.hook?.cut });
     if (a.cut.length) {
       res = { ...res, pass: !a.keep.length, issues: a.keep, note: a.note };
       s.trimStart = a.trimStart;
+      s.useSeconds = a.useSeconds;
     } else if (a.note) res = { ...res, note: a.note };
   }
   s.videoCheck = res;

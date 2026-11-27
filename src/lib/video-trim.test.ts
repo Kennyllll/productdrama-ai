@@ -16,9 +16,15 @@ test("用的那段有问题、往前挪能避开：自动改 trimStart", () => {
   assert.equal(a.keep.length, 0);
 });
 
-test("避不开：问题留着，提示改用几秒；没写时间的不动", () => {
+test("挪不开但缩短能避开：直接改成只用前几秒", () => {
   const a = trimAdvice(["第 2 秒起：车头出画"], s);
-  assert.equal(a.keep.length, 1);
-  assert.match(a.note, /改成 2/);
+  assert.equal(a.useSeconds, 2);
+  assert.equal(a.keep.length, 0);
+  assert.match(a.note, /已自动改成只用前 2 秒/);
+});
+
+test("缩到太短、切镜点之前或没写时间：不动，问题留着", () => {
+  assert.equal(trimAdvice(["第 1 秒起：车头出画"], s).keep.length, 1);
+  assert.equal(trimAdvice(["第 2 秒起：车头出画"], { ...s, hookCut: 1.8 }).useSeconds, 3);
   assert.equal(trimAdvice(["Logo 变了"], s).keep.length, 1);
 });
