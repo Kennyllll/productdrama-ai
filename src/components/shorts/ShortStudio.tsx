@@ -1408,7 +1408,11 @@ export function ShortStudio({
                       if (!sy || (s.stage !== "draft" && s.stage !== "comp_ok"))
                         return null;
                       if (!sy.changes.length && !sy.issues.length && !sy.fix3d?.length)
-                        return <p className="text-emerald-300/80">文字和 3D 没有冲突</p>;
+                        return s.layout ? (
+                          <p className="text-emerald-300/80">文字和 3D 没有冲突</p>
+                        ) : (
+                          <p className="text-neutral-400">还没摆 3D：摆好后才查文字里的人、位置、动作和 3D 对不对得上</p>
+                        );
                       return (
                         <SyncNotice
                           sync={sy}
