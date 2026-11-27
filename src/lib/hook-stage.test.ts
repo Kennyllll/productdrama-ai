@@ -70,3 +70,13 @@ test("自拍：拿手机的人在产品和摄影机之间，脸朝镜头，摄�
   assert.ok(Math.abs(face - me.yaw) < 1, "脸朝镜头");
   assert.equal(applySelfie(l, "front34", 0.51, { kind: "adult", pose: "reach", memberId: "marcus", h: 1.85 }).figures!.length, 1, "重复开自拍不会多出一个人");
 });
+
+test("Hook 摆位：蹲在车旁的大人离车中心至少 0.9 米，不和车、骑车的孩子穿模", () => {
+  const l = buildHookLayout(
+    { ...DEFAULT_STAGE, people: [{ kind: "child", pose: "ride", onProduct: true }, { kind: "adult", pose: "crouch", side: "left", dist: 0.6 }] },
+    null,
+    0.51,
+  );
+  const f = l.figures!.find((x) => x.pose === "crouch")!;
+  assert.ok(Math.hypot(f.dx, f.dy) >= 0.9 - 1e-6);
+});

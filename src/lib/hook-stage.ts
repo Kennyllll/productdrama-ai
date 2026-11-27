@@ -173,12 +173,15 @@ export const peopleText = (people: HookPerson[], members?: FamilyMember[]) =>
 // 照真实广告开头量出来的构图（见 HOOK_FRAMING_RULES）：竖屏 9:16，镜头焦距按画面横向 36mm 算，竖向半视角 tan = 32 / lens
 const vHalfTan = (lens: number) => 32 / lens;
 /** 主体占画面 fill 高度时摄影机该多远：有孩子骑车按 1 米高算，只有产品按车把高度 */
+// 蹲着的大人膝盖朝车伸出约 0.4 米，离车中心不到 0.9 米就会和车身、骑车的孩子穿模
+const sideDist = (p: HookPerson) => Math.max(p.dist ?? 0.7, p.pose === "crouch" ? 0.9 : 0);
+
 function camDist(st: HookStage, k: number): number {
   const ride = st.people.some((p) => p.onProduct);
   const crouch = st.people.some((p) => !p.onProduct && p.pose === "crouch");
   const h = Math.max(ride ? 1 : 0.6, crouch ? 0.95 : 0) * k;
   // 站着的大人本来就只拍腰以下，不算高度；但旁边的人要整个进画面，宽度也要装得下
-  const half = Math.max(0.45, ...st.people.filter((p) => !p.onProduct && p.side !== "behind").map((p) => (p.dist ?? 0.7) + 0.2)) * k;
+  const half = Math.max(0.45, ...st.people.filter((p) => !p.onProduct && p.side !== "behind").map((p) => sideDist(p) + 0.2)) * k;
   const fit = Math.max(h / ((st.fill ?? 0.5) * 2 * vHalfTan(st.lens)), (2 * half) / (0.9 * 2 * (18 / st.lens)));
   return Math.max(0.5 * k, Math.min(st.dist * k, fit));
 }
@@ -208,7 +211,7 @@ export function buildHookLayout(st: HookStage, base: SetLayout | null | undefine
     const id = `h${i + 1}`;
     if (p.onProduct && p.kind === "child") return { id, kind: "child", pose: "ride", onProduct: true, dx: 0, dy: 0, yaw: 0, ...who(p) };
     const dir = p.side === "left" ? [-right[0], -right[1]] : p.side === "behind" ? [-head[0], -head[1]] : right;
-    const d = (p.dist ?? 0.7) * k;
+    const d = sideDist(p) * k;
     const dx = r2(dir[0] * d);
     const dy = r2(dir[1] * d);
     const face = Math.round((Math.atan2(-dx, -dy) * 180) / Math.PI);
