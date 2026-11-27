@@ -705,6 +705,11 @@ export function ShortStudio({
               当前 {usd(perSec)}/秒
             </span>
           </div>
+          {v.shots.length && plan > budget - spent + 0.005 ? (
+            <p className="mt-1 text-amber-300">
+              按现在的分镜做完约 {usd(plan)}，剩下的预算只有 {usd(Math.max(0, budget - spent))}：先调高预算，或减少镜头 / 秒数
+            </p>
+          ) : null}
           <details className="mt-1">
             <summary className="cursor-pointer select-none text-neutral-500">调整预算</summary>
           <p className="mt-1 text-neutral-500">

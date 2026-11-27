@@ -262,7 +262,7 @@ export function ShortSet({
           <summary className="cursor-pointer select-none px-3 py-2 text-sm text-neutral-300">
             场地：{st.scene.name} v{st.scene.v} · 节日：{st.scene.themeLabel} · 家庭 {b.family} <span className="ml-1 text-amber-300">更改</span>
           </summary>
-          <SceneEditor projectId={projectId} videoId={videoId} shot={b} scenes={scenes} onDraft={onDraft} />
+          <SceneEditor projectId={projectId} videoId={videoId} shot={b} scenes={scenes} onDraft={onDraft} dirty={stageDirty} />
         </details>
       ) : null}
       <div className="grid gap-3 @xl/main:grid-cols-[minmax(0,1fr)_15rem] @4xl/main:grid-cols-[10.625rem_minmax(0,1fr)_18.75rem] @6xl/main:grid-cols-[12.5rem_minmax(0,1fr)_21.25rem]">

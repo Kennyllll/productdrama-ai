@@ -22,7 +22,7 @@ const inp = "rounded border border-white/10 bg-neutral-950 px-2 py-1 text-sm tex
 const hex = (c: number[]) => `#${c.map((x) => Math.round(x * 255).toString(16).padStart(2, "0")).join("")}`;
 const rgbOf = (h: string): [number, number, number] => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255) as [number, number, number];
 
-export function SceneEditor({ projectId, videoId, shot, scenes, onDraft }: { projectId: string; videoId: string; shot: ShotBinding; scenes: Scene[]; onDraft: (items: SceneItem[] | null) => void }) {
+export function SceneEditor({ projectId, videoId, shot, scenes, onDraft, dirty }: { projectId: string; videoId: string; shot: ShotBinding; scenes: Scene[]; onDraft: (items: SceneItem[] | null) => void; dirty?: boolean }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const sc = scenes.find((s) => s.id === shot.scene.id) ?? scenes[0];
@@ -102,7 +102,11 @@ export function SceneEditor({ projectId, videoId, shot, scenes, onDraft }: { pro
       <div className="flex flex-wrap items-center gap-2">
         <b className="text-white">{shot.label} 的场地</b>
         <span className="text-[11px] text-neutral-500">（选完自动保存）</span>
-        <select className={inp} disabled={pending || Boolean(locked)} value={sc.id} onChange={(e) => bind({ sceneId: e.target.value })}>
+        <select className={inp} disabled={pending || Boolean(locked)} value={sc.id} onChange={async (e) => {
+          const id = e.target.value;
+          if (dirty && !await askConfirm("3D 里还有没保存的改动（人偶、产品位置）。换场地会重新载入，这些改动会丢。\n\n先点右上角「保存」再换更稳妥。仍然现在换？")) return;
+          bind({ sceneId: id });
+        }}>
           {scenes.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name}
