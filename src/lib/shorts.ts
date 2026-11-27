@@ -283,7 +283,8 @@ export const emptyShortData = (templateId = "pov-gift", theme?: { theme: string;
   conceptId: null,
   shots: [],
   room: "living",
-  resolution: "720p",
+  // 开发阶段默认 480p，省钱；上线前再改回 720p
+  resolution: "480p",
   budgetUsd: null,
 });
 
