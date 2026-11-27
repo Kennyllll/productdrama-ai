@@ -16,7 +16,7 @@ const sel = "rounded border border-white/10 bg-neutral-950 px-2 py-1 text-sm tex
 const btn = "rounded border border-white/10 px-2 py-1 text-xs text-neutral-200 hover:border-amber-400/60 disabled:opacity-50";
 
 /** 从 Hook 库做开头（shot 为空 = 新建；有 shot = 改这个开头的属性 / 重写剧本 / 另存为新 Hook） */
-export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClose, themePicker, cast = [], onBgCapture }: { onBgCapture?: (url: string) => void; cast?: { id: string; name: string }[]; themePicker?: React.ReactNode; videoId: string; lib: HookDef[]; shot?: ShortShot; targetId?: string; setHref: (shotId: string) => string; onDone: Done; onClose: () => void }) {
+export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClose, themePicker, cast = [], onBgCapture, aiReady = true }: { aiReady?: boolean; onBgCapture?: (url: string) => void; cast?: { id: string; name: string }[]; themePicker?: React.ReactNode; videoId: string; lib: HookDef[]; shot?: ShortShot; targetId?: string; setHref: (shotId: string) => string; onDone: Done; onClose: () => void }) {
   const h = shot?.hook;
   const [libId, setLibId] = useState(h?.libId ?? lib[0]?.id ?? "");
   const def = lib.find((x) => x.id === libId);
@@ -45,6 +45,7 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
   const gen = async () => {
     const empty = fields.filter((f) => !f.optional && !values[f.key]?.trim());
     if (empty.length) return setMsg(`⚠ 先填：${empty.map((f) => f.label).join("、")}`);
+    if (!aiReady) return setMsg("⚠ 写剧本要用 DeepSeek：先到左边「设置」填 DeepSeek Key（不想付费，也可以关掉这里，在镜头里自己写）");
     if (!await askConfirm("用 DeepSeek 写这个开头的剧本（文字调用 1 次，约 $0.01，不出图）。只出草稿，你点“采用”才会改视频。继续？")) return;
     setMsg("");
     start(async () => {

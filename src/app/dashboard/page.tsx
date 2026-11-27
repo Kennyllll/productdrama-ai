@@ -43,7 +43,7 @@ export default function DashboardPage() {
           {projects.map((p) => {
             const bible = getProduct(p.id)?.bible ?? [];
             const filled = bible.filter((f) => f.value.trim()).length;
-            const photos = countAssets(p.id, "product_photo");
+            const photos = countAssets(p.id, "product_photo") + countAssets(p.id, "white_photo");
             const model = getProductModel(p.id);
             const shorts = listShortVideos(p.id).length;
             const spent = listLedger(p.id).reduce((s, e) => s + e.usd, 0);

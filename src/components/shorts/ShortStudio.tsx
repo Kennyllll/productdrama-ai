@@ -1120,7 +1120,7 @@ export function ShortStudio({
                 ) : null,
                 i === 0 && hookPanel ? (
                   <li key="h-panel" className="col-span-full">
-                    <HookPanel onBgCapture={setBgCap} cast={cast} themePicker={themeSelect} key={hookPanel.shotId ?? hookPanel.targetId ?? "new"} videoId={v.id} lib={hookLib} shot={hookPanel.shotId ? v.shots.find((x) => x.id === hookPanel.shotId) : undefined} targetId={hookPanel.targetId} setHref={(id) => `/projects/${v.projectId}/shorts/${v.id}/set?shot=${id}&capture=1`} onDone={apply} onClose={() => setHookPanel(null)} />
+                    <HookPanel aiReady={aiReady} onBgCapture={setBgCap} cast={cast} themePicker={themeSelect} key={hookPanel.shotId ?? hookPanel.targetId ?? "new"} videoId={v.id} lib={hookLib} shot={hookPanel.shotId ? v.shots.find((x) => x.id === hookPanel.shotId) : undefined} targetId={hookPanel.targetId} setHref={(id) => `/projects/${v.projectId}/shorts/${v.id}/set?shot=${id}&capture=1`} onDone={apply} onClose={() => setHookPanel(null)} />
                   </li>
                 ) : null,
                 !s.hook && i === firstBody ? (
