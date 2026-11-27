@@ -12,7 +12,7 @@ export interface BodyGap {
 }
 
 const STAGE_WHY: Record<string, string> = {
-  draft: "还没做 3D 构图",
+  draft: "构图还没确认（3D 摆好后在镜头里点「确认构图」）",
   comp_ok: "还没出首帧",
   frame_ready: "首帧还没通过",
   frame_ok: "还没出视频",

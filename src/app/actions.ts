@@ -6,7 +6,7 @@ import { cleanFacts, FACT_KEYS, factsErrors } from "@/lib/ad-compliance";
 import { saveAdFacts } from "@/lib/ad-facts-repo";
 import { checkAgeRange, formatAge } from "@/lib/age-range";
 import { emptyBible } from "@/lib/mock/demo";
-import { createProject, deleteProject, findLocalProject, saveProduct } from "@/lib/repo";
+import { createProject, deleteProject, findLocalProject, getProduct, saveProduct } from "@/lib/repo";
 import type { FormState } from "@/lib/types";
 
 const text = (fd: FormData, key: string, max: number) => String(fd.get(key) ?? "").trim().slice(0, max);
@@ -30,7 +30,9 @@ export async function saveProductAction(_prev: FormState, fd: FormData): Promise
   const projectId = text(fd, "projectId", 64);
   if (!findLocalProject(projectId)) return { error: "项目不存在或为示例项目" };
 
-  const sellingPoints = String(fd.get("sellingPoints") ?? "")
+  // 产品资料分几块保存：表单里没有的字段保持原样，不能被空值覆盖
+  const old = getProduct(projectId);
+  const sellingPoints = !fd.has("sellingPoints") && old ? old.sellingPoints : String(fd.get("sellingPoints") ?? "")
     .split("\n")
     .map((s) => s.trim().slice(0, 100))
     .filter(Boolean)
@@ -38,7 +40,7 @@ export async function saveProductAction(_prev: FormState, fd: FormData): Promise
 
   const age = checkAgeRange(text(fd, "age.min", 8), text(fd, "age.max", 8), text(fd, "age.unit", 4));
   if ("error" in age) return { error: age.error };
-  const bible = emptyBible.map((field) => ({
+  const bible = emptyBible.map((field) => (!fd.has(`bible.${field.key}.value`) && !(field.key === "age" && fd.has("age.min")) && old?.bible.find((b) => b.key === field.key)) || ({
     ...field,
     value: field.key === "age" ? (age.range ? formatAge(age.range) : "") : text(fd, `bible.${field.key}.value`, 200),
     needsConfirmation: fd.get(`bible.${field.key}.confirmed`) !== "on",
@@ -47,9 +49,9 @@ export async function saveProductAction(_prev: FormState, fd: FormData): Promise
   if (empty.length) return { error: `${empty.map((f) => f.label).join("、")}还没填，不能勾「已确认」` };
 
   saveProduct(projectId, {
-    name: text(fd, "name", 80),
-    category: text(fd, "category", 80),
-    rideKind: text(fd, "rideKind", 20),
+    name: fd.has("name") || !old ? text(fd, "name", 80) : old.name,
+    category: fd.has("category") || !old ? text(fd, "category", 80) : old.category,
+    rideKind: fd.has("rideKind") ? text(fd, "rideKind", 20) : undefined,
     sellingPoints,
     bible,
   });

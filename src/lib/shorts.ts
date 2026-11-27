@@ -288,7 +288,7 @@ export interface ShortVideoData {
   /** 整条视频谁拿手机（家庭位 1 的成员 id）；空 = 不指定 */
   filmer?: string;
   /** 从哪个模板（哪一版）套来的 */
-  fromTemplate?: { id: string; v: number; name: string; fromProduct: string; fromKind?: string; rewritten?: boolean };
+  fromTemplate?: { id: string; v: number; name: string; fromProduct: string; fromKind?: string; rewritten?: boolean; swapped?: number; left?: string[] };
   storyCheck?: StoryCheck;
   /** 剧本对账里用户点了「不用管」的问题（storyKey），以后不拦、不改 */
   storyIgnore?: string[];

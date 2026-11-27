@@ -481,8 +481,16 @@ export function ShortStudio({
             <div className="mt-2 space-y-1 text-amber-200/80">
               <p>
                 从模板「{v.fromTemplate.name}」v{v.fromTemplate.v} 套用{v.fromTemplate.fromProduct ? `（原来是 ${v.fromTemplate.fromProduct} 做的）` : ""}：每镜要重新打开 3D 看一眼、点保存。
-                {v.fromTemplate.rewritten ? "文字已经按这个产品改写过。" : "产品相关的文字还是原产品的。"}
+                {v.fromTemplate.rewritten ? "文字已经按这个产品改写过。" : "产品的零件、卖点、价格还是原产品的，出首帧前剧本对账会逐条查。"}
               </p>
+              {v.fromTemplate.swapped ? <p className="text-emerald-300/90">✓ 已免费把旧产品名、家庭名、人名换成这个产品和家庭的，共 {v.fromTemplate.swapped} 处</p> : null}
+              {v.fromTemplate.left?.length ? (
+                <ul className="list-disc pl-5 text-rose-300/90">
+                  {v.fromTemplate.left.map((x) => (
+                    <li key={x}>{x}（换不了，要改掉）</li>
+                  ))}
+                </ul>
+              ) : null}
               {!v.fromTemplate.rewritten ? (
                 <button
                   type="button"
@@ -1055,7 +1063,7 @@ export function ShortStudio({
                   : s.stage === "draft"
                     ? saved?.compFile || s.hook?.scene === "car"
                       ? "下一步：① 确认构图（免费）"
-                      : "下一步：先在场地地图摆好机位，点「保存机位 + 3D 构图」"
+                      : "下一步：点「打开 3D 摆位 + 机位」，摆好后点右上角「保存」"
                     : s.stage === "comp_ok"
                       ? hfReady ? "下一步：② 生成首帧（先弹审批框）" : "生成要先在左边「设置」填 Higgsfield Key"
                       : s.stage === "frame_ready"

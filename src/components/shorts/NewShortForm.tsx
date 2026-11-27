@@ -41,7 +41,7 @@ export function NewShortForm({
   const [pick, setPick] = useState(templates[0]?.id ?? "");
   const [theme, setTheme] = useState("none");
   const [themeText, setThemeText] = useState("");
-  const [fam, setFam] = useState(families[0]?.id ?? "");
+  const [fam, setFam] = useState(families.length ? "?" : "");
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
   const tp = pick.startsWith("tpl:") ? saved.find((x) => `tpl:${x.id}` === pick) : undefined;
@@ -63,6 +63,7 @@ export function NewShortForm({
       className="space-y-3"
       onSubmit={(e) => {
         e.preventDefault();
+        if (fam === "?") return setError("先选家庭（不想用家庭就选「不指定」）");
         const fams = fam ? { 1: fam } : undefined;
         start(async () => {
           const r = tp ? await createFromTemplateAction(projectId, tp.id, title, theme, themeText, fams) : await createShortVideoAction(projectId, title, pick, theme, themeText, fams);
@@ -102,6 +103,7 @@ export function NewShortForm({
       <label className="block text-sm">
         <span className="text-neutral-400">家庭（从家庭库选，所有产品共用）</span>
         <select value={fam} onChange={(e) => setFam(e.target.value)} className={inputClass}>
+          {fam === "?" ? <option value="?">— 选一个家庭 —</option> : null}
           {families.map((f) => (
             <option key={f.id} value={f.id}>
               {f.name}（{f.who}）

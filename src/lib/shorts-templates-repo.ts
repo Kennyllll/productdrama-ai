@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
 import type { SceneItem } from "@/lib/shorts-scenes";
+import type { TemplateCastMember } from "@/lib/template-retarget";
 import type { ShortShot, VideoResolution } from "@/lib/shorts";
 
 export interface TemplateScene {
@@ -36,6 +37,8 @@ export interface ShortTemplateData {
   fromKind?: string;
   /** 原产品握把高度（米）：套到别的产品时按它缩放摄影机和人偶距离 */
   gripY: number;
+  /** 原来绑定的家庭成员（套到别的家庭时按角色换名字） */
+  cast?: TemplateCastMember[];
   scenes: TemplateScene[];
   shots: TemplateShot[];
 }

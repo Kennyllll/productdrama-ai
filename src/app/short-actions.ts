@@ -98,6 +98,7 @@ import { missingBody } from "@/lib/spend";
 import { auditJobEnd, auditStage, auditSubmit, gateOverLimit, recordExport, trashCleared, trashReplaced, trashShortVideo, trashShots } from "@/lib/short-audit";
 import { getRig } from "@/lib/product-rig-repo";
 import { castOf, getFamily, portraitPath } from "@/lib/families-repo";
+import { familyWord, leftovers, mapCast, swapText, type Swap, type TemplateCastMember } from "@/lib/template-retarget";
 import { memberKind, memberText, filmerId, portraitFor, type FamilyMember } from "@/lib/families";
 import { fitFigureActions, promptConflicts } from "@/lib/shorts-conflicts";
 
@@ -2538,7 +2539,11 @@ export async function saveTemplateAction(videoId: string, name: string): Promise
       hook: s.hook ? { ...s.hook, name: "原版" } : undefined,
       sceneKey: keyOf(s),
     }));
-    const id = createTemplate({ name: nm, v: 1, baseTemplateId: v.templateId, theme: vt.theme, themeText: vt.themeText, resolution: v.resolution, room: v.room, fromProduct: getProduct(v.projectId)?.name || "", fromKind: rideKindOf(getProduct(v.projectId)?.rideKind, getProduct(v.projectId)?.category), gripY: rigOf(v).gripY, scenes, shots });
+    const cast: TemplateCastMember[] = Object.keys(v.families ?? {}).flatMap((k) => {
+      const f = castOf(v.families, Number(k));
+      return f ? f.members.map((m) => ({ slot: Number(k), id: m.id, name: m.name, role: m.role, child: m.role === "son" || m.role === "daughter" || m.age < 14, family: f.name })) : [];
+    });
+    const id = createTemplate({ cast, name: nm, v: 1, baseTemplateId: v.templateId, theme: vt.theme, themeText: vt.themeText, resolution: v.resolution, room: v.room, fromProduct: getProduct(v.projectId)?.name || "", fromKind: rideKindOf(getProduct(v.projectId)?.rideKind, getProduct(v.projectId)?.category), gripY: rigOf(v).gripY, scenes, shots });
     revalidatePath("/projects/[id]/shorts", "page");
     return { result: id };
   } catch (e) {
@@ -2576,6 +2581,43 @@ export async function deleteTemplateAction(templateId: string): Promise<Result<t
 }
 
 /** 从模板新建：场地复制到这个产品下、3D 按车的握把高度缩放、全部回到构图草案（每镜要重新存 3D 构图），节日按这次选的 */
+/** 套模板：免费把旧产品名、旧家庭名、旧人名换成这个产品和家庭的；换不了的旧词记下来，在视频页顶部列出 */
+function retargetFree(v: ShortVideo, tp: NonNullable<ReturnType<typeof getTemplate>>, product: string) {
+  const fresh = Object.keys(v.families ?? {}).flatMap((k) => {
+    const f = castOf(v.families, Number(k));
+    return f ? [{ slot: Number(k), name: f.name, members: f.members }] : [];
+  });
+  const old = tp.cast ?? [];
+  const mc = mapCast(old, fresh);
+  const swaps: Swap[] = [...mc.swaps];
+  const famLeft: string[] = [];
+  for (const slot of new Set(old.map((o) => o.slot))) {
+    const was = familyWord(old.find((o) => o.slot === slot)?.family ?? "");
+    const now = fresh.find((f) => f.slot === slot);
+    if (!was) continue;
+    if (now) swaps.push({ from: was, to: familyWord(now.name) });
+    else famLeft.push(was);
+  }
+  if (tp.fromProduct && product && tp.fromProduct !== product) swaps.push({ from: tp.fromProduct, to: product });
+  const fields = ["caption", ...TEXT_FIELDS] as const;
+  let n = 0;
+  for (const s of v.shots) {
+    for (const k of fields) {
+      const r = swapText(s[k] ?? "", swaps);
+      s[k] = r.text;
+      n += r.n;
+    }
+    for (const f of s.layout?.figures ?? []) if (f.memberId && mc.ids.has(f.memberId)) f.memberId = mc.ids.get(f.memberId);
+  }
+  const mine = product.toLowerCase();
+  const prodWords = tp.fromProduct === product ? [] : tp.fromProduct.split(/[^A-Za-z0-9]+/).filter((w) => w.length >= 3 && /[A-Za-z]/.test(w) && !mine.includes(w.toLowerCase()));
+  const left = leftovers(
+    v.shots.map((s, i) => ({ label: `#${i + 1}`, text: fields.map((k) => s[k] ?? "").join("\n") })),
+    [...prodWords, ...mc.unmatched, ...famLeft],
+  );
+  v.fromTemplate = { ...v.fromTemplate!, swapped: n, left };
+}
+
 export async function createFromTemplateAction(projectId: string, templateId: string, title: string, theme: string, themeText = "", families?: Record<string, string>): Promise<Result<string>> {
   try {
     if (!findLocalProject(projectId)) throw new Error("项目不存在");
@@ -2611,6 +2653,7 @@ export async function createFromTemplateAction(projectId: string, templateId: st
     v.hooksReady = true;
     v.families = cleanFams(families);
     v.fromTemplate = { id: tp.id, v: tp.v, name: tp.name, fromProduct: tp.fromProduct, fromKind: tp.fromKind ?? rideKindOf(undefined, tp.fromProduct) };
+    retargetFree(v, tp, getProduct(projectId)?.name || "");
     bindScenes(v);
     v.shots.forEach((s) => (s.textBasis = basisOf(s, placeOf(v, s))));
     saveShortVideo(v);
