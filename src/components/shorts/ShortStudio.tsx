@@ -1731,13 +1731,14 @@ export function ShortStudio({
                             {gate(bad || still ? "accept_force" : "accept", still ? "问题还在，仍然采用" : bad ? "我看过了，仍然采用" : vc && !vc.failed ? "采用" : "没自动检查：我逐秒看过了，采用", s.stage === "video_ready", unchecked)}
                             {vc && s.stage === "video_ready" ? (
                               vc.pass ? (
-                                <span className="self-center text-xs text-emerald-300">视频检查通过：每 0.5 秒对照产品照，没看到变形</span>
+                                <span className="self-center text-xs text-emerald-300">视频检查通过：每 0.5 秒对照产品照，没看到变形{vc.note ? `。${vc.note}` : ""}</span>
                               ) : (
                                 <div className={`w-full rounded border p-2 text-xs ${vc.failed ? "border-amber-400/40 text-amber-200" : "border-rose-400/50 bg-rose-400/5 text-rose-200"}`}>
                                   <p className="font-medium">{vc.failed ? "视频检查" : `视频检查发现 ${vc.issues.length} 个问题，先看视频再决定`}</p>
                                   {vc.issues.map((x, i) => (
                                     <p key={i}>· {x}</p>
                                   ))}
+                                  {vc.note ? <p className="mt-1 text-amber-200">{vc.note}</p> : null}
                                 </div>
                               )
                             ) : null}

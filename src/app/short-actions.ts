@@ -21,6 +21,7 @@ import { createHook, getHook } from "@/lib/hooks-repo";
 import { cleanHookValues, fillCaption, HOOK_ENTRIES } from "@/lib/hooks";
 import { isHookEffect } from "@/lib/hook-effects";
 import { hookParts, hooksOf, isExtraHook, needsComposite, shotSound } from "@/lib/shorts";
+import { trimAdvice } from "@/lib/video-trim";
 import { applySelfie, buildHookLayout, cleanHookPeople, DEFAULT_STAGE, peopleText, renameText, VIEW_LABEL, type HookPerson, addNamedPeople } from "@/lib/hook-stage";
 import { shortConceptPrompt, shortShotsPrompt } from "@/lib/ai/short-prompts";
 import { deleteRequest, estimate, getStatus, HiggsfieldError, submit, uploadFile, type HfRequest } from "@/lib/higgsfield";
@@ -1458,6 +1459,13 @@ async function runVideoCheck(videoId: string, shotId: string, jobId: string, byt
   const v = getShortVideo(videoId);
   const s = v?.shots.find((x) => x.id === shotId);
   if (!v || !s || s.videoJobId !== jobId) return;
+  if (!res.failed && !res.pass) {
+    const a = trimAdvice(res.issues, s);
+    if (a.cut.length) {
+      res = { ...res, pass: !a.keep.length, issues: a.keep, note: a.note };
+      s.trimStart = a.trimStart;
+    } else if (a.note) res = { ...res, note: a.note };
+  }
   s.videoCheck = res;
   saveShortVideo(v);
 }
