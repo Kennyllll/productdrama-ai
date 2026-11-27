@@ -88,7 +88,7 @@ export function diffBasis(a: ShotBasis, b: ShotBasis): string[] {
   return out;
 }
 
-const THEME_WORDS: Record<string, RegExp> = {
+export const THEME_WORDS: Record<string, RegExp> = {
   christmas: /christmas|xmas|santa|圣诞/i,
   cny: /lunar new year|chinese new year|春节|新年/i,
   halloween: /halloween|万圣/i,

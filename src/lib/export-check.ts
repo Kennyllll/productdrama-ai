@@ -1,6 +1,8 @@
 // 导出前自查（纯函数）：正文哪几镜还没采用；成片里会出现的文字有没有合规问题。
 import { checkAdText, type AdFacts, type AdIssue, type AdText } from "@/lib/ad-compliance";
-import { bodyOf, hooksOf, type ShortShot, type ShortVideoData } from "@/lib/shorts";
+import { bodyOf, hooksOf, videoTheme, type ShortShot, type ShortVideoData } from "@/lib/shorts";
+import { THEME_WORDS } from "@/lib/shorts-sync";
+import { findTheme } from "@/lib/shorts-scenes";
 
 export interface BodyGap {
   n: number;
@@ -43,9 +45,21 @@ export interface ExportReport {
   warns: AdIssue[];
 }
 
-export function exportReport(v: Pick<ShortVideoData, "shots">, facts: AdFacts, fileOk?: (s: ShortShot) => boolean): ExportReport {
+/** 视频设的是「无节日」，成片字幕 / 台词里却写着节日（Santa、Christmas……）：画面里没有节日布置，看着对不上 */
+export function holidayWarns(v: Pick<ShortVideoData, "shots"> & Partial<Pick<ShortVideoData, "theme" | "themeText" | "room">>): AdIssue[] {
+  if (videoTheme({ shots: v.shots, theme: v.theme, themeText: v.themeText, room: v.room ?? "" }).theme !== "none") return [];
+  return exportTexts(v).flatMap((t) => {
+    for (const [k, re] of Object.entries(THEME_WORDS)) {
+      const m = t.text?.match(re);
+      if (m) return [{ level: "warn" as const, where: t.where, hit: m[0], why: `节日设的是「无节日」，画面里没有${findTheme(k).label}布置：把这个词改掉，或到「视频设定」改节日` }];
+    }
+    return [];
+  });
+}
+
+export function exportReport(v: Pick<ShortVideoData, "shots"> & Partial<Pick<ShortVideoData, "theme" | "themeText" | "room">>, facts: AdFacts, fileOk?: (s: ShortShot) => boolean): ExportReport {
   const issues = checkAdText(exportTexts(v), facts);
-  return { gaps: bodyGaps(v, fileOk), blocks: issues.filter((i) => i.level === "block"), warns: issues.filter((i) => i.level === "warn") };
+  return { gaps: bodyGaps(v, fileOk), blocks: issues.filter((i) => i.level === "block"), warns: [...issues.filter((i) => i.level === "warn"), ...holidayWarns(v)] };
 }
 
 /** 正式导出被拦的原因（一句话）；空 = 可以正式导出 */
