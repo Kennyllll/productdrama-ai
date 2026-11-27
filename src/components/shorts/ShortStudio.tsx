@@ -915,11 +915,11 @@ export function ShortStudio({
                       : s.stage === "video_ready"
                         ? "accept"
                         : null;
-            const gate = (a: StageAction, label: string, enabled: boolean) => !enabled ? null : (
+            const gate = (a: StageAction, label: string, enabled: boolean, blocked = false) => !enabled ? null : (
               <button
-                className={a === mainAct ? primary : btn}
+                className={a === mainAct && !blocked ? primary : btn}
                 disabled={
-                  busy || dirty || !saved || !enabled || wait > 0 || runBusy
+                  busy || dirty || !saved || !enabled || wait > 0 || runBusy || blocked
                 }
                 onClick={async () => {
                   const sy = st.sync?.[s.id];
@@ -1720,9 +1720,11 @@ export function ShortStudio({
                       {(() => {
                         const vc = s.videoCheck?.jobId === s.videoJobId ? s.videoCheck : undefined;
                         const bad = !!vc && !vc.pass && !vc.failed;
+                        const still = (s.issues ?? []).some((x) => x.status === "still");
+                        const unchecked = (s.issues ?? []).some((x) => x.status === "open");
                         return (
                           <>
-                            {gate(bad ? "accept_force" : "accept", bad ? "我看过了，仍然采用" : vc && !vc.failed ? "采用" : "没自动检查：我逐秒看过了，采用", s.stage === "video_ready")}
+                            {gate(bad || still ? "accept_force" : "accept", still ? "问题还在，仍然采用" : bad ? "我看过了，仍然采用" : vc && !vc.failed ? "采用" : "没自动检查：我逐秒看过了，采用", s.stage === "video_ready", unchecked)}
                             {vc && s.stage === "video_ready" ? (
                               vc.pass ? (
                                 <span className="self-center text-xs text-emerald-300">视频检查通过：每 0.5 秒对照产品照，没看到变形</span>
@@ -1794,10 +1796,12 @@ export function ShortStudio({
                                   className={
                                     it.status === "fixed"
                                       ? "text-emerald-300"
-                                      : "text-amber-200"
+                                      : it.status === "still"
+                                        ? "text-rose-300"
+                                        : "text-amber-200"
                                   }
                                 >
-                                  {it.status === "fixed" ? "已解决" : "待对照"}
+                                  {it.status === "fixed" ? "已解决" : it.status === "still" ? "仍存在" : "待对照"}
                                 </span>
                                 <span className="text-neutral-200">
                                   {it.text}
@@ -1866,7 +1870,7 @@ export function ShortStudio({
                                             v.id,
                                             s.id,
                                             it.id,
-                                            "open",
+                                            "still",
                                           ),
                                         )
                                       }

@@ -1005,7 +1005,7 @@ export async function aiShotsAction(videoId: string): Promise<Result<StudioState
 }
 
 /** 对照新旧版本后标记返工问题：只有出了新版本才能标 */
-export async function issueStatusAction(videoId: string, shotId: string, issueId: string, status: "open" | "fixed"): Promise<Result<StudioState>> {
+export async function issueStatusAction(videoId: string, shotId: string, issueId: string, status: "open" | "fixed" | "still"): Promise<Result<StudioState>> {
   try {
     const v = load(videoId);
     const s = v.shots.find((x) => x.id === shotId);
@@ -1088,7 +1088,8 @@ export async function shotStageAction(videoId: string, shotId: string, action: S
       case "accept":
       case "accept_force": {
         need(s.stage === "video_ready" && !!s.videoJobId, "还没有待审的视频");
-        need(!(s.issues ?? []).some((x) => x.status === "open"), "还有返工问题没确认：对照新旧版本逐条标“已解决”后才能采用");
+        need(!(s.issues ?? []).some((x) => x.status === "open"), "还有返工问题没对照：对照新旧版本逐条点“已解决”或“仍存在”后才能采用");
+        need(action === "accept_force" || !(s.issues ?? []).some((x) => x.status === "still"), "有返工问题还在：确认要用这一版请点“问题还在，仍然采用”");
         const vc = s.videoCheck?.jobId === s.videoJobId ? s.videoCheck : undefined;
         need(action === "accept_force" || !vc || vc.pass || !!vc.failed, `视频检查没过：${vc?.issues.join("；")}。确认没问题请点“我看过了，仍然采用”`);
         s.stage = "accepted";
@@ -1098,6 +1099,8 @@ export async function shotStageAction(videoId: string, shotId: string, action: S
         need(s.stage === "video_ready" || s.stage === "accepted", "当前没有可返工的视频");
         const items = note.split(/[；;\n]+/).map((x) => x.trim()).filter(Boolean);
         need(items.length > 0, "返工要写清楚问题（多条用分号隔开），新版本出来后逐条对照");
+        // 上一轮“仍存在”的问题，下一版还要再对照
+        for (const it of s.issues ?? []) if (it.status === "still") Object.assign(it, { status: "open", fromJobId: s.videoJobId });
         s.issues = [...(s.issues ?? []), ...items.map((text) => ({ id: randomUUID().slice(0, 8), text: text.slice(0, 200), fromJobId: s.videoJobId, status: "open" as const, scope: issueScope }))];
         if (issueScope === "video") for (const text of items) addRule(v.projectId, { layer: "process", level: "warn", text: `短视频返工问题（整条视频都要注意）：${text.slice(0, 200)}`, source: `${v.title} #${v.shots.indexOf(s) + 1}` });
         s.stage = "frame_ok";

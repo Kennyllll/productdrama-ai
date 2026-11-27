@@ -141,7 +141,8 @@ export interface ShotIssue {
   text: string;
   /** 出问题的那一版视频 */
   fromJobId: string | null;
-  status: "open" | "fixed";
+  /** open = 还没对照；fixed = 已解决；still = 对照过，问题还在 */
+  status: "open" | "fixed" | "still";
   /** shot = 只管这一镜；video = 整条视频都要注意（后面的镜头审片时也提醒）。旧数据没有 = shot */
   scope?: "shot" | "video";
 }
