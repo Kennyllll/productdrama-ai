@@ -26,6 +26,7 @@ export function BudgetEditor({ budget, defaultUsd, custom, busy, onSet }: { budg
           <>
             <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="为什么要提高？" className={`${field} w-40`} aria-label="提高预算的原因" />
             <input value={pin} onChange={(e) => setPin(e.target.value)} placeholder="管理员 PIN" type="password" inputMode="numeric" autoComplete="off" className={`${field} w-24`} aria-label="管理员 PIN" />
+            <a href="/settings" className="text-[11px] text-amber-300 underline">还没有 PIN？到「设置 → 身份」设一个</a>
           </>
         ) : null}
         <button
