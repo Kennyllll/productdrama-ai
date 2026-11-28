@@ -236,10 +236,11 @@ def main():
     info = {"box": box, "score": round(score, 3), "worst": round(worst, 3), "occluded": round(max(occ) if occ else 0, 2)}
     if worst > 0.85:
         print(json.dumps({"status": "unchanged", **info})); return
+    # 不用 -shortest：图片序列 + 复制音轨时它会把画面截在 1 秒多（97 帧只剩 35 帧）
     with tempfile.TemporaryDirectory() as d:
         for i, f in enumerate(of): cv2.imwrite(os.path.join(d, f"{i:04d}.png"), f)
         subprocess.run([ffmpeg, "-loglevel", "error", "-y", "-framerate", str(fps), "-i", os.path.join(d, "%04d.png"), "-i", video,
-                        "-map", "0:v", "-map", "1:a?", "-c:v", "libx264", "-crf", "16", "-pix_fmt", "yuv420p", "-c:a", "copy", "-shortest", out], check=True)
+                        "-map", "0:v", "-map", "1:a?", "-c:v", "libx264", "-crf", "16", "-pix_fmt", "yuv420p", "-c:a", "copy", "-t", f"{len(of) / fps:.3f}", out], check=True)
     print(json.dumps({"status": "locked", "frames": len(of), **info}))
 
 if __name__ == "__main__":
