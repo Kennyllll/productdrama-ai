@@ -154,7 +154,8 @@ export function fitProduct(c0: Cam, s: CamScene, target = 0.6): { cam: Cam; note
     const dx = s.bike[0] - c.camPos[0];
     const dy = s.bike[1] - c.camPos[1];
     const d = Math.hypot(dx, dy);
-    if (span(c) >= target || d - 0.05 < 0.6) break;
+    // 俯角不超过 30°：站着拿手机贴近产品会变成从头顶往下拍，剩下的放大交给焦段
+    if (span(c) >= target || d - 0.05 < 0.6 || (z - look[2]) / (d - 0.05) > Math.tan(Math.PI / 6)) break;
     const n: Cam = { ...c, camPos: [r2(c.camPos[0] + (dx / d) * 0.05), r2(c.camPos[1] + (dy / d) * 0.05), z] };
     if (!ok(n)) break;
     c = n;

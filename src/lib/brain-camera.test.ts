@@ -73,3 +73,12 @@ test("产品太小：免费自动推近 / 换焦段，修完产品够大又完�
   assert.equal(r.cam.camPos[2], 1.3);
   assert.ok(!camProblems(r.cam, s).some((p) => p.small));
 });
+
+test("自动放大不会把站着拍的机位推到产品头顶（俯角不超过 30°）", () => {
+  const s = scene({ items: [] });
+  const r = fitProduct({ camPos: [2.5, -0.7, 1.5], lookAt: [0, 0, 0.35], lens: 24 }, s);
+  assert.ok(r);
+  const d = Math.hypot(r.cam.camPos[0] - 0, r.cam.camPos[1] - 0);
+  assert.ok((1.5 - r.cam.lookAt[2]) / d <= Math.tan(Math.PI / 6) + 1e-6);
+  assert.ok((productSpan(r.cam, s) ?? 0) >= 0.5);
+});
