@@ -14,7 +14,7 @@ import { autoLayout } from "@/lib/shorts-set";
 import { activeItems, findItemType, type SceneItem } from "@/lib/shorts-scenes";
 import { BrainError, kimiChat, parseJson } from "@/lib/brain/kimi";
 import { SKILLS } from "@/lib/brain/review";
-import { checkCam, LENSES, type Cam } from "@/lib/brain-camera";
+import { camProblems, checkCam, LENSES, type Cam } from "@/lib/brain-camera";
 import { roomBox } from "@/lib/stage-rules";
 
 export interface StageDraft {
@@ -233,10 +233,12 @@ export async function brainStageAction(videoId: string, shotId: string, request:
       else if (!pos) cannot.push("大脑给的机位格式不对，机位没改");
       else {
         const people = figures.map((f, k) => ({ name: cast?.members.find((x) => x.id === f.memberId)?.name ?? `人偶${k + 1}`, x: (bike?.[0] ?? 0) + (f.onProduct ? 0 : f.dx), y: (bike?.[1] ?? 0) + (f.onProduct ? 0 : f.dy), h: f.h ?? (f.kind === "adult" ? 1.7 : 1) }));
-        const r = checkCam({ camPos: pos, lookAt: look, lens: typeof dc.lens === "number" ? dc.lens : layout.lens }, { bike, bikeYaw, len, h: ph, items, people });
+        const cs = { bike, bikeYaw, len, h: ph, items, people };
+        const r = checkCam({ camPos: pos, lookAt: look, lens: typeof dc.lens === "number" ? dc.lens : layout.lens }, cs);
         changes.push(...r.fixes);
         cannot.push(...r.errors);
         cam = r.cam ?? undefined;
+        if (cam) for (const p of camProblems(cam, cs)) cannot.push(`平台复查：${p.msg}${p.small ? "（3D 页可点「自动放大（免费）」）" : ""}`);
       }
     }
 

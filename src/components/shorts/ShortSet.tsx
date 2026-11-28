@@ -26,6 +26,8 @@ export interface StageProps {
   brainReady?: boolean;
   /** 产品长（米） */
   productLen?: number;
+  /** 分镜写了「无产品」 */
+  noProduct?: boolean;
   /** 场地和文字对不上（服务端算好） */
   sceneWarn?: string;
 }
@@ -295,6 +297,7 @@ export function ShortSet({
               members={st.members}
               brainReady={st.brainReady}
               productLen={st.productLen}
+              noProduct={st.noProduct}
               glbUrl={glbUrl}
               modelId={modelId}
               rig={rig}

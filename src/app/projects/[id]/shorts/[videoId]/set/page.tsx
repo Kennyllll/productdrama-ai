@@ -67,6 +67,7 @@ export default async function ShortSetPage({ params, searchParams }: { params: P
       items: ver.items,
       brainReady,
       productLen: base?.lengthCm ? base.lengthCm / 100 : 0.8,
+      noProduct: /^\s*(无产品|没有产品|不出现产品)/.test(s.productNote ?? ""),
       sceneWarn: shotChecks({ ...s, layout: s.layout ?? autoLayout(s, i) }, basisOf(s, { name: sc.name, outdoor: sc.outdoor, sh })).find((x) => x.startsWith("场地是")),
       members: (castOf(v.families, s.family ?? 1)?.members ?? []).filter((m) => !!s.hook?.selfie || m.id !== filmerId(v, s)).map((m) => ({ id: m.id, name: m.name, kind: memberKind(m), h: m.heightCm / 100, role: m.role, label: `${m.name}（${roleOf(m.role).label}，${(m.heightCm / 100).toFixed(2)} 米）` })),
     };

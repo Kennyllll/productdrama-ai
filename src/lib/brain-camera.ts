@@ -105,8 +105,8 @@ export function checkCam(raw: Cam, s: CamScene): { cam: Cam | null; fixes: strin
 }
 
 /** 3D 页实时检查当前机位：每条问题带一句写好的要求，点「让大脑修好」直接交给大脑 */
-export function camProblems(c: Cam, s: CamScene): { msg: string; ask: string }[] {
-  const out: { msg: string; ask: string }[] = [];
+export function camProblems(c: Cam, s: CamScene): { msg: string; ask: string; small?: boolean }[] {
+  const out: { msg: string; ask: string; small?: boolean }[] = [];
   const keep = "人和产品的位置保持原样";
   const z = c.camPos[2];
   if (wallBetween([c.camPos[0], c.camPos[1]], z, s.items)) out.push({ msg: "机位在墙外", ask: `机位在墙外：把机位挪回屋里，拍全产品；${keep}` });
@@ -115,14 +115,8 @@ export function camProblems(c: Cam, s: CamScene): { msg: string; ask: string }[]
   const dist = Math.hypot(c.camPos[0] - s.bike[0], c.camPos[1] - s.bike[1]);
   if (dist < 0.6) out.push({ msg: `机位离产品只有 ${r2(dist)} 米，太近`, ask: `机位离产品太近：往后拉到至少 0.6 米，拍全产品；${keep}` });
   const pts = productPts(s);
-  const q = pts.map((p) => project(c, p));
   if (!inFrame(c, pts, 1)) out.push({ msg: "产品被画面裁掉了", ask: `产品被画面裁掉了：镜头拉远或换个角度，让整个产品完整入画；${keep}` });
-  else if (q.every(Boolean)) {
-    const ys = q.map((v) => (v as [number, number])[1]);
-    const xs = q.map((v) => (v as [number, number])[0]);
-    if (Math.max(Math.max(...ys) - Math.min(...ys), (Math.max(...xs) - Math.min(...xs)) * (9 / 16)) < 0.5)
-      out.push({ msg: "产品在画面里太小", ask: `产品在画面里太小：镜头拉近一点或换焦段，让产品更大，但要完整入画；${keep}` });
-  }
+  else if ((productSpan(c, s) ?? 1) < SMALL) out.push({ msg: "产品在画面里太小", ask: `产品在画面里太小：镜头拉近一点或换焦段，让产品更大，但要完整入画；${keep}`, small: true });
   const [bx, by] = s.bike;
   const sx = bx - c.camPos[0];
   const sy = by - c.camPos[1];
@@ -134,4 +128,46 @@ export function camProblems(c: Cam, s: CamScene): { msg: string; ask: string }[]
     if (off < 0.25) out.push({ msg: `${p.name} 挡在镜头和产品中间`, ask: `${p.name} 挡住了产品：挪一下 ${p.name} 的站位或换个机位，让产品完整露出来；产品保持原样` });
   }
   return out;
+}
+
+/** 产品在竖屏里占多大（竖向 0–2 = 全高；横向按 9:16 折算），在相机后面返回 null */
+export function productSpan(c: Cam, s: CamScene): number | null {
+  const q = productPts(s).map((p) => project(c, p));
+  if (!q.length || q.some((v) => !v)) return null;
+  const xs = q.map((v) => (v as [number, number])[0]);
+  const ys = q.map((v) => (v as [number, number])[1]);
+  return Math.max(Math.max(...ys) - Math.min(...ys), (Math.max(...xs) - Math.min(...xs)) * (9 / 16));
+}
+const SMALL = 0.5;
+
+/** 产品太小：免费自动修。看向产品中心，机位朝产品推近（高度不变、不近于 0.6 米、不穿墙穿家具），还不够再换长焦；做不到返回 null */
+export function fitProduct(c0: Cam, s: CamScene, target = 0.6): { cam: Cam; note: string } | null {
+  if (!s.bike) return null;
+  const pts = productPts(s);
+  const z = c0.camPos[2];
+  const look: P3 = [s.bike[0], s.bike[1], r2(Math.min(s.h / 2, 0.5))];
+  let c: Cam = { ...c0, lookAt: look };
+  const ok = (x: Cam) => inFrame(x, pts) && !wallBetween([x.camPos[0], x.camPos[1]], z, s.items) && !itemAt([x.camPos[0], x.camPos[1]], z, s.items);
+  const span = (x: Cam) => productSpan(x, s) ?? 0;
+  let moved = 0;
+  for (;;) {
+    const dx = s.bike[0] - c.camPos[0];
+    const dy = s.bike[1] - c.camPos[1];
+    const d = Math.hypot(dx, dy);
+    if (span(c) >= target || d - 0.05 < 0.6) break;
+    const n: Cam = { ...c, camPos: [r2(c.camPos[0] + (dx / d) * 0.05), r2(c.camPos[1] + (dy / d) * 0.05), z] };
+    if (!ok(n)) break;
+    c = n;
+    moved += 0.05;
+  }
+  const lens0 = c.lens;
+  for (const L of LENSES.filter((x) => x > c.lens)) {
+    if (span(c) >= target) break;
+    const n = { ...c, lens: L };
+    if (!ok(n)) break;
+    c = n;
+  }
+  if (!ok(c) || span(c) < SMALL) return null;
+  const note = [moved > 0 && `机位往产品推近 ${r2(moved)} 米`, c.lens !== lens0 && `焦段换成 ${c.lens}mm`].filter(Boolean).join("，") || "镜头对准产品中心";
+  return { cam: c, note };
 }

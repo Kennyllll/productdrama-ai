@@ -11,7 +11,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { saveProductRigAction, saveSceneVersionAction, sceneConflictsAction } from "@/app/scene-actions";
 import { saveShortLayoutAction } from "@/app/short-actions";
-import { camProblems } from "@/lib/brain-camera";
+import { camProblems, fitProduct } from "@/lib/brain-camera";
 import { brainStageAction, type StageProposal } from "@/app/brain-stage-actions";
 import { buildFigure, presetPose, shape, clampReach } from "@/components/shorts/scene-mesh";
 import { carryBlock, carrierOf, figName, freeSpot, isStructure, itemLabel, liftOf, normalizeStage, rideBlock, ridersOf, relSpot } from "@/lib/stage-rules";
@@ -106,7 +106,10 @@ export function StageEditor({
   shotCamLive,
   onBrainCam,
   productLen = 0.8,
+  noProduct = false,
 }: {
+  /** 分镜写了「无产品」（比如结尾 Logo）：不查产品大小 */
+  noProduct?: boolean;
   /** 产品长（米）：3D 页检查产品有没有完整入画 */
   productLen?: number;
   /** 三栏 3D 页：场景列表、属性栏渲染到页面左右两栏 */
@@ -1063,23 +1066,25 @@ export function StageEditor({
   };
   const brainBox = useRef<HTMLDetailsElement>(null);
   const camNow = shotCamLive ?? layout;
-  const problems = useMemo(
-    () =>
-      ro
-        ? []
-        : camProblems(
-            { camPos: camNow.camPos, lookAt: camNow.lookAt, lens: camNow.lens },
-            {
-              bike: doc.bike,
+  const camScene = useMemo(
+    () => ({
+              bike: noProduct ? undefined : doc.bike,
               bikeYaw: doc.bikeYaw,
               len: productLen,
               h: Math.max(0.4, (doc.rig ?? rig)?.gripY ?? 0.6),
               items: activeItems(doc.items, scene.theme),
               people: doc.figures.map((f, k) => ({ name: members.find((m) => m.id === f.memberId)?.name ?? `人偶${k + 1}`, x: (doc.bike?.[0] ?? 0) + (f.onProduct ? 0 : f.dx), y: (doc.bike?.[1] ?? 0) + (f.onProduct ? 0 : f.dy), h: f.h ?? (f.kind === "adult" ? 1.7 : 1) })),
-            },
-          ),
-    [ro, camNow.camPos, camNow.lookAt, camNow.lens, doc.bike, doc.bikeYaw, doc.rig, doc.items, doc.figures, rig, productLen, scene.theme, members],
+    }),
+    [noProduct, doc.bike, doc.bikeYaw, doc.rig, doc.items, doc.figures, rig, productLen, scene.theme, members],
   );
+  const problems = useMemo(() => (ro ? [] : camProblems({ camPos: camNow.camPos, lookAt: camNow.lookAt, lens: camNow.lens }, camScene)), [ro, camNow.camPos, camNow.lookAt, camNow.lens, camScene]);
+  const autoFit = () => {
+    const r = fitProduct({ camPos: camNow.camPos, lookAt: camNow.lookAt, lens: camNow.lens }, camScene);
+    if (!r) return setBrainMsg("⚠ 平台自动放大做不到（推近会撞墙 / 家具或裁掉产品），可以点「让大脑修好」");
+    onBrainCam?.(r.cam);
+    setBrainMsg(`平台已自动放大产品（免费）：${r.note}。还没保存，不满意点「撤销」`);
+    if (brainBox.current) brainBox.current.open = true;
+  };
   const fixWithBrain = (ask: string) => {
     setAsk(ask);
     setAskOk(true);
@@ -1092,6 +1097,11 @@ export function StageEditor({
         {problems.map((p) => (
           <div key={p.msg} className="flex items-center gap-2">
             <span className="min-w-0 flex-1 text-neutral-200">{p.msg}</span>
+            {p.small ? (
+              <button type="button" onClick={autoFit} className="shrink-0 rounded bg-amber-400 px-2 py-0.5 font-medium text-black">
+                自动放大（免费）
+              </button>
+            ) : null}
             {brainReady ? (
               <button type="button" onClick={() => fixWithBrain(p.ask)} className="shrink-0 rounded bg-violet-400 px-2 py-0.5 font-medium text-black">
                 让大脑修好
