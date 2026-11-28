@@ -1255,7 +1255,7 @@ function refPlan(v: ShortVideo, s: ShortShot): RefPart[] {
   const people = cands.find((x) => famOf(x) === famOf(s));
   if (place && people && place === people) {
     out.push({
-      text: `is the last frame of ${place === done[done.length - 1] ? "the previous shot" : "an earlier shot"} in this video: keep only its people (faces, hair, wardrobe), ${turned(place) ? "decor style and light; this camera faces another way, so the background follows Image 1 and the location text" : "home, decor and light"}. Ignore its product (it may be drawn wrong): draw the product only from the real photos. A new moment, not a copy.`,
+      text: `is the last frame of ${place === done[done.length - 1] ? "the previous shot" : "an earlier shot"} in this video: keep only how its people look (faces, hair, wardrobe), ${turned(place) ? "decor style and light; this camera faces another way, so the background follows Image 1 and the location text" : "home, decor and light"}. Ignore its product (it may be drawn wrong): draw the product only from the real photos. Do not copy its framing: who is in frame, where they stand, the camera angle and distance, product size and the way the product faces all follow Image 1 and the shot text. Anyone in that frame who is not in Image 1 stays out of this picture. A new moment, not a copy.`,
       file: () => stillOf(v, place),
     });
   } else {
