@@ -17,7 +17,12 @@ const FONTS = path.join(process.cwd(), "assets", "fonts");
 /** 截取视频最后一帧（下一镜的连续性参考） */
 export async function lastFrame(src: string, out: string): Promise<string> {
   if (!ffmpegPath) throw new Error("找不到 ffmpeg");
-  if (!fs.existsSync(out)) await run(ffmpegPath, ["-y", "-sseof", "-0.15", "-i", src, "-frames:v", "1", "-update", "1", out], { maxBuffer: 1 << 24 });
+  if (fs.existsSync(out)) return out;
+  // 锁 Logo 等重新合成的视频，画面轨可能比文件时长短，-sseof -0.15 取不到帧；
+  // 退到最后 1 秒逐帧覆盖写，留下的就是最后一帧
+  await run(ffmpegPath, ["-y", "-sseof", "-0.15", "-i", src, "-frames:v", "1", "-update", "1", out], { maxBuffer: 1 << 24 });
+  if (!fs.existsSync(out)) await run(ffmpegPath, ["-y", "-sseof", "-1", "-i", src, "-update", "1", out], { maxBuffer: 1 << 24 });
+  if (!fs.existsSync(out)) throw new Error("取不到上一镜视频的最后一帧，视频文件可能坏了");
   return out;
 }
 
