@@ -56,7 +56,7 @@ import {
   waitingFor,
   type ShotHook,
 } from "@/lib/shorts";
-import { lastFrame, renderShort } from "@/lib/shorts-render";
+import { endCardStill, lastFrame, renderShort } from "@/lib/shorts-render";
 import { cleanLayout, dropCameraMoves, guessRoom, layoutText, moveText, PRODUCT_REF_VIEWS, productView } from "@/lib/shorts-set";
 import { findTheme, sceneText } from "@/lib/shorts-scenes";
 import { createScene, ensureScenes, getScene, legacyShotScene, saveScene, themedScene, versionOf } from "@/lib/shorts-scenes-repo";
@@ -1416,6 +1416,30 @@ export async function logoLockAction(videoId: string, shotId: string): Promise<R
     const s = load(videoId).shots.find((x) => x.id === shotId);
     if (!s?.videoJobId) throw new Error("这一镜还没有视频");
     await runLogoLock(videoId, shotId, s.videoJobId);
+    return { result: state(videoId) };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Logo 片尾（免费，平台合成）：on = 改成片尾并直接采用；off = 改回 AI 镜头，从头做 */
+export async function setEndCardAction(videoId: string, shotId: string, on: boolean): Promise<Result<StudioState>> {
+  try {
+    const v = load(videoId);
+    const s = v.shots.find((x) => x.id === shotId);
+    if (!s || s.hook) throw new Error("开头不能做成 Logo 片尾");
+    if (on) {
+      s.endCard = true;
+      s.stage = "accepted";
+      s.trimStart = 0;
+      s.useSeconds = Math.min(3, Math.max(1.5, s.useSeconds || 2));
+      await endCardStill(v);
+    } else {
+      s.endCard = false;
+      s.stage = "draft";
+    }
+    saveShortVideo(v);
+    await auditStage(v, s, on ? "改成 Logo 片尾" : "改回 AI 镜头", on ? "白底 + 品牌 Logo + 字幕，平台合成，免费" : "");
     return { result: state(videoId) };
   } catch (e) {
     return fail(e);

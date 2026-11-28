@@ -50,6 +50,7 @@ import {
   setShotFrameModelAction,
   recheckFrameAction,
   recheckVideoAction,
+  setEndCardAction,
 } from "@/app/short-actions";
 import {
   budgetOf,
@@ -82,6 +83,7 @@ import {
   RULE1_REDO,
   rule1Tries,
   RULE1_MAX,
+  noProductShot,
 } from "@/lib/shorts";
 import { THEMES } from "@/lib/shorts-scenes";
 import { MOVES } from "@/lib/shorts-set";
@@ -1613,7 +1615,27 @@ export function ShortStudio({
                     />
                   </div>
                 ) : null}
-                <div className="mt-3 grid gap-3 border-t border-white/10 pt-3 md:grid-cols-2">
+                {s.endCard ? (
+                  <div className="mt-3 flex items-start gap-3 rounded-lg border border-emerald-400/40 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={`/api/shorts/${v.id}?endcard=1`} alt="Logo 片尾" className="aspect-[9/16] w-24 rounded border border-white/10 bg-white object-cover" />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <p className="font-medium">Logo 片尾 · 已采用 · 免费</p>
+                      <p className="text-xs">白底 + 品牌 Logo + 这一镜的字幕，{s.useSeconds} 秒。平台直接合成，不用 AI 出图。</p>
+                      <button type="button" disabled={busy} onClick={() => act(() => setEndCardAction(v.id, s.id, false), "已改回 AI 镜头")} className="rounded-md border border-white/20 px-3 py-1.5 text-xs hover:bg-white/10 disabled:opacity-50">
+                        改回 AI 镜头
+                      </button>
+                    </div>
+                  </div>
+                ) : !s.hook && noProductShot(s) ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-amber-400/40 bg-amber-500/10 p-3 text-sm text-amber-100">
+                    <p className="min-w-0 flex-1">这一镜不出产品，不用 AI 出图：平台直接合成 Logo 片尾（白底 + Logo + 字幕），免费。</p>
+                    <button type="button" disabled={busy} onClick={() => act(() => setEndCardAction(v.id, s.id, true), "已改成 Logo 片尾")} className="rounded-md bg-amber-400 px-3 py-1.5 text-xs font-medium text-black hover:bg-amber-300 disabled:opacity-50">
+                      改成 Logo 片尾（免费）
+                    </button>
+                  </div>
+                ) : null}
+                <div className={`mt-3 grid gap-3 border-t border-white/10 pt-3 md:grid-cols-2${s.endCard ? " hidden" : ""}`}>
                   <div className="space-y-2">
                     <p className="text-xs text-neutral-400">
                       首帧 · {charged("frame")} 次（默认上限 {DEFAULT_ATTEMPTS}

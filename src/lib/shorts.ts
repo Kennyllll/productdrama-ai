@@ -195,7 +195,14 @@ export interface ShortShot {
   filmer?: string;
   /** 首帧用哪个模型（SHORT_FRAME_MODELS）；空 = 默认 Seedream */
   frameModel?: ShortFrameModelId;
+  /** Logo 片尾：不用 AI，平台用白底 + 品牌 Logo + 字幕合成（免费） */
+  endCard?: boolean;
 }
+
+/** 这一镜有可以拼进成片的画面：AI 视频，或平台合成的 Logo 片尾 */
+export const hasClip = (s: Pick<ShortShot, "videoJobId" | "endCard">): boolean => !!s.videoJobId || !!s.endCard;
+/** 分镜写着「无产品」：建议改成 Logo 片尾，不花钱出图 */
+export const noProductShot = (s: Pick<ShortShot, "productNote">): boolean => /^\s*(无产品|没有产品|不出现产品)/.test(s.productNote ?? "");
 
 /** locked = Logo 字变了、已换回；unchanged = 没变不用修；其他 = 没做成的原因 */
 export type LogoLockStatus = "locked" | "unchanged" | "no-logo" | "track-lost" | "no-tools" | "no-brand-logo" | "error";

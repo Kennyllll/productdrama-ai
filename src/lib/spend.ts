@@ -1,5 +1,5 @@
 // 钱和快照的纯计算：哪一镜花了多少、删掉/替换会丢多少、导出用了哪一版（不碰数据库，方便测试）
-import { bodyOf, hookParts, jobCost, type GenJob, type ShortShot, type ShortVideoData } from "@/lib/shorts";
+import { bodyOf, hookParts, jobCost, type GenJob, type ShortShot, type ShortVideoData, hasClip } from "@/lib/shorts";
 
 type Job = Pick<GenJob, "id" | "shotId" | "kind" | "status" | "actualUsd" | "estUsd" | "isTest" | "model">;
 
@@ -60,12 +60,12 @@ export interface ExportSnapshot {
 
 /** 正式导出前：没采用 / 没视频的正文镜头列出来，不能静默跳过 */
 export function missingBody(v: Pick<ShortVideoData, "shots">): string[] {
-  return v.shots.flatMap((s, i) => (!s.hook && (s.stage !== "accepted" || !s.videoJobId) ? [`#${i + 1}${s.beat ? ` ${s.beat}` : ""}`] : []));
+  return v.shots.flatMap((s, i) => (!s.hook && (s.stage !== "accepted" || !hasClip(s)) ? [`#${i + 1}${s.beat ? ` ${s.beat}` : ""}`] : []));
 }
 
 export function buildSnapshot(v: Pick<ShortVideoData, "shots" | "captions" | "resolution" | "exportSound">, hook: ShortShot | null, jobs: Job[]): ExportSnapshot {
   const parts = hook ? hookParts(v, hook) : [];
-  const list = [...parts, ...bodyOf(v)].filter((s) => s.stage === "accepted" && s.videoJobId);
+  const list = [...parts, ...bodyOf(v)].filter((s) => s.stage === "accepted" && hasClip(s));
   const model = (id: string | null) => (id ? (jobs.find((j) => j.id === id)?.model ?? "") : "");
   const shots = list.map((s, i) => ({
     n: i + 1,

@@ -22,7 +22,7 @@ const STAGE_WHY: Record<string, string> = {
 /** 正文缺的镜头：没采用、没有视频、或视频文件丢了（fileOk 由服务端传入） */
 export function bodyGaps(v: Pick<ShortVideoData, "shots">, fileOk: (s: ShortShot) => boolean = () => true): BodyGap[] {
   return bodyOf(v).flatMap((s, i) => {
-    const why = s.stage !== "accepted" ? STAGE_WHY[s.stage] ?? "还没采用" : !s.videoJobId ? "没有视频" : !fileOk(s) ? "视频文件找不到了，要重做" : "";
+    const why = s.stage !== "accepted" ? STAGE_WHY[s.stage] ?? "还没采用" : s.endCard ? "" : !s.videoJobId ? "没有视频" : !fileOk(s) ? "视频文件找不到了，要重做" : "";
     return why ? [{ n: i + 1, beat: s.beat.slice(0, 40), why }] : [];
   });
 }

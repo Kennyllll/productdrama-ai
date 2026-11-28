@@ -3,6 +3,7 @@ import { shotClipPath } from "@/lib/logo-lock";
 import path from "node:path";
 import { previewPath } from "@/lib/export-paths";
 import { getExportVersion, versionPath } from "@/lib/export-versions-repo";
+import { endCardStillPath } from "@/lib/shorts-render";
 import { finalPath, getJob, getShortVideo, hookFinalPath, jobFilePath, videoDir } from "@/lib/shorts-repo";
 
 /** /api/shorts/<jobId> 取生成结果；/api/shorts/<videoId>?final=1 取成片 */
@@ -15,6 +16,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ jobId: s
     const s = v?.shots.find((x) => x.id === comp);
     if (!v || !s?.compFile || !/^comp-[a-z0-9-]+\.png$/.test(s.compFile)) return new Response("Not found", { status: 404 });
     return fileResponse(req, path.join(videoDir(v.projectId, v.id), s.compFile), "image/png", csp);
+  }
+  if (new URL(req.url).searchParams.get("endcard") === "1") {
+    const v = getShortVideo(jobId);
+    if (!v) return new Response("Not found", { status: 404 });
+    return fileResponse(req, endCardStillPath(v), "image/png", csp);
   }
   if (new URL(req.url).searchParams.get("preview") === "1") {
     const v = getShortVideo(jobId);
