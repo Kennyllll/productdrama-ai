@@ -134,7 +134,18 @@ export async function uploadFile(bytes: Buffer, contentType: string): Promise<st
     upload_url: string;
     upload_headers?: Record<string, string>;
   };
-  const put = await fetch(u.upload_url, { method: "PUT", headers: u.upload_headers ?? { "Content-Type": contentType }, body: new Uint8Array(bytes) });
-  if (!put.ok) throw new HiggsfieldError(`素材上传失败（HTTP ${put.status}）`);
+  // 上传不扣费：网络抖动（fetch failed）或 5xx 自动重试 3 次
+  let put: Response | null = null;
+  for (let i = 0; i < 3; i++) {
+    try {
+      put = await fetch(u.upload_url, { method: "PUT", headers: u.upload_headers ?? { "Content-Type": contentType }, body: new Uint8Array(bytes), signal: AbortSignal.timeout(60_000) });
+      if (put.ok || put.status < 500) break;
+    } catch {
+      put = null;
+    }
+    await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
+  }
+  if (!put) throw new HiggsfieldError("素材上传失败：网络连不上 Higgsfield 存储，重试 3 次都失败（没扣费）");
+  if (!put.ok) throw new HiggsfieldError(`素材上传失败（HTTP ${put.status}，没扣费）`);
   return u.public_url;
 }
