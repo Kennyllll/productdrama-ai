@@ -51,7 +51,7 @@ export async function saveProductAction(_prev: FormState, fd: FormData): Promise
   saveProduct(projectId, {
     name: fd.has("name") || !old ? text(fd, "name", 80) : old.name,
     category: fd.has("category") || !old ? text(fd, "category", 80) : old.category,
-    rideKind: fd.has("rideKind") ? text(fd, "rideKind", 20) : undefined,
+    rideKind: fd.has("rideKind") ? text(fd, "rideKind", 20) : old?.rideKind,
     sellingPoints,
     bible,
   });

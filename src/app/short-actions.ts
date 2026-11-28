@@ -224,7 +224,10 @@ function defaultOperator(s: ShortShot, i: number): string {
 }
 
 function cleanShot(s: Partial<ShortShot>, prev?: ShortShot): ShortShot {
-  const genSeconds = Math.round(clampNum(s.genSeconds, VIDEO_MIN_SEC, 12, VIDEO_MIN_SEC));
+  const gen0 = Math.round(clampNum(s.genSeconds, VIDEO_MIN_SEC, 12, VIDEO_MIN_SEC));
+  const want = Number(s.useSeconds);
+  // 还没出视频时「用」的秒数比生成长：把生成秒数一起加长，不悄悄改小用户填的数
+  const genSeconds = !prev?.videoJobId && Number.isFinite(want) && want > gen0 ? Math.min(12, Math.ceil(want)) : gen0;
   return {
     id: prev?.id ?? (typeof s.id === "string" && /^[a-z0-9-]{4,40}$/.test(s.id) ? s.id : randomUUID().slice(0, 8)),
     beat: str(s.beat, 40),
@@ -248,6 +251,7 @@ function cleanShot(s: Partial<ShortShot>, prev?: ShortShot): ShortShot {
     compFile: prev?.compFile ?? null,
     frameJobId: prev?.frameJobId ?? null,
     videoJobId: prev?.videoJobId ?? null,
+    endCard: prev?.endCard,
     checkNote: str(s.checkNote, 400),
     textBasis: prev?.textBasis,
     // 场地、家庭、镜头特殊要求由场地地图管理，保存分镜时沿用服务器上的值
@@ -1433,7 +1437,11 @@ export async function setEndCardAction(videoId: string, shotId: string, on: bool
       s.stage = "accepted";
       s.trimStart = 0;
       s.useSeconds = Math.min(3, Math.max(1.5, s.useSeconds || 2));
-      await endCardStill(v);
+      await endCardStill(v).catch((e: unknown) => {
+        console.error("[endcard]", e);
+        const m = e instanceof Error ? e.message : "";
+        throw new Error(m.startsWith("还没有品牌 Logo") ? m : "片尾没合成出来（免费，没花钱）：再点一次；还不行请看「操作日志」");
+      });
     } else {
       s.endCard = false;
       s.stage = "draft";

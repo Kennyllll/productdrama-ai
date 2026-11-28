@@ -58,6 +58,7 @@ export async function endCardStill(v: ShortVideo): Promise<string> {
   const logo = brandLogoPath(v.projectId);
   if (!logo) throw new Error("还没有品牌 Logo：先到产品资料上传 Logo（PNG 或 JPG）");
   const out = endCardStillPath(v);
+  fs.mkdirSync(path.dirname(out), { recursive: true });
   await run(ffmpegPath, ["-y", "-f", "lavfi", "-i", END_BG, "-i", logo, "-filter_complex", endOverlay, "-frames:v", "1", "-update", "1", out], { maxBuffer: 1 << 24 });
   return out;
 }

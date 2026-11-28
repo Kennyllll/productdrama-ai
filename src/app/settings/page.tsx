@@ -22,7 +22,8 @@ import { currentActor } from "@/lib/admin";
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const admin = (await currentActor()).role === "admin";
+  const actor = await currentActor();
+  const admin = actor.role === "admin";
   return (
     <main className="mx-auto max-w-3xl px-6 py-8">
       <PageHeader title="设置" description="「必填」的 Key 都打勾，就能做短视频。Key 只有管理员能改。" />
@@ -32,11 +33,11 @@ export default async function SettingsPage() {
           <KeyChecklist />
           <details open={admin} className="group rounded-xl border border-white/10 bg-neutral-900/40 p-4">
           <summary className="cursor-pointer text-sm font-medium text-white">
-            修改 Key 和模型 <span className="ml-1 text-xs font-normal text-neutral-500">{admin ? "管理员" : "新手只能看，不能改"}</span>
+            修改 Key 和模型 <span className="ml-1 text-xs font-normal text-neutral-500">{admin ? "管理员" : actor.pinSet ? "新手只能看，不能改" : "第一次用：先在上面设管理员 PIN"}</span>
           </summary>
           {!admin ? (
             <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-              要改 Key 请切换管理员。 <NeedAdmin />
+              {actor.pinSet ? <>要改 Key 请切换管理员。 <NeedAdmin /></> : "第一次用还没有管理员：在上面「身份」里设一个管理员 PIN，设好就能填 Key。"}
             </p>
           ) : null}
           <fieldset disabled={!admin} className="mt-4 space-y-6 disabled:opacity-70">

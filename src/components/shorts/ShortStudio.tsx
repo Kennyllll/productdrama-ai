@@ -746,7 +746,9 @@ export function ShortStudio({
         const todo = [...shots.filter((s) => !s.hook), ...shots.filter((s) => s.hook)].find((s) => s.stage !== "accepted");
         const [text, go]: [string, string | null] = !shots.length
           ? !v.concepts.length
-            ? ["点下面的「AI 出 4 个创意」", null]
+            ? aiReady
+              ? ["点下面的「AI 出 4 个创意」", null]
+              : ["还没填 DeepSeek Key：点下面「+ 镜头」自己写第一个镜头（免费）", null]
             : !v.conceptId
               ? ["在下面 4 个创意里点选一个", null]
               : ["点「按选中创意出分镜」", null]
@@ -987,7 +989,7 @@ export function ShortStudio({
         </div>
         {dirty ? (
           <p className="mb-2 text-xs text-amber-300">
-            有未保存的修改：保存后才能进行关口操作和生成。
+            有没保存的修改：先点「保存分镜」，才能确认构图、出首帧和视频。
           </p>
         ) : null}
         <p className={`mb-3 text-xs text-neutral-500 ${focus ? "hidden" : ""}`}>
@@ -1396,8 +1398,13 @@ export function ShortStudio({
                     <input
                       value={s.productNote}
                       onChange={(e) => edit(i, { productNote: e.target.value })}
+                      list={`pn-${s.id}`}
+                      placeholder="点一下选，或自己写"
                       className={input}
                     />
+                    <datalist id={`pn-${s.id}`}>
+                      {["组装好的成品", "包装盒", "拆箱中", "无产品，仅Logo"].map((o) => <option key={o} value={o} />)}
+                    </datalist>
                   </label>
                   <div className="text-xs text-neutral-400 md:col-span-2">
                     {s.hook?.selfie ? (
