@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { SceneItem } from "@/lib/shorts-scenes";
-import { checkCam, productPts, project, type CamScene } from "@/lib/brain-camera";
+import { camProblems, checkCam, productPts, project, type CamScene } from "@/lib/brain-camera";
 
 const item = (o: Partial<SceneItem>): SceneItem => ({ id: "i", type: "box", x: 0, y: 0, z: 0, yaw: 0, w: 1, d: 1, h: 1, rgb: [0.5, 0.5, 0.5], ...o });
 const room = [
@@ -51,4 +51,14 @@ test("焦段和高度超出范围：改成最接近的", () => {
   const r = checkCam({ camPos: [0, -1.6, 3], lookAt: [0, 0, 0.3], lens: 40 }, scene());
   assert.equal(r.cam?.lens, 35);
   assert.equal(r.cam?.camPos[2], 2.2);
+});
+
+test("3D 页机位检查：裁掉、太小、人挡住都报出来，并带写好的要求", () => {
+  const s = scene({ people: [{ name: "Marcus", x: 0, y: -0.8, h: 1.8 }] });
+  const msgs = (c: Parameters<typeof camProblems>[0], sc = s) => camProblems(c, sc).map((p) => p.msg);
+  assert.ok(msgs({ camPos: [0, -0.7, 0.8], lookAt: [0, 0, 0.3], lens: 85 }, scene()).includes("产品被画面裁掉了"));
+  assert.ok(msgs({ camPos: [0, -1.9, 1.3], lookAt: [0, 0, 0.3], lens: 18 }, scene()).includes("产品在画面里太小"));
+  assert.ok(msgs({ camPos: [0, -1.9, 1.2], lookAt: [0, 0, 0.3], lens: 28 }).includes("Marcus 挡在镜头和产品中间"));
+  assert.deepEqual(msgs({ camPos: [-1.1, -0.8, 1.0], lookAt: [0, 0, 0.3], lens: 35 }), []);
+  assert.ok(camProblems({ camPos: [0, -2.5, 1.2], lookAt: [0, 0, 0.3], lens: 28 }, scene())[0].ask.includes("挪回屋里"));
 });

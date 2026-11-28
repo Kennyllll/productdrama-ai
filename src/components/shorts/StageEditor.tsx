@@ -3,7 +3,7 @@
 import { askConfirm } from "@/components/ConfirmHost";
 import type { CastOption } from "@/lib/families";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -11,6 +11,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { saveProductRigAction, saveSceneVersionAction, sceneConflictsAction } from "@/app/scene-actions";
 import { saveShortLayoutAction } from "@/app/short-actions";
+import { camProblems } from "@/lib/brain-camera";
 import { brainStageAction, type StageProposal } from "@/app/brain-stage-actions";
 import { buildFigure, presetPose, shape, clampReach } from "@/components/shorts/scene-mesh";
 import { carryBlock, carrierOf, figName, freeSpot, isStructure, itemLabel, liftOf, normalizeStage, rideBlock, ridersOf, relSpot } from "@/lib/stage-rules";
@@ -104,7 +105,10 @@ export function StageEditor({
   onCamera,
   shotCamLive,
   onBrainCam,
+  productLen = 0.8,
 }: {
+  /** 产品长（米）：3D 页检查产品有没有完整入画 */
+  productLen?: number;
   /** 三栏 3D 页：场景列表、属性栏渲染到页面左右两栏 */
   listSlot?: HTMLElement | null;
   propsSlot?: HTMLElement | null;
@@ -1057,6 +1061,47 @@ export function StageEditor({
     setSel(null);
     setBrain(p);
   };
+  const brainBox = useRef<HTMLDetailsElement>(null);
+  const camNow = shotCamLive ?? layout;
+  const problems = useMemo(
+    () =>
+      ro
+        ? []
+        : camProblems(
+            { camPos: camNow.camPos, lookAt: camNow.lookAt, lens: camNow.lens },
+            {
+              bike: doc.bike,
+              bikeYaw: doc.bikeYaw,
+              len: productLen,
+              h: Math.max(0.4, (doc.rig ?? rig)?.gripY ?? 0.6),
+              items: activeItems(doc.items, scene.theme),
+              people: doc.figures.map((f, k) => ({ name: members.find((m) => m.id === f.memberId)?.name ?? `人偶${k + 1}`, x: (doc.bike?.[0] ?? 0) + (f.onProduct ? 0 : f.dx), y: (doc.bike?.[1] ?? 0) + (f.onProduct ? 0 : f.dy), h: f.h ?? (f.kind === "adult" ? 1.7 : 1) })),
+            },
+          ),
+    [ro, camNow.camPos, camNow.lookAt, camNow.lens, doc.bike, doc.bikeYaw, doc.rig, doc.items, doc.figures, rig, productLen, scene.theme, members],
+  );
+  const fixWithBrain = (ask: string) => {
+    setAsk(ask);
+    setAskOk(true);
+    if (brainBox.current) brainBox.current.open = true;
+  };
+  const vProblems =
+    problems.length && !thinking ? (
+      <div className="space-y-1 rounded-xl border border-amber-400/40 bg-amber-400/5 p-2 text-xs">
+        <p className="text-amber-200">平台发现这个画面有问题：</p>
+        {problems.map((p) => (
+          <div key={p.msg} className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 text-neutral-200">{p.msg}</span>
+            {brainReady ? (
+              <button type="button" onClick={() => fixWithBrain(p.ask)} className="shrink-0 rounded bg-violet-400 px-2 py-0.5 font-medium text-black">
+                让大脑修好
+              </button>
+            ) : null}
+          </div>
+        ))}
+        {!brainReady ? <p className="text-[11px] text-neutral-400">填了 Kimi Key 就能一键让大脑修；也可以自己在 3D 里拖机位。</p> : null}
+      </div>
+    ) : null;
   const askBrain = () => {
     setAskOk(false);
     setBrain(null);
@@ -1286,8 +1331,9 @@ export function StageEditor({
         </fieldset>
         {ro ? null : vRig}
         {msg ? <p className="text-neutral-300">{msg}</p> : null}
+        {vProblems}
         {vBrain ? (
-          <details className="rounded-xl border border-violet-400/30">
+          <details ref={brainBox} className="rounded-xl border border-violet-400/30">
             <summary className="cursor-pointer select-none px-3 py-2 text-violet-200">问 AI 大脑帮你摆</summary>
             <div className="[&>div]:border-0 [&>div]:bg-transparent">{vBrain}</div>
           </details>
@@ -1307,6 +1353,7 @@ export function StageEditor({
       <aside className="space-y-3 text-xs text-neutral-300">
         {vHeader}
         {vView}
+        {vProblems}
         {vBrain}
         {vObjects}
         {vSel}

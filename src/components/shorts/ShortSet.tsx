@@ -24,6 +24,8 @@ export interface StageProps {
   members?: CastOption[];
   /** 填了 Kimi Key 没有（没填就不让点「让大脑调」） */
   brainReady?: boolean;
+  /** 产品长（米） */
+  productLen?: number;
   /** 场地和文字对不上（服务端算好） */
   sceneWarn?: string;
 }
@@ -292,6 +294,7 @@ export function ShortSet({
               items={st.items}
               members={st.members}
               brainReady={st.brainReady}
+              productLen={st.productLen}
               glbUrl={glbUrl}
               modelId={modelId}
               rig={rig}

@@ -103,3 +103,35 @@ export function checkCam(raw: Cam, s: CamScene): { cam: Cam | null; fixes: strin
     if (!inFrame(c, [[p.x, p.y, Math.max(0.3, p.h * 0.85)]], 1)) fixes.push(`${p.name} 的头在画面外，看一下是不是故意的（真实广告里大人常只露手和半边身子）`);
   return { cam: { ...c, lookAt: [r2(c.lookAt[0]), r2(c.lookAt[1]), r2(c.lookAt[2])] }, fixes, errors };
 }
+
+/** 3D 页实时检查当前机位：每条问题带一句写好的要求，点「让大脑修好」直接交给大脑 */
+export function camProblems(c: Cam, s: CamScene): { msg: string; ask: string }[] {
+  const out: { msg: string; ask: string }[] = [];
+  const keep = "人和产品的位置保持原样";
+  const z = c.camPos[2];
+  if (wallBetween([c.camPos[0], c.camPos[1]], z, s.items)) out.push({ msg: "机位在墙外", ask: `机位在墙外：把机位挪回屋里，拍全产品；${keep}` });
+  else if (itemAt([c.camPos[0], c.camPos[1]], z, s.items)) out.push({ msg: "机位穿进了家具", ask: `机位穿进了家具：把机位挪到空地上，拍全产品；${keep}` });
+  if (!s.bike) return out;
+  const dist = Math.hypot(c.camPos[0] - s.bike[0], c.camPos[1] - s.bike[1]);
+  if (dist < 0.6) out.push({ msg: `机位离产品只有 ${r2(dist)} 米，太近`, ask: `机位离产品太近：往后拉到至少 0.6 米，拍全产品；${keep}` });
+  const pts = productPts(s);
+  const q = pts.map((p) => project(c, p));
+  if (!inFrame(c, pts, 1)) out.push({ msg: "产品被画面裁掉了", ask: `产品被画面裁掉了：镜头拉远或换个角度，让整个产品完整入画；${keep}` });
+  else if (q.every(Boolean)) {
+    const ys = q.map((v) => (v as [number, number])[1]);
+    const xs = q.map((v) => (v as [number, number])[0]);
+    if (Math.max(Math.max(...ys) - Math.min(...ys), (Math.max(...xs) - Math.min(...xs)) * (9 / 16)) < 0.5)
+      out.push({ msg: "产品在画面里太小", ask: `产品在画面里太小：镜头拉近一点或换焦段，让产品更大，但要完整入画；${keep}` });
+  }
+  const [bx, by] = s.bike;
+  const sx = bx - c.camPos[0];
+  const sy = by - c.camPos[1];
+  const sl = Math.hypot(sx, sy) || 1;
+  for (const p of s.people) {
+    const t = ((p.x - c.camPos[0]) * sx + (p.y - c.camPos[1]) * sy) / (sl * sl);
+    if (t <= 0.05 || t >= 0.8) continue;
+    const off = Math.abs((p.x - c.camPos[0]) * sy - (p.y - c.camPos[1]) * sx) / sl;
+    if (off < 0.25) out.push({ msg: `${p.name} 挡在镜头和产品中间`, ask: `${p.name} 挡住了产品：挪一下 ${p.name} 的站位或换个机位，让产品完整露出来；产品保持原样` });
+  }
+  return out;
+}
