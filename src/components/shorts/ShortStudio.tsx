@@ -1688,14 +1688,14 @@ export function ShortStudio({
                                       type="button"
                                       className="rounded border border-white/20 px-2 py-0.5 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-40"
                                       disabled={busy || runBusy || rechecking === s.id}
-                                      title="检查规则更新过：只重新看图，不重新出图，约 $0.01"
+                                      title="检查规则更新过：只重新看图，不重新出图；Gemini 约 $0.01，换 K3 约 $0.05–$0.10"
                                       onClick={async () => {
                                         setRechecking(s.id);
                                         apply(await recheckFrameAction(v.id, s.id));
                                         setRechecking(null);
                                       }}
                                     >
-                                      {rechecking === s.id ? "正在重新检查…" : "用最新规则重新检查（约 $0.01）"}
+                                      {rechecking === s.id ? "正在重新检查…" : "用最新规则重新检查（$0.01–$0.10）"}
                                     </button>
                                   </div>
                                   {fc.product?.length ? (() => {
@@ -2354,7 +2354,7 @@ function Approval({
             )}
             {row("本次费用", usd(q.costUsd), "text-amber-300 font-semibold")}
             {pending.kind === "frame"
-              ? row("看图检查", "出图后自动看 1 次：对照提示词和 3D（Gemini，约 $0.01 以内，不算在上面）")
+              ? row("看图检查", "出图后自动看 1 次：对照提示词和 3D（Gemini 约 $0.01；Gemini 不能用时换 K3，约 $0.05–$0.10；另算）")
               : null}
             {row("这是本镜第几次", `第 ${q.attempt} 次`)}
             {row("本镜累计（含本次）", usd(q.shotSpent + q.costUsd))}
