@@ -129,6 +129,9 @@ export function getProduct(projectId: string): LocalProduct | null {
 }
 
 export function saveProduct(projectId: string, product: LocalProduct) {
+  const old = getDb().prepare("SELECT name FROM products WHERE project_id = ?").get(projectId) as { name: string } | undefined;
+  // 项目名原来跟产品名一样：产品改名时项目中心 / 侧栏 / 面包屑一起改
+  if (old && product.name && old.name !== product.name) getDb().prepare("UPDATE projects SET name = ? WHERE id = ? AND name = ?").run(product.name, projectId, old.name);
   getDb()
     .prepare("UPDATE products SET name = ?, category = ?, ride_kind = COALESCE(?, ride_kind), selling_points = ?, bible = ? WHERE project_id = ?")
     .run(product.name, product.category, product.rideKind ?? null, JSON.stringify(product.sellingPoints), JSON.stringify(product.bible), projectId);

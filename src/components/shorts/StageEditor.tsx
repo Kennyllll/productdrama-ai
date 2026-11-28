@@ -11,7 +11,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { saveProductRigAction, saveSceneVersionAction, sceneConflictsAction } from "@/app/scene-actions";
 import { saveShortLayoutAction } from "@/app/short-actions";
-import { camProblems, fitProduct } from "@/lib/brain-camera";
+import { camProblems, checkCam, fitProduct } from "@/lib/brain-camera";
 import { brainStageAction, type StageProposal } from "@/app/brain-stage-actions";
 import { buildFigure, presetPose, shape, clampReach } from "@/components/shorts/scene-mesh";
 import { carryBlock, carrierOf, figName, freeSpot, isStructure, itemLabel, liftOf, normalizeStage, rideBlock, ridersOf, relSpot } from "@/lib/stage-rules";
@@ -1085,6 +1085,13 @@ export function StageEditor({
     setBrainMsg(`平台已自动放大产品（免费）：${r.note}。还没保存，不满意点「撤销」`);
     if (brainBox.current) brainBox.current.open = true;
   };
+  const autoFix = () => {
+    const r = checkCam({ camPos: camNow.camPos, lookAt: camNow.lookAt, lens: camNow.lens }, camScene);
+    if (!r.cam) return setBrainMsg(`⚠ 平台自动修不了：${r.errors.join("；")}。可以自己拖机位，或点「让大脑修好」`);
+    onBrainCam?.(r.cam);
+    setBrainMsg(`平台已自动修好机位（免费）：${r.fixes.join("；") || "机位没问题"}。还没保存，不满意点「撤销」`);
+    if (brainBox.current) brainBox.current.open = true;
+  };
   const fixWithBrain = (ask: string) => {
     setAsk(ask);
     setAskOk(true);
@@ -1100,6 +1107,10 @@ export function StageEditor({
             {p.small ? (
               <button type="button" onClick={autoFit} className="shrink-0 rounded bg-amber-400 px-2 py-0.5 font-medium text-black">
                 自动放大（免费）
+              </button>
+            ) : /墙外|裁掉|太近/.test(p.msg) ? (
+              <button type="button" onClick={autoFix} className="shrink-0 rounded bg-amber-400 px-2 py-0.5 font-medium text-black">
+                自动修（免费）
               </button>
             ) : null}
             {brainReady ? (
