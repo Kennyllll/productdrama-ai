@@ -68,6 +68,15 @@ const deg = (r: number) => (r * 180) / Math.PI;
 const rad = (d: number) => (d * Math.PI) / 180;
 const effPose = (f: FigureSpec, hasBike: boolean) => (f.onProduct && hasBike ? "ride" : f.pose === "ride" ? "stand" : f.pose);
 
+export const brainDraftKey = (videoId: string, shotCode: string) => `pd-brain:${videoId}:${shotCode}`;
+
+const BRAIN_PRESETS: [string, string][] = [
+  ["拍全产品", "镜头拉远一点，让整个产品完整入画；人和产品的位置保持原样"],
+  ["侧面拍", "机位横着挪到产品侧面，拍全整个产品，看得到轮子和脚踏；人和产品的位置保持原样"],
+  ["低机位", "机位降到孩子视线高度（约 0.8 米），拍全产品；人和产品的位置保持原样"],
+  ["人别挡产品", "挪一下大人的站位，别挡住产品；产品和孩子保持原样"],
+];
+
 export function StageEditor({
   videoId,
   shotCode,
@@ -1033,6 +1042,21 @@ export function StageEditor({
     </>
   );
   const [askOk, setAskOk] = useState(false);
+  const [stored, setStored] = useState<{ p: StageProposal; at: number } | null>(null);
+  useEffect(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem(brainDraftKey(videoId, shotCode)) ?? "null") as { p: StageProposal; at: number } | null;
+      setStored(v && Date.now() - v.at < 7 * 86400e3 ? v : null);
+    } catch {
+      setStored(null);
+    }
+  }, [videoId, shotCode]);
+  const applyBrain = (p: StageProposal) => {
+    commit((x) => ({ ...x, figures: p.figures, bike: p.bike, bikeYaw: p.bikeYaw }));
+    if (p.cam) onBrainCam?.(p.cam);
+    setSel(null);
+    setBrain(p);
+  };
   const askBrain = () => {
     setAskOk(false);
     setBrain(null);
@@ -1044,10 +1068,11 @@ export function StageEditor({
       setThinking(false);
       if (r.error || !r.result) return setBrainMsg(`⚠ ${r.error ?? "大脑没有返回结果"}`);
       const p = r.result;
-      commit((x) => ({ ...x, figures: p.figures, bike: p.bike, bikeYaw: p.bikeYaw }));
-      if (p.cam) onBrainCam?.(p.cam);
-      setSel(null);
-      setBrain(p);
+      applyBrain(p);
+      setStored(null);
+      try {
+        localStorage.setItem(brainDraftKey(videoId, shotCode), JSON.stringify({ p, at: Date.now() }));
+      } catch {}
       setBrainMsg(`已在 3D 里改好，还没保存。不对就点「撤销」或再说一句。本次花费 $${p.usd.toFixed(3)}`);
     })();
   };
@@ -1060,6 +1085,24 @@ export function StageEditor({
           {thinking ? "想中…" : "让大脑调"}
         </button>
       </div>
+      <div className="flex flex-wrap gap-1">
+        {BRAIN_PRESETS.map(([label, text]) => (
+          <button key={label} type="button" disabled={!brainReady || thinking} onClick={() => (setAsk(text), setAskOk(true))} className="rounded-full border border-violet-400/40 px-2 py-0.5 text-[11px] text-violet-100 hover:bg-violet-400/10 disabled:opacity-40">
+            {label}
+          </button>
+        ))}
+      </div>
+      {stored && !brain && !thinking ? (
+        <div className="flex flex-wrap items-center gap-2 rounded border border-sky-400/40 p-2 text-neutral-200">
+          <span>上次大脑的方案还没保存（花了 ${stored.p.usd.toFixed(3)}）</span>
+          <button type="button" onClick={() => (applyBrain(stored.p), setStored(null), setBrainMsg("已把上次的方案放回 3D，还没保存。"))} className="rounded bg-sky-400 px-2 py-0.5 font-medium text-black">
+            放回 3D
+          </button>
+          <button type="button" onClick={() => (localStorage.removeItem(brainDraftKey(videoId, shotCode)), setStored(null))} className="rounded border border-white/10 px-2 py-0.5">
+            不要了
+          </button>
+        </div>
+      ) : null}
       {!brainReady ? <p className="text-[11px] text-neutral-400">「让大脑调」点不了：还没填 Kimi Key（到「设置」里填）。不填也能自己在 3D 里摆。</p> : null}
       {askOk && brainReady ? (
         <div className="flex flex-wrap items-center gap-2 rounded border border-violet-400/40 p-2 text-neutral-200">

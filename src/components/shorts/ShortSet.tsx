@@ -12,7 +12,7 @@ import type { ProductRig } from "@/lib/figures";
 import { Set3D, type SetShot } from "@/components/production/Set3D";
 import { SceneEditor, type ShotBinding } from "@/components/shorts/SceneEditor";
 import { ShotSyncBox } from "@/components/shorts/ShotSyncBox";
-import { StageEditor } from "@/components/shorts/StageEditor";
+import { StageEditor, brainDraftKey } from "@/components/shorts/StageEditor";
 
 export interface StageProps {
   locked?: string;
@@ -93,6 +93,14 @@ export function ShortSet({
   const [stageDirty, setStageDirty] = useState(false);
   const [camDirty, setCamDirty] = useState(false);
   const dirty = stageDirty || camDirty;
+  const wasDirty = useRef<string | null>(null);
+  useEffect(() => {
+    if (dirty) wasDirty.current = code;
+    else if (wasDirty.current) {
+      localStorage.removeItem(brainDraftKey(videoId, wasDirty.current));
+      wasDirty.current = null;
+    }
+  }, [dirty, code, videoId]);
   useEffect(() => {
     if (!dirty) return;
     const warn = (e: BeforeUnloadEvent) => {
