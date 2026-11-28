@@ -947,8 +947,8 @@ export function ShortStudio({
               disabled={busy}
               onClick={() => {
                 const nid = Math.random().toString(36).slice(2, 10);
-                setShots((xs) => [
-                  ...xs,
+                const next: ShortShot[] = [
+                  ...shots,
                   {
                     id: nid,
                     beat: "",
@@ -969,9 +969,10 @@ export function ShortStudio({
                     videoJobId: null,
                     checkNote: "",
                   },
-                ]);
-                setDirty(true);
+                ];
+                setShots(next);
                 setFocus(nid);
+                act(() => saveShortVideoAction(v.id, { shots: next }), "已加一个镜头并保存");
               }}
             >
               + 镜头

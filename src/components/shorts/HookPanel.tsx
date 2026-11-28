@@ -5,7 +5,7 @@ import { useState, useTransition } from "react";
 import { adoptHookAction, deleteHookShotAction, draftHookAction, saveHookAsLibAction, setHookSelfieAction, setHookValuesAction, setHookWhoAction } from "@/app/short-actions";
 import { HookCases } from "@/components/shorts/HookCases";
 import { effectDef } from "@/lib/hook-effects";
-import { cleanHookValues, HOOK_ENTRIES, type HookDef } from "@/lib/hooks";
+import { cleanHookValues, fillCaption, HOOK_ENTRIES, type HookDef } from "@/lib/hooks";
 import { VIEW_LABEL, type HookPerson } from "@/lib/hook-stage";
 import type { ShortShot } from "@/lib/shorts";
 import { HF_VIDEO_USD_PER_SEC, SHORT_FRAME_USD, VIDEO_USD_PER_SEC } from "@/lib/shorts";
@@ -23,7 +23,7 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
   const [values, setValues] = useState<Record<string, string>>(h?.values ?? (def ? cleanHookValues(def, undefined) : {}));
   const [entry, setEntry] = useState(h?.entry ?? def?.entry ?? "assembled");
   type Part = { draft: Record<string, string>; people: HookPerson[]; who: string[] };
-  const [draft, setDraft] = useState<(Part & { caption: string; notes: string[]; second?: Part; selfieName?: string; line?: string; lineZh?: string }) | null>(null);
+  const [draft, setDraft] = useState<(Part & { free?: boolean; caption: string; notes: string[]; second?: Part; selfieName?: string; line?: string; lineZh?: string }) | null>(null);
   const [msg, setMsg] = useState("");
   const [selfie, setSelfie] = useState(h ? Boolean(h.selfie) : Boolean(def?.selfie));
   const line = h?.line ?? "";
@@ -54,10 +54,25 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
       else setDraft(r.result ?? null);
     });
   };
+  /** 不用 AI：按 Hook 模板直接套出开头（免费），画面和动作采用后在镜头里改 */
+  const genFree = () => {
+    if (!def) return;
+    const empty = fields.filter((f) => !f.optional && !values[f.key]?.trim());
+    if (empty.length) return setMsg(`⚠ 先填：${empty.map((f) => f.label).join("、")}`);
+    setMsg("");
+    setDraft({
+      free: true,
+      draft: { description: `${def.name}：${def.use || def.about}`.slice(0, 300), camera: "", productNote: "组装好的成品", compositeNote: "", framePrompt: "", motionPrompt: "" },
+      people: [],
+      who: [],
+      caption: fillCaption(def.caption, values, ""),
+      notes: ["免费模板，没用 AI：采用后在这个镜头里把「画面」「机位」改成你想拍的中文"],
+    });
+  };
   const adopt = () =>
     start(async () => {
       if (!draft) return;
-      const r = await adoptHookAction(videoId, libId, values, entry, draft.draft, shot?.id ?? targetId, draft.people, { selfie: selfie || car, line: draft.line || line, lineZh: draft.line ? draft.lineZh : undefined, who, second: draft.second ? { draft: draft.second.draft, people: draft.second.people } : undefined });
+      const r = await adoptHookAction(videoId, libId, values, entry, draft.draft, shot?.id ?? targetId, draft.free ? undefined : draft.people, { selfie: selfie || car, line: draft.line || line, lineZh: draft.line ? draft.lineZh : undefined, who, second: draft.second ? { draft: draft.second.draft, people: draft.second.people } : undefined });
       const fixed = r.result?.fixed ?? [];
       onDone(r, `已换好开头${fixed.length ? `。AI 写的动作有 ${fixed.length} 处 3D 做不到，程序已改好：${fixed.join("；")}` : ""}。${car ? "第一段在车里不用 3D；" : ""}3D 构图正在后台自动保存，不用离开这页，保存好卡片上会出现构图缩略图`);
       // 采用后留在视频页：3D 构图在后台自动保存（先存切镜后的第二段，再存第一段；车里自拍第一段不用 3D）
@@ -211,9 +226,16 @@ export function HookPanel({ videoId, lib, shot, targetId, setHref, onDone, onClo
             </button>
           </>
         ) : (
-          <button className={btn} disabled={pending || !def} onClick={gen}>
-            生成剧本（DeepSeek，约 $0.01）
-          </button>
+          <span className="flex flex-wrap gap-2">
+            <button className={btn} disabled={pending || !def} onClick={gen}>
+              生成剧本（DeepSeek，约 $0.01）
+            </button>
+            {def && !def.second && !car ? (
+              <button className={btn} disabled={pending} onClick={genFree}>
+                按模板套用（免费，不用 AI）
+              </button>
+            ) : null}
+          </span>
         )}
         <span>{pending ? "处理中…" : msg}</span>
       </div>
