@@ -164,6 +164,8 @@ export async function brainStageAction(videoId: string, shotId: string, request:
     const figures = raw.map((f, k): FigureSpec => {
       const n = `人偶${k + 1}（${f.kind === "adult" ? "大人" : "小孩"}）`;
       let g: FigureSpec = { ...f, custom: undefined, actionEn: undefined };
+      // 大脑漏写 memberId：沿用原来同一个人偶的绑定，再不行按动作开头的名字绑
+      if (!g.memberId) g = { ...g, memberId: old.get(f.id)?.memberId ?? cast?.members.find((x) => x.id !== filmer && (g.action ?? "").trim().startsWith(x.name))?.id };
       const mem = g.memberId === filmer ? undefined : cast?.members.find((x) => x.id === g.memberId);
       if (mem) g = { ...g, kind: memberKind(mem), h: mem.heightCm / 100 };
       else {
